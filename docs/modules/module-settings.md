@@ -19,6 +19,9 @@ Tool Registry 根据工具名的 `module.action` 前缀查询模块状态：
 2. 已停用工具即使被旧对话调用，也返回 `MODULE_DISABLED`。
 3. 导航入口与相关快捷建议同时隐藏。
 
+发送到 OpenAI 兼容端点时，内部名称会转换为符合 function name 约束的
+`module_action`；该转换不改变模块 ID 和内部工具契约。
+
 模块开关是客户端权限边界的一部分，不能只做视觉隐藏。
 
 ## 新增模块

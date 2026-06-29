@@ -28,6 +28,8 @@ XuanAI 将 AI 作为多个业务模块的统一入口。AI 不直接读写模块
 工具名称使用 `module.action`：
 
 - 模块名和动作名使用小写英文。
+- OpenAI function name 不支持点号，Provider Adapter 在传输时将其映射为
+  `module_action`，收到调用后再还原为内部工具。
 - 名称一旦发布应保持兼容；破坏性修改通过新工具名或新版本实现。
 - 参数使用 JSON Schema 描述，所有对象默认 `additionalProperties: false`。
 

@@ -15,13 +15,20 @@
       if (this.tools.has(definition.name)) {
         throw new Error(`工具名称重复：${definition.name}`);
       }
+      const modelName = this.toModelName(definition.name);
+      const modelNameExists = [...this.tools.values()].some(
+        (tool) => this.toModelName(tool.name) === modelName
+      );
+      if (modelNameExists) {
+        throw new Error(`工具模型名称重复：${modelName}`);
+      }
       this.tools.set(definition.name, Object.freeze({ ...definition }));
       return this;
     }
 
     get(name) {
-      const tool = this.tools.get(name);
-      return tool && this.isEnabled(name, tool) ? tool : undefined;
+      const tool = this.resolve(name);
+      return tool && this.isEnabled(tool.name, tool) ? tool : undefined;
     }
 
     modelTools() {
@@ -30,7 +37,7 @@
         .map((tool) => ({
         type: "function",
         function: {
-          name: tool.name,
+          name: this.toModelName(tool.name),
           description: tool.description,
           parameters: tool.inputSchema
         }
@@ -38,11 +45,11 @@
     }
 
     async call(name, rawInput) {
-      const registeredTool = this.tools.get(name);
+      const registeredTool = this.resolve(name);
       if (!registeredTool) {
         return this.failure("TOOL_NOT_FOUND", `未注册工具：${name}`);
       }
-      if (!this.isEnabled(name, registeredTool)) {
+      if (!this.isEnabled(registeredTool.name, registeredTool)) {
         return this.failure("MODULE_DISABLED", `工具所属模块已停用：${name}`);
       }
       const tool = registeredTool;
@@ -77,6 +84,19 @@
 
     failure(code, message) {
       return { ok: false, content: message, error: { code, message } };
+    }
+
+    toModelName(name) {
+      return name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+    }
+
+    resolve(name) {
+      return (
+        this.tools.get(name) ||
+        [...this.tools.values()].find(
+          (tool) => this.toModelName(tool.name) === name
+        )
+      );
     }
 
     validate(schema, value, path = "参数") {
