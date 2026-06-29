@@ -1,10 +1,12 @@
 const SYSTEM_PROMPT =
-  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。回答自然、清楚、真诚，必要时主动给出下一步建议。";
+  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。需要读取信息时主动调用工具；需要写入或删除时先发起工具调用，客户端会向用户确认。只有收到 ok=true 的工具结果后才能声称操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+const MAX_TOOL_ROUNDS = 6;
 
 const state = {
   config: null,
   draft: null,
   messages: [],
+  modelMessages: [],
   connectionStatus: "idle",
   sending: false,
   testing: false
@@ -33,6 +35,8 @@ const elements = {
   testResultText: document.querySelector("#testResult span"),
   testConnectionBtn: document.querySelector("#testConnectionBtn")
 };
+
+const toolRegistry = window.registerTodoTools(new window.XuanToolRegistry());
 
 function providerById(id) {
   return (
@@ -69,6 +73,102 @@ function extractResponse(result) {
     if (text) return text;
   }
   throw new Error("接口已响应，但没有返回可读取的文本");
+}
+
+function extractCompletion(result) {
+  if (!result?.ok) {
+    throw new Error(
+      result?.data?.error?.message ||
+        result?.data?.message ||
+        `请求失败（HTTP ${result?.status || "未知"}）`
+    );
+  }
+  const message = result.data?.choices?.[0]?.message;
+  if (!message) throw new Error("接口已响应，但没有返回消息");
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  let content = "";
+  if (typeof message.content === "string") {
+    content = message.content.trim();
+  } else if (Array.isArray(message.content)) {
+    content = message.content
+      .map((part) => (part?.type === "text" ? part.text || "" : ""))
+      .join("")
+      .trim();
+  }
+  if (!content && !toolCalls.length) {
+    throw new Error("接口已响应，但没有返回文本或工具调用");
+  }
+  return {
+    content,
+    toolCalls,
+    assistantMessage: {
+      role: "assistant",
+      content: message.content ?? null,
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {})
+    }
+  };
+}
+
+function toolSummary(tool, rawArguments) {
+  let input = {};
+  try {
+    input = JSON.parse(rawArguments || "{}");
+  } catch {
+    return `${tool.title}\n参数格式无效`;
+  }
+  const lines = Object.entries(input)
+    .slice(0, 6)
+    .map(([key, value]) => `${key}: ${String(value).slice(0, 120)}`);
+  return `${tool.risk === "destructive" ? "此操作不可撤销。\n" : ""}${tool.title}\n${lines.join("\n")}`;
+}
+
+async function approveToolCall(tool, call) {
+  if (tool.risk === "read") return true;
+  return window.confirm(`小玄请求执行以下操作：\n\n${toolSummary(tool, call.function?.arguments)}\n\n是否允许？`);
+}
+
+async function runAgentLoop() {
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    const result = await window.desktop.requestAI({
+      ...state.config,
+      messages: [
+        {
+          role: "system",
+          content: `${SYSTEM_PROMPT}\n当前本地时间：${new Date().toISOString()}`
+        },
+        ...state.modelMessages
+      ],
+      tools: toolRegistry.modelTools()
+    });
+    const completion = extractCompletion(result);
+    state.modelMessages.push(completion.assistantMessage);
+    if (!completion.toolCalls.length) return completion.content;
+
+    for (const call of completion.toolCalls) {
+      const tool = toolRegistry.get(call.function?.name);
+      let toolResult;
+      if (!tool) {
+        toolResult = toolRegistry.failure(
+          "TOOL_NOT_FOUND",
+          `未注册工具：${call.function?.name || "未知"}`
+        );
+      } else if (!(await approveToolCall(tool, call))) {
+        toolResult = toolRegistry.failure("USER_DENIED", "用户拒绝执行此操作。");
+      } else {
+        elements.composerTip.textContent = `正在执行：${tool.title}`;
+        toolResult = await toolRegistry.call(
+          call.function?.name,
+          call.function?.arguments
+        );
+      }
+      state.modelMessages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(toolResult)
+      });
+    }
+  }
+  throw new Error("工具调用轮次过多，请把任务拆小后重试");
 }
 
 function renderProviderGrid() {
@@ -290,23 +390,15 @@ async function sendMessage() {
   }
 
   state.messages.push(createMessage("user", content));
+  state.modelMessages.push({ role: "user", content });
   elements.messageInput.value = "";
   elements.sendBtn.disabled = true;
   state.sending = true;
   renderMessages();
 
   try {
-    const result = await window.desktop.requestAI({
-      ...state.config,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        ...state.messages.map(({ role, content: messageContent }) => ({
-          role,
-          content: messageContent
-        }))
-      ]
-    });
-    state.messages.push(createMessage("assistant", extractResponse(result)));
+    const response = await runAgentLoop();
+    state.messages.push(createMessage("assistant", response));
     state.connectionStatus = "success";
   } catch (error) {
     state.messages.push(
@@ -360,6 +452,7 @@ elements.messageInput.addEventListener("keydown", (event) => {
 elements.sendBtn.addEventListener("click", sendMessage);
 document.querySelector("#clearChatBtn").addEventListener("click", () => {
   state.messages = [];
+  state.modelMessages = [];
   renderMessages();
 });
 document.querySelectorAll(".suggestion").forEach((button) => {

@@ -29,6 +29,8 @@
       "home.css",
       "home.js",
       "ai-providers.js",
+      "tool-registry.js",
+      "todo-tools.js",
       "index.html",
       "styles.css",
       "renderer.js",

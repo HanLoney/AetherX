@@ -130,14 +130,49 @@ function registerIpcHandlers() {
     if (!apiKey) throw new Error("请填写 API Key");
 
     const messages = Array.isArray(payload?.messages)
-      ? payload.messages.slice(-40).map((message) => ({
-          role: ["system", "user", "assistant"].includes(message?.role)
+      ? payload.messages.slice(-60).map((message) => {
+          const role = ["system", "user", "assistant", "tool"].includes(message?.role)
             ? message.role
-            : "user",
-          content: String(message?.content || "").slice(0, 20000)
-        }))
+            : "user";
+          const sanitized = {
+            role,
+            content:
+              message?.content === null
+                ? null
+                : String(message?.content || "").slice(0, 30000)
+          };
+          if (role === "assistant" && Array.isArray(message?.tool_calls)) {
+            sanitized.tool_calls = message.tool_calls.slice(0, 10).map((call) => ({
+              id: String(call?.id || "").slice(0, 200),
+              type: "function",
+              function: {
+                name: String(call?.function?.name || "").slice(0, 100),
+                arguments: String(call?.function?.arguments || "{}").slice(0, 20000)
+              }
+            }));
+          }
+          if (role === "tool") {
+            sanitized.tool_call_id = String(message?.tool_call_id || "").slice(0, 200);
+          }
+          return sanitized;
+        })
       : [];
     if (!messages.length) throw new Error("消息不能为空");
+
+    const tools = Array.isArray(payload?.tools)
+      ? payload.tools.slice(0, 40).map((tool) => ({
+          type: "function",
+          function: {
+            name: String(tool?.function?.name || "").slice(0, 100),
+            description: String(tool?.function?.description || "").slice(0, 1000),
+            parameters:
+              tool?.function?.parameters &&
+              typeof tool.function.parameters === "object"
+                ? tool.function.parameters
+                : { type: "object", properties: {} }
+          }
+        }))
+      : [];
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
@@ -151,6 +186,7 @@ function registerIpcHandlers() {
         body: JSON.stringify({
           model: normalized.model,
           messages,
+          ...(tools.length ? { tools, tool_choice: "auto" } : {}),
           stream: false
         }),
         signal: controller.signal
