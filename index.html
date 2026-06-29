@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>小玄日历</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="customBackground" class="custom-background"></div>
+    <div id="backgroundTint" class="background-tint"></div>
+    <div class="ambient ambient-pink"></div>
+    <div class="ambient ambient-blue"></div>
+
+    <header class="titlebar">
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow" id="todayText"></p>
+          <h1 id="headlineText">把每一天，安排得刚刚好。</h1>
+        </div>
+        <div class="top-actions">
+          <button id="appearanceBtn" class="appearance-button" aria-label="外观设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a9 9 0 1 0 9 9c0-1.1-.9-2-2-2h-1.5a2 2 0 0 1-2-2V6.5c0-1.9-1.6-3.5-3.5-3.5Z"/>
+              <circle cx="7.5" cy="11.5" r="1"/>
+              <circle cx="10" cy="7.5" r="1"/>
+              <circle cx="7.5" cy="16" r="1"/>
+            </svg>
+            外观
+          </button>
+          <button id="newTodoBtn" class="primary-button">
+            <span>＋</span> 新建待办
+          </button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="calendar-panel">
+          <div class="calendar-nav">
+            <div class="month-title">
+              <strong id="monthTitle"></strong>
+              <button id="todayBtn" class="text-button">回到今天</button>
+            </div>
+            <div class="month-actions">
+              <button id="prevMonthBtn" class="round-button" aria-label="上个月">‹</button>
+              <button id="nextMonthBtn" class="round-button" aria-label="下个月">›</button>
+            </div>
+          </div>
+
+          <div class="weekdays" aria-hidden="true">
+            <span>一</span><span>二</span><span>三</span><span>四</span>
+            <span>五</span><span>六</span><span>日</span>
+          </div>
+          <div id="calendarGrid" class="calendar-grid" aria-label="月历"></div>
+
+          <div class="legend">
+            <span><i class="legend-start"></i>开始</span>
+            <span><i class="legend-end"></i>截止</span>
+            <span><i class="legend-running"></i>进行中</span>
+          </div>
+        </div>
+
+        <div class="agenda-panel">
+          <header class="agenda-header">
+            <div>
+              <p id="selectedWeekday" class="eyebrow"></p>
+              <h2 id="selectedDateTitle"></h2>
+            </div>
+            <div class="day-progress">
+              <strong id="dayProgressValue">0%</strong>
+              <span>完成</span>
+            </div>
+          </header>
+
+          <nav class="filters" aria-label="待办筛选">
+            <button class="filter active" data-filter="all">当天相关</button>
+            <button class="filter" data-filter="active">待完成</button>
+            <button class="filter" data-filter="completed">已完成</button>
+          </nav>
+
+          <div class="agenda-list-wrap">
+            <ul id="todoList" class="todo-list" aria-live="polite"></ul>
+            <div id="emptyState" class="empty-state">
+              <div class="empty-orbit"><i></i></div>
+              <h3>这一天很轻盈</h3>
+              <p>点击“新建待办”安排一件小事吧。</p>
+            </div>
+          </div>
+
+          <footer>
+            <span id="saveStatus"><i></i> 已实时保存到本机</span>
+            <button id="clearCompleted" class="text-button">清除已完成</button>
+          </footer>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="todoDialog" class="todo-dialog">
+      <form id="todoForm" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow" id="dialogEyebrow">新建安排</p>
+            <h2 id="dialogTitle">添加待办</h2>
+          </div>
+          <button type="button" id="closeDialogBtn" class="round-button" aria-label="关闭">×</button>
+        </div>
+
+        <label class="field">
+          <span>待办内容</span>
+          <input id="todoInput" type="text" maxlength="120" autocomplete="off"
+            placeholder="比如：整理本周工作计划" required />
+        </label>
+
+        <div class="time-fields">
+          <label class="field">
+            <span><i class="field-dot start-dot"></i>开始时间</span>
+            <input id="startTimeInput" type="datetime-local" required />
+          </label>
+          <div class="time-arrow">→</div>
+          <label class="field">
+            <span><i class="field-dot end-dot"></i>结束时间</span>
+            <input id="endTimeInput" type="datetime-local" required />
+          </label>
+        </div>
+
+        <p id="formError" class="form-error" role="alert"></p>
+
+        <div class="dialog-actions">
+          <button type="button" id="deleteTodoBtn" class="danger-button">删除待办</button>
+          <span></span>
+          <button type="button" id="cancelDialogBtn" class="secondary-button">取消</button>
+          <button type="submit" class="primary-button">保存安排</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="appearanceDialog" class="appearance-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">个性化</p>
+            <h2>选择你的日历色彩</h2>
+          </div>
+          <button type="button" id="closeAppearanceBtn" class="round-button" aria-label="关闭">×</button>
+        </div>
+
+        <section class="appearance-section">
+          <div class="section-title-row">
+            <div>
+              <h3>首页文案</h3>
+              <p>自定义日历顶部显示的内容</p>
+            </div>
+            <button type="button" id="resetHeadlineBtn" class="text-button">恢复默认</button>
+          </div>
+          <label class="field headline-field">
+            <span>显示内容</span>
+            <input id="headlineInput" type="text" maxlength="40" autocomplete="off"
+              placeholder="把每一天，安排得刚刚好。" />
+          </label>
+        </section>
+
+        <section class="appearance-section">
+          <h3>配色主题</h3>
+          <div class="theme-options">
+            <button type="button" class="theme-option active" data-theme="blossom">
+              <span class="theme-preview blossom-preview"><i></i></span>
+              <span>樱空</span>
+            </button>
+            <button type="button" class="theme-option" data-theme="mint">
+              <span class="theme-preview mint-preview"><i></i></span>
+              <span>薄荷</span>
+            </button>
+            <button type="button" class="theme-option" data-theme="sunset">
+              <span class="theme-preview sunset-preview"><i></i></span>
+              <span>落日</span>
+            </button>
+            <button type="button" class="theme-option" data-theme="lavender">
+              <span class="theme-preview lavender-preview"><i></i></span>
+              <span>鸢尾</span>
+            </button>
+            <button type="button" class="theme-option" data-theme="midnight">
+              <span class="theme-preview midnight-preview"><i></i></span>
+              <span>夜航</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="appearance-section background-section">
+          <div class="section-title-row">
+            <div>
+              <h3>自定义背景</h3>
+              <p>图片只保存在你的电脑中</p>
+            </div>
+            <div class="background-actions">
+              <input id="backgroundFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden />
+              <button type="button" id="chooseBackgroundBtn" class="secondary-button">选择图片</button>
+              <button type="button" id="removeBackgroundBtn" class="text-button danger-text">恢复默认</button>
+            </div>
+          </div>
+          <div id="backgroundPreview" class="background-preview">
+            <span>尚未选择自定义背景</span>
+          </div>
+
+          <div class="range-row">
+            <label for="backgroundDimInput">背景遮罩</label>
+            <input id="backgroundDimInput" type="range" min="0" max="60" value="22" />
+            <output id="backgroundDimValue">22%</output>
+          </div>
+          <div class="range-row">
+            <label for="backgroundBlurInput">背景模糊</label>
+            <input id="backgroundBlurInput" type="range" min="0" max="20" value="0" />
+            <output id="backgroundBlurValue">0px</output>
+          </div>
+        </section>
+      </form>
+    </dialog>
+
+    <template id="todoTemplate">
+      <li class="todo-item">
+        <button class="check-button" aria-label="切换完成状态">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12.5 9.2 17 19 7" />
+          </svg>
+        </button>
+        <button class="todo-main" type="button">
+          <span class="todo-title"></span>
+          <span class="todo-time"></span>
+        </button>
+        <div class="todo-tags"></div>
+        <button class="edit-button" aria-label="编辑待办">•••</button>
+      </li>
+    </template>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

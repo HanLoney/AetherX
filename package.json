@@ -1,0 +1,54 @@
+{
+  "name": "xuan-todo",
+  "version": "1.2.4",
+  "description": "A calm pink-blue desktop calendar and todo list",
+  "main": "main.js",
+  "author": "Xuanxiaotech",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "npm run dist:installer && npm run dist:portable",
+    "dist:installer": "electron-builder --win nsis --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
+    "dist:portable": "electron-builder --win portable --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.xuanxiaotech.todo",
+  "productName": "小玄日历",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "renderer.js",
+      "app-icon-rounded.png"
+    ],
+    "win": {
+      "icon": "app-icon-rounded.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "小玄日历"
+    }
+  }
+}
