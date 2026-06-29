@@ -1,5 +1,5 @@
 const SYSTEM_PROMPT =
-  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。需要读取信息时主动调用工具；需要写入或删除时先发起工具调用，客户端会向用户确认。只有收到 ok=true 的工具结果后才能声称操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。需要读取信息时主动调用工具；需要写入或删除时发起工具调用，客户端会根据用户设置自动同意或在聊天中请求授权。只有收到 ok=true 的工具结果后才能声称操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
 const MAX_TOOL_ROUNDS = 6;
 
 class EmptyCompletionError extends Error {
@@ -14,6 +14,7 @@ const state = {
   draft: null,
   messages: [],
   modelMessages: [],
+  pendingApprovals: new Map(),
   connectionStatus: "idle",
   sending: false,
   testing: false
@@ -227,9 +228,20 @@ function toolCallSignature(call) {
   }
 }
 
-async function approveToolCall(tool, call) {
-  if (tool.risk === "read") return true;
-  return window.confirm(`小玄请求执行以下操作：\n\n${toolSummary(tool, call.function?.arguments)}\n\n是否允许？`);
+async function approveToolCall(tool, activity) {
+  if (tool.risk === "read") {
+    updateToolActivity(activity, "running", "读取中");
+    return true;
+  }
+  if (window.XuanModules.isAutoApproveEnabled()) {
+    updateToolActivity(activity, "running", "已自动同意 · 执行中");
+    return true;
+  }
+  updateToolActivity(activity, "waiting", "等待你的允许");
+  return new Promise((resolve) => {
+    state.pendingApprovals.set(activity.id, { activity, resolve });
+    renderMessages();
+  });
 }
 
 async function finalizeToolRun(summaries, reason) {
@@ -314,6 +326,9 @@ async function runAgentLoop() {
     let repeatedCall = false;
     for (const call of completion.toolCalls) {
       const tool = toolRegistry.get(call.function?.name);
+      const activity = createToolActivity(tool, call);
+      state.messages.push(activity);
+      renderMessages();
       let toolResult;
       const signature = toolCallSignature(call);
       const shouldReuse =
@@ -326,19 +341,31 @@ async function runAgentLoop() {
           content: `检测到重复调用，未再次执行。${previous.content}`,
           repeated: true
         };
+        activity.detail += `\n\n结果：${toolResult.content}`;
+        updateToolActivity(activity, "skipped", "已跳过重复调用");
         repeatedCall = true;
       } else if (!tool) {
         toolResult = toolRegistry.failure(
           "TOOL_NOT_FOUND",
           `未注册工具：${call.function?.name || "未知"}`
         );
-      } else if (!(await approveToolCall(tool, call))) {
+        activity.detail += `\n\n结果：${toolResult.content}`;
+        updateToolActivity(activity, "error", "工具不可用");
+      } else if (!(await approveToolCall(tool, activity))) {
         toolResult = toolRegistry.failure("USER_DENIED", "用户拒绝执行此操作。");
+        activity.detail += `\n\n结果：${toolResult.content}`;
+        updateToolActivity(activity, "denied", "已拒绝");
       } else {
         elements.composerTip.textContent = `正在执行：${tool.title}`;
         toolResult = await toolRegistry.call(
           call.function?.name,
           call.function?.arguments
+        );
+        activity.detail += `\n\n结果：${toolResult.content}`;
+        updateToolActivity(
+          activity,
+          toolResult.ok ? "success" : "error",
+          toolResult.ok ? "执行成功" : "执行失败"
         );
       }
       if (!shouldReuse) seenCalls.set(signature, toolResult);
@@ -468,6 +495,81 @@ function createMessage(role, content, error = false) {
   };
 }
 
+function createToolActivity(tool, call) {
+  return {
+    id: `tool-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    role: "tool",
+    title: tool?.title || call.function?.name || "未知工具",
+    detail: tool
+      ? toolSummary(tool, call.function?.arguments)
+      : `工具：${call.function?.name || "未知"}`,
+    risk: tool?.risk || "read",
+    status: "queued",
+    statusText: "准备调用"
+  };
+}
+
+function updateToolActivity(activity, status, statusText) {
+  activity.status = status;
+  activity.statusText = statusText;
+  renderMessages();
+}
+
+function resolveToolApproval(id, approved) {
+  const pending = state.pendingApprovals.get(id);
+  if (!pending) return;
+  state.pendingApprovals.delete(id);
+  updateToolActivity(
+    pending.activity,
+    approved ? "running" : "denied",
+    approved ? "已允许 · 执行中" : "已拒绝"
+  );
+  pending.resolve(approved);
+}
+
+function renderToolActivity(row, message) {
+  const card = document.createElement("div");
+  card.className = `tool-activity ${message.status}`;
+
+  const head = document.createElement("div");
+  head.className = "tool-activity-head";
+  const icon = document.createElement("i");
+  icon.textContent =
+    message.status === "success"
+      ? "✓"
+      : message.status === "error" || message.status === "denied"
+        ? "!"
+        : "⌁";
+  const title = document.createElement("strong");
+  title.textContent = message.title;
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  status.textContent = message.statusText;
+  head.append(icon, title, status);
+
+  const detail = document.createElement("pre");
+  detail.textContent = message.detail;
+  card.append(head, detail);
+
+  if (message.status === "waiting") {
+    const actions = document.createElement("div");
+    actions.className = "tool-actions";
+    const deny = document.createElement("button");
+    deny.type = "button";
+    deny.className = "tool-deny";
+    deny.textContent = "拒绝";
+    deny.addEventListener("click", () => resolveToolApproval(message.id, false));
+    const approve = document.createElement("button");
+    approve.type = "button";
+    approve.className = "tool-approve";
+    approve.textContent = "允许";
+    approve.addEventListener("click", () => resolveToolApproval(message.id, true));
+    actions.append(deny, approve);
+    card.append(actions);
+  }
+  row.append(card);
+}
+
 function renderMessages() {
   elements.welcome.classList.toggle("hidden", state.messages.length > 0);
   elements.messageList.replaceChildren();
@@ -475,6 +577,11 @@ function renderMessages() {
   state.messages.forEach((message) => {
     const row = document.createElement("div");
     row.className = `message-row ${message.role}`;
+    if (message.role === "tool") {
+      renderToolActivity(row, message);
+      elements.messageList.append(row);
+      return;
+    }
     if (message.role === "assistant") {
       const avatar = document.createElement("i");
       avatar.className = "avatar";
@@ -488,7 +595,7 @@ function renderMessages() {
     elements.messageList.append(row);
   });
 
-  if (state.sending) {
+  if (state.sending && !state.pendingApprovals.size) {
     const row = document.createElement("div");
     row.className = "message-row assistant";
     const avatar = document.createElement("i");
@@ -640,6 +747,7 @@ elements.messageInput.addEventListener("keydown", (event) => {
 });
 elements.sendBtn.addEventListener("click", sendMessage);
 document.querySelector("#clearChatBtn").addEventListener("click", () => {
+  if (state.sending) return;
   state.messages = [];
   state.modelMessages = [];
   renderMessages();

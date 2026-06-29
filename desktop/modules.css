@@ -66,6 +66,12 @@ button { cursor: pointer; }
 .switch input:checked + .switch-track { background: linear-gradient(135deg, #df93b2, #75aee0); }
 .switch input:checked + .switch-track i { transform: translateX(16px); }
 .switch input:disabled + .switch-track { opacity: .55; cursor: not-allowed; }
+.permission-section { position: relative; display: flex; align-items: center; gap: 14px; margin-top: 17px; padding: 18px 72px 18px 20px; border: 1px solid rgba(126,169,220,.2); border-radius: 18px; background: rgba(255,255,255,.62); }
+.permission-icon { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; color: #a16f87; border-radius: 13px; background: linear-gradient(135deg, rgba(235,160,191,.18), rgba(126,188,239,.18)); font-size: 17px; }
+.permission-copy strong, .permission-copy span { display: block; }
+.permission-copy strong { font-size: 11px; }
+.permission-copy span { margin-top: 5px; color: #9d96a6; font-size: 8px; line-height: 1.6; }
+.permission-switch { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); }
 .coming-soon { display: flex; align-items: center; gap: 14px; margin-top: 17px; padding: 18px 21px; border: 1px dashed rgba(126,151,185,.25); border-radius: 18px; background: rgba(239,245,251,.45); }
 .coming-icon { width: 37px; height: 37px; display: grid; place-items: center; color: #7895b4; border-radius: 12px; background: rgba(255,255,255,.7); font-size: 20px; }
 .coming-soon strong, .coming-soon span { display: block; }

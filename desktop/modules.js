@@ -1,6 +1,7 @@
 const moduleGrid = document.querySelector("#moduleGrid");
 const template = document.querySelector("#moduleTemplate");
 const todoModuleBtn = document.querySelector("#todoModuleBtn");
+const autoApproveInput = document.querySelector("#autoApproveInput");
 
 function renderModules() {
   const modules = window.XuanModules.snapshot();
@@ -43,7 +44,12 @@ function renderModules() {
     "hidden",
     !window.XuanModules.isEnabled("todo")
   );
+  autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
 }
+
+autoApproveInput.addEventListener("change", () => {
+  window.XuanModules.setAutoApprove(autoApproveInput.checked);
+});
 
 document.querySelector("#homeBtn").addEventListener("click", () => {
   window.location.href = "home.html";
@@ -55,5 +61,6 @@ document.querySelector("#minimizeBtn").addEventListener("click", () => window.de
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
 window.addEventListener("xuan:modules-changed", renderModules);
+window.addEventListener("xuan:permissions-changed", renderModules);
 
 renderModules();

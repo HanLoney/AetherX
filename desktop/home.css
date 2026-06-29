@@ -462,6 +462,82 @@ button { color: inherit; cursor: pointer; }
 
 .message-bubble.error { color: #b95f70; background: rgba(255, 238, 242, .86); }
 
+.message-row.tool { padding-left: 40px; }
+.tool-activity {
+  width: min(520px, 84%);
+  overflow: hidden;
+  border: 1px solid rgba(119, 113, 144, .13);
+  border-radius: 14px;
+  background: rgba(248, 248, 252, .76);
+  transition: border-color .2s, background .2s;
+}
+.tool-activity-head {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+}
+.tool-activity-head > i {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  color: #6e8eaf;
+  border-radius: 8px;
+  background: rgba(126, 188, 239, .14);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+.tool-activity-head strong { color: #5e596b; font-size: 10px; }
+.tool-status {
+  margin-left: auto;
+  padding: 4px 7px;
+  color: #7f7889;
+  border-radius: 10px;
+  background: rgba(132, 126, 153, .09);
+  font-size: 8px;
+}
+.tool-activity pre {
+  max-height: 115px;
+  margin: 0;
+  overflow: auto;
+  padding: 0 12px 10px 45px;
+  color: #9a94a4;
+  font: 8px/1.65 "Microsoft YaHei UI", sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-activity.waiting { border-color: rgba(223, 145, 177, .32); background: rgba(255, 249, 252, .88); }
+.tool-activity.running { border-color: rgba(112, 160, 216, .27); }
+.tool-activity.success { border-color: rgba(91, 177, 137, .27); background: rgba(247, 253, 250, .82); }
+.tool-activity.success .tool-activity-head > i { color: #4c9674; background: rgba(91, 177, 137, .13); }
+.tool-activity.success .tool-status { color: #4c9674; background: rgba(91, 177, 137, .1); }
+.tool-activity.error,
+.tool-activity.denied { border-color: rgba(211, 102, 123, .25); background: rgba(255, 247, 249, .82); }
+.tool-activity.error .tool-activity-head > i,
+.tool-activity.denied .tool-activity-head > i { color: #bc6576; background: rgba(211, 102, 123, .11); }
+.tool-activity.skipped { opacity: .72; }
+.tool-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 9px 11px;
+  border-top: 1px solid rgba(119, 113, 144, .09);
+}
+.tool-actions button {
+  min-width: 58px;
+  height: 29px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  font-size: 9px;
+  font-weight: 600;
+}
+.tool-deny { color: #8d8695; background: #efedf2; }
+.tool-approve { color: white; background: linear-gradient(135deg, #df91b1, #75aee0); }
+
 .typing { display: flex; gap: 4px; padding: 15px 17px; }
 .typing i { width: 5px; height: 5px; border-radius: 50%; background: #aaa3b3; animation: pulse .7s infinite alternate; }
 .typing i:nth-child(2) { animation-delay: .15s; }
