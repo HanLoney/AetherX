@@ -36,7 +36,18 @@ const elements = {
   testConnectionBtn: document.querySelector("#testConnectionBtn")
 };
 
-const toolRegistry = window.registerTodoTools(new window.XuanToolRegistry());
+const toolRegistry = window.registerTodoTools(
+  new window.XuanToolRegistry({
+    isEnabled: (toolName) =>
+      window.XuanModules.isEnabled(toolName.split(".")[0])
+  })
+);
+
+function syncModuleState() {
+  const todoEnabled = window.XuanModules.isEnabled("todo");
+  document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
+  document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
+}
 
 function providerById(id) {
   return (
@@ -420,7 +431,10 @@ document.querySelector("#minimizeBtn").addEventListener("click", () => window.de
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
 document.querySelector("#todoModuleBtn").addEventListener("click", () => {
-  window.location.href = "index.html";
+  if (window.XuanModules.isEnabled("todo")) window.location.href = "index.html";
+});
+document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
+  window.location.href = "modules.html";
 });
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
@@ -469,9 +483,12 @@ elements.settingsMask.addEventListener("click", (event) => {
 async function initialize() {
   state.config = await window.desktop.getAIConfig();
   state.draft = { ...state.config, apiKey: "" };
+  syncModuleState();
   renderHeader();
   renderMessages();
 }
+
+window.addEventListener("xuan:modules-changed", syncModuleState);
 
 initialize().catch((error) => {
   console.error("Failed to initialize AI configuration:", error.message);

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>模块中心 · XuanAI</title>
+    <link rel="stylesheet" href="modules.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">XuanAI · 模块中心</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">玄</div>
+          <div><strong>XuanAI</strong><span>你的智能生活中枢</span></div>
+        </div>
+        <nav class="nav-list">
+          <button id="homeBtn" class="nav-item"><i>✦</i>小玄 AI</button>
+          <button id="todoModuleBtn" class="nav-item"><i>✓</i>日历待办</button>
+          <button class="nav-item active"><i>⌘</i>模块中心</button>
+        </nav>
+        <div class="sidebar-note">
+          <i>⌁</i>
+          <span>关闭模块后，它会从导航和 AI 工具列表中同时移除。</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="hero">
+          <div>
+            <p>MODULE CONTROL</p>
+            <h1>模块中心</h1>
+            <span>决定小玄可以使用哪些能力。设置只保存在当前设备。</span>
+          </div>
+          <div class="summary">
+            <strong id="enabledCount">0</strong>
+            <span>个模块正在运行</span>
+          </div>
+        </section>
+
+        <section class="module-section">
+          <header>
+            <div>
+              <h2>已安装模块</h2>
+              <p>核心模块保持运行，其他模块可以随时启用或停用。</p>
+            </div>
+            <span id="toolCount" class="tool-count">0 个 AI 工具可用</span>
+          </header>
+          <div id="moduleGrid" class="module-grid"></div>
+        </section>
+
+        <section class="coming-soon">
+          <div class="coming-icon">＋</div>
+          <div>
+            <strong>这里以后会更热闹</strong>
+            <span>笔记、文件、提醒等新模块会沿用同一套开关与权限规则。</span>
+          </div>
+          <small>MODULES COMING SOON</small>
+        </section>
+      </main>
+    </div>
+
+    <template id="moduleTemplate">
+      <article class="module-card">
+        <div class="module-icon"></div>
+        <div class="module-copy">
+          <div class="module-title">
+            <strong></strong>
+            <span class="core-badge">核心</span>
+          </div>
+          <p></p>
+          <div class="module-meta"></div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" />
+          <span class="switch-track"><i></i></span>
+        </label>
+      </article>
+    </template>
+
+    <script src="module-settings.js"></script>
+    <script src="modules.js"></script>
+  </body>
+</html>

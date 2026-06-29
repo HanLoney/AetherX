@@ -1,7 +1,11 @@
 (function exposeToolRegistry(global) {
   class ToolRegistry {
-    constructor() {
+    constructor(options = {}) {
       this.tools = new Map();
+      this.isEnabled =
+        typeof options.isEnabled === "function"
+          ? options.isEnabled
+          : () => true;
     }
 
     register(definition) {
@@ -16,25 +20,32 @@
     }
 
     get(name) {
-      return this.tools.get(name);
+      const tool = this.tools.get(name);
+      return tool && this.isEnabled(name, tool) ? tool : undefined;
     }
 
     modelTools() {
-      return [...this.tools.values()].map((tool) => ({
+      return [...this.tools.values()]
+        .filter((tool) => this.isEnabled(tool.name, tool))
+        .map((tool) => ({
         type: "function",
         function: {
           name: tool.name,
           description: tool.description,
           parameters: tool.inputSchema
         }
-      }));
+        }));
     }
 
     async call(name, rawInput) {
-      const tool = this.get(name);
-      if (!tool) {
+      const registeredTool = this.tools.get(name);
+      if (!registeredTool) {
         return this.failure("TOOL_NOT_FOUND", `未注册工具：${name}`);
       }
+      if (!this.isEnabled(name, registeredTool)) {
+        return this.failure("MODULE_DISABLED", `工具所属模块已停用：${name}`);
+      }
+      const tool = registeredTool;
 
       let input = rawInput;
       try {

@@ -1,0 +1,59 @@
+const moduleGrid = document.querySelector("#moduleGrid");
+const template = document.querySelector("#moduleTemplate");
+const todoModuleBtn = document.querySelector("#todoModuleBtn");
+
+function renderModules() {
+  const modules = window.XuanModules.snapshot();
+  moduleGrid.replaceChildren();
+
+  modules.forEach((module) => {
+    const card = template.content.firstElementChild.cloneNode(true);
+    card.dataset.moduleId = module.id;
+    card.classList.toggle("disabled", !module.enabled);
+
+    const icon = card.querySelector(".module-icon");
+    icon.textContent = module.icon;
+    icon.classList.add(module.color);
+    card.querySelector(".module-title strong").textContent = module.name;
+    card.querySelector(".module-title .core-badge").classList.toggle(
+      "hidden",
+      !module.core
+    );
+    card.querySelector(".module-copy p").textContent = module.description;
+    card.querySelector(".module-meta").textContent = module.tools
+      ? `${module.tools} 个 AI 工具`
+      : "AI 核心能力";
+
+    const input = card.querySelector("input");
+    input.checked = module.enabled;
+    input.disabled = module.core;
+    input.setAttribute("aria-label", `${module.enabled ? "停用" : "启用"}${module.name}`);
+    input.addEventListener("change", () => {
+      window.XuanModules.setEnabled(module.id, input.checked);
+      renderModules();
+    });
+    moduleGrid.append(card);
+  });
+
+  const enabled = modules.filter((module) => module.enabled);
+  const tools = enabled.reduce((sum, module) => sum + module.tools, 0);
+  document.querySelector("#enabledCount").textContent = String(enabled.length);
+  document.querySelector("#toolCount").textContent = `${tools} 个 AI 工具可用`;
+  todoModuleBtn.classList.toggle(
+    "hidden",
+    !window.XuanModules.isEnabled("todo")
+  );
+}
+
+document.querySelector("#homeBtn").addEventListener("click", () => {
+  window.location.href = "home.html";
+});
+todoModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("todo")) window.location.href = "index.html";
+});
+document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
+document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
+document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
+window.addEventListener("xuan:modules-changed", renderModules);
+
+renderModules();
