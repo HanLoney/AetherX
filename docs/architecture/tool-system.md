@@ -76,6 +76,10 @@ interface ToolResult {
 
 每次请求保留完整的 assistant `tool_calls` 与对应的 `tool_call_id`，保证 OpenAI 兼容协议的消息关联正确。
 
+兼容层同时识别旧版 `function_call`、数组文本和部分兼容端点的文本字段。
+若端点明确不支持工具，客户端会移除 `tools` 重试一次普通对话，并明确告知
+用户本轮不能读取或修改本地模块。
+
 ## 安全约束
 
 - API Key 不进入工具参数、工具结果或聊天记录。

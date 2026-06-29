@@ -2,6 +2,13 @@ const SYSTEM_PROMPT =
   "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。需要读取信息时主动调用工具；需要写入或删除时先发起工具调用，客户端会向用户确认。只有收到 ok=true 的工具结果后才能声称操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
 const MAX_TOOL_ROUNDS = 6;
 
+class EmptyCompletionError extends Error {
+  constructor(message = "接口已响应，但没有返回文本或工具调用") {
+    super(message);
+    this.name = "EmptyCompletionError";
+  }
+}
+
 const state = {
   config: null,
   draft: null,
@@ -74,16 +81,77 @@ function extractResponse(result) {
         `请求失败（HTTP ${result?.status || "未知"}）`
     );
   }
-  const content = result.data?.choices?.[0]?.message?.content;
-  if (typeof content === "string" && content.trim()) return content.trim();
+  const content = extractTextContent(result.data);
+  if (content) return content;
+  throw new Error("接口已响应，但没有返回可读取的文本");
+}
+
+function extractTextContent(data) {
+  const choice = data?.choices?.[0];
+  const message = choice?.message || choice?.delta || {};
+  const content = message.content;
+  if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
-    const text = content
-      .map((part) => (part?.type === "text" ? part.text || "" : ""))
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (typeof part?.text === "string") return part.text;
+        if (typeof part?.text?.value === "string") return part.text.value;
+        if (typeof part?.content === "string") return part.content;
+        return "";
+      })
       .join("")
       .trim();
-    if (text) return text;
   }
-  throw new Error("接口已响应，但没有返回可读取的文本");
+  if (content && typeof content === "object") {
+    if (typeof content.text === "string") return content.text.trim();
+    if (typeof content.value === "string") return content.value.trim();
+  }
+  if (typeof choice?.text === "string") return choice.text.trim();
+  if (typeof data?.output_text === "string") return data.output_text.trim();
+  return "";
+}
+
+function extractToolCalls(message) {
+  let calls = message?.tool_calls;
+  if (typeof calls === "string") {
+    try {
+      calls = JSON.parse(calls);
+    } catch {
+      calls = [];
+    }
+  }
+  if (Array.isArray(calls)) {
+    return calls
+      .filter((call) => call?.function?.name)
+      .map((call, index) => ({
+        id: String(call.id || `tool-call-${Date.now()}-${index}`),
+        type: "function",
+        function: {
+          name: String(call.function.name),
+          arguments:
+            typeof call.function.arguments === "string"
+              ? call.function.arguments
+              : JSON.stringify(call.function.arguments || {})
+        }
+      }));
+  }
+  if (message?.function_call?.name) {
+    return [
+      {
+        id: `legacy-call-${Date.now()}`,
+        type: "function",
+        function: {
+          name: String(message.function_call.name),
+          arguments:
+            typeof message.function_call.arguments === "string"
+              ? message.function_call.arguments
+              : JSON.stringify(message.function_call.arguments || {})
+        }
+      }
+    ];
+  }
+  return [];
 }
 
 function extractCompletion(result) {
@@ -94,30 +162,33 @@ function extractCompletion(result) {
         `请求失败（HTTP ${result?.status || "未知"}）`
     );
   }
-  const message = result.data?.choices?.[0]?.message;
-  if (!message) throw new Error("接口已响应，但没有返回消息");
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-  let content = "";
-  if (typeof message.content === "string") {
-    content = message.content.trim();
-  } else if (Array.isArray(message.content)) {
-    content = message.content
-      .map((part) => (part?.type === "text" ? part.text || "" : ""))
-      .join("")
-      .trim();
-  }
+  const choice = result.data?.choices?.[0];
+  const message = choice?.message || choice?.delta || {};
+  const toolCalls = extractToolCalls(message);
+  const content = extractTextContent(result.data);
   if (!content && !toolCalls.length) {
-    throw new Error("接口已响应，但没有返回文本或工具调用");
+    if (choice?.finish_reason === "content_filter") {
+      throw new Error("模型响应被内容安全策略拦截");
+    }
+    throw new EmptyCompletionError();
   }
   return {
     content,
     toolCalls,
     assistantMessage: {
       role: "assistant",
-      content: message.content ?? null,
+      content: content || null,
       ...(toolCalls.length ? { tool_calls: toolCalls } : {})
     }
   };
+}
+
+function isToolCompatibilityError(error) {
+  if (error instanceof EmptyCompletionError) return true;
+  const message = String(error?.message || "");
+  return /(?:tools?|tool_choice|function.?call|函数调用|工具调用).*(?:unsupported|not support|invalid|不支持|无效)/i.test(
+    message
+  );
 }
 
 function toolSummary(tool, rawArguments) {
@@ -140,7 +211,7 @@ async function approveToolCall(tool, call) {
 
 async function runAgentLoop() {
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const result = await window.desktop.requestAI({
+    const request = {
       ...state.config,
       messages: [
         {
@@ -150,8 +221,34 @@ async function runAgentLoop() {
         ...state.modelMessages
       ],
       tools: toolRegistry.modelTools()
-    });
-    const completion = extractCompletion(result);
+    };
+    let completion;
+    try {
+      completion = extractCompletion(await window.desktop.requestAI(request));
+    } catch (error) {
+      if (!request.tools.length || !isToolCompatibilityError(error)) {
+        throw error;
+      }
+      const fallbackResult = await window.desktop.requestAI({
+        ...request,
+        messages: [
+          {
+            role: "system",
+            content:
+              `${SYSTEM_PROMPT}\n当前端点没有返回工具调用能力。请直接回答用户，` +
+              "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
+          },
+          ...state.modelMessages
+        ],
+        tools: []
+      });
+      const fallback = extractCompletion(fallbackResult);
+      if (!fallback.content || fallback.toolCalls.length) {
+        throw new Error("当前模型无法完成普通对话，请更换支持 Chat Completions 的模型");
+      }
+      state.modelMessages.push(fallback.assistantMessage);
+      return `⚠ 当前模型未返回工具调用，本次已降级为普通对话。\n\n${fallback.content}`;
+    }
     state.modelMessages.push(completion.assistantMessage);
     if (!completion.toolCalls.length) return completion.content;
 
