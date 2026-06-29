@@ -32,6 +32,7 @@
       "tool-registry.js",
       "todo-tools.js",
       "module-settings.js",
+      "markdown-renderer.js",
       "modules.html",
       "modules.css",
       "modules.js",

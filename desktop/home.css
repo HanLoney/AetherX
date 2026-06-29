@@ -462,6 +462,104 @@ button { color: inherit; cursor: pointer; }
 
 .message-bubble.error { color: #b95f70; background: rgba(255, 238, 242, .86); }
 
+.markdown-body { white-space: normal; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p { margin: 0 0 10px; }
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 17px 0 8px;
+  color: #444052;
+  line-height: 1.35;
+}
+.markdown-body h1 { font-size: 18px; }
+.markdown-body h2 { font-size: 16px; }
+.markdown-body h3 { font-size: 14px; }
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { font-size: 12px; }
+.markdown-body strong { color: #4a4558; font-weight: 700; }
+.markdown-body em { color: #716a7e; }
+.markdown-body s { opacity: .68; }
+.markdown-body hr {
+  height: 1px;
+  margin: 15px 0;
+  border: 0;
+  background: linear-gradient(90deg, rgba(126, 169, 220, .22), rgba(235, 160, 191, .18));
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 7px 0 11px;
+  padding-left: 21px;
+}
+.markdown-body li { margin: 4px 0; padding-left: 2px; }
+.markdown-body blockquote {
+  margin: 10px 0;
+  padding: 7px 11px;
+  color: #756e80;
+  border-left: 3px solid rgba(117, 174, 224, .48);
+  border-radius: 0 8px 8px 0;
+  background: rgba(226, 239, 250, .42);
+}
+.markdown-body code {
+  padding: 2px 5px;
+  color: #b35f80;
+  border-radius: 5px;
+  background: rgba(235, 160, 191, .11);
+  font: 10px/1.5 Consolas, "Cascadia Code", monospace;
+}
+.markdown-body > pre {
+  margin: 10px 0;
+  overflow: auto;
+  padding: 11px 12px;
+  border: 1px solid rgba(119, 113, 144, .12);
+  border-radius: 10px;
+  background: #f5f4f8;
+}
+.markdown-body > pre code {
+  padding: 0;
+  color: #5c5668;
+  background: transparent;
+  white-space: pre;
+}
+.markdown-table-wrap {
+  max-width: 100%;
+  margin: 10px 0 13px;
+  overflow-x: auto;
+  border: 1px solid rgba(119, 113, 144, .13);
+  border-radius: 10px;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.markdown-body th,
+.markdown-body td {
+  padding: 7px 9px;
+  border-right: 1px solid rgba(119, 113, 144, .1);
+  border-bottom: 1px solid rgba(119, 113, 144, .1);
+}
+.markdown-body th:last-child,
+.markdown-body td:last-child { border-right: 0; }
+.markdown-body tbody tr:last-child td { border-bottom: 0; }
+.markdown-body th {
+  color: #5b5668;
+  background: rgba(229, 238, 249, .58);
+  font-weight: 700;
+}
+.markdown-body tbody tr:nth-child(even) { background: rgba(248, 247, 251, .7); }
+.markdown-link {
+  color: #628ab4;
+  border-bottom: 1px dashed rgba(98, 138, 180, .42);
+  cursor: help;
+}
+
 .message-row.tool { padding-left: 40px; }
 .tool-activity {
   width: min(520px, 84%);

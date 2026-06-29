@@ -590,7 +590,11 @@ function renderMessages() {
     }
     const bubble = document.createElement("div");
     bubble.className = `message-bubble${message.error ? " error" : ""}`;
-    bubble.textContent = message.content;
+    if (message.role === "assistant" && !message.error) {
+      window.XuanMarkdown.render(bubble, message.content);
+    } else {
+      bubble.textContent = message.content;
+    }
     row.append(bubble);
     elements.messageList.append(row);
   });
