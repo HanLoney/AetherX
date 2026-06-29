@@ -204,12 +204,71 @@ function toolSummary(tool, rawArguments) {
   return `${tool.risk === "destructive" ? "此操作不可撤销。\n" : ""}${tool.title}\n${lines.join("\n")}`;
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = canonicalize(value[key]);
+        return result;
+      }, {});
+  }
+  return value;
+}
+
+function toolCallSignature(call) {
+  const name = String(call.function?.name || "");
+  const rawArguments = call.function?.arguments || "{}";
+  try {
+    return `${name}:${JSON.stringify(canonicalize(JSON.parse(rawArguments)))}`;
+  } catch {
+    return `${name}:${rawArguments}`;
+  }
+}
+
 async function approveToolCall(tool, call) {
   if (tool.risk === "read") return true;
   return window.confirm(`小玄请求执行以下操作：\n\n${toolSummary(tool, call.function?.arguments)}\n\n是否允许？`);
 }
 
+async function finalizeToolRun(summaries, reason) {
+  const localSummary =
+    summaries.slice(-4).join("\n") || "工具调用已经停止，但没有产生可用结果。";
+  try {
+    const result = await window.desktop.requestAI({
+      ...state.config,
+      messages: [
+        {
+          role: "system",
+          content:
+            `${SYSTEM_PROMPT}\n工具阶段已经结束，原因：${reason}。` +
+            "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
+        },
+        ...state.modelMessages
+      ],
+      tools: []
+    });
+    const completion = extractCompletion(result);
+    if (completion.content) {
+      state.modelMessages.push({
+        role: "assistant",
+        content: completion.content
+      });
+      return completion.content;
+    }
+  } catch {
+    // 模型无法收口时使用已执行工具的可信结果，避免再次进入循环。
+  }
+  const content = `工具阶段已结束，结果如下：\n${localSummary}`;
+  state.modelMessages.push({ role: "assistant", content });
+  return content;
+}
+
 async function runAgentLoop() {
+  const seenCalls = new Map();
+  const summaries = [];
+  let lastCallSignature = "";
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const request = {
       ...state.config,
@@ -252,10 +311,23 @@ async function runAgentLoop() {
     state.modelMessages.push(completion.assistantMessage);
     if (!completion.toolCalls.length) return completion.content;
 
+    let repeatedCall = false;
     for (const call of completion.toolCalls) {
       const tool = toolRegistry.get(call.function?.name);
       let toolResult;
-      if (!tool) {
+      const signature = toolCallSignature(call);
+      const shouldReuse =
+        seenCalls.has(signature) &&
+        (tool?.risk !== "read" || lastCallSignature === signature);
+      if (shouldReuse) {
+        const previous = seenCalls.get(signature);
+        toolResult = {
+          ...previous,
+          content: `检测到重复调用，未再次执行。${previous.content}`,
+          repeated: true
+        };
+        repeatedCall = true;
+      } else if (!tool) {
         toolResult = toolRegistry.failure(
           "TOOL_NOT_FOUND",
           `未注册工具：${call.function?.name || "未知"}`
@@ -269,14 +341,20 @@ async function runAgentLoop() {
           call.function?.arguments
         );
       }
+      if (!shouldReuse) seenCalls.set(signature, toolResult);
+      lastCallSignature = signature;
+      summaries.push(toolResult.content);
       state.modelMessages.push({
         role: "tool",
         tool_call_id: call.id,
         content: JSON.stringify(toolResult)
       });
     }
+    if (repeatedCall) {
+      return finalizeToolRun(summaries, "模型重复请求了相同工具");
+    }
   }
-  throw new Error("工具调用轮次过多，请把任务拆小后重试");
+  return finalizeToolRun(summaries, `已达到 ${MAX_TOOL_ROUNDS} 轮安全上限`);
 }
 
 function renderProviderGrid() {
