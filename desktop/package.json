@@ -1,7 +1,7 @@
 {
-  "name": "xuan-todo",
+  "name": "xuanai-desktop",
   "version": "1.2.4",
-  "description": "A calm pink-blue desktop calendar and todo list",
+  "description": "XuanAI modular personal assistant desktop client",
   "main": "main.js",
   "author": "Xuanxiaotech",
   "license": "MIT",
@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.xuanxiaotech.todo",
-  "productName": "小玄日历",
+  "productName": "XuanAI",
     "asar": true,
     "directories": {
       "output": "dist"
@@ -25,6 +25,10 @@
     "files": [
       "main.js",
       "preload.js",
+      "home.html",
+      "home.css",
+      "home.js",
+      "ai-providers.js",
       "index.html",
       "styles.css",
       "renderer.js",
@@ -48,7 +52,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "小玄日历"
+      "shortcutName": "XuanAI"
     }
   }
 }

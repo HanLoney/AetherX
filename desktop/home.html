@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>XuanAI</title>
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">XuanAI</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">玄</div>
+          <div>
+            <strong>XuanAI</strong>
+            <span>你的智能生活中枢</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active"><i>✦</i>小玄 AI</button>
+          <button id="todoModuleBtn" class="nav-item"><i>✓</i>日历待办</button>
+          <button class="nav-item disabled"><i>◫</i>更多模块 <small>即将到来</small></button>
+        </nav>
+
+        <button id="providerCard" class="provider-card">
+          <span id="providerLogo" class="provider-logo">OA</span>
+          <span class="provider-info">
+            <strong id="providerName">OpenAI</strong>
+            <small id="providerModel">gpt-5.4-mini</small>
+          </span>
+          <span class="chevron">›</span>
+        </button>
+      </aside>
+
+      <main class="main">
+        <section class="topbar">
+          <div>
+            <p>AI WORKSPACE</p>
+            <h1>和小玄聊聊</h1>
+          </div>
+          <div class="top-actions">
+            <span id="statusPill" class="status-pill idle">
+              <i></i><span id="statusLabel">尚未配置</span>
+            </span>
+            <button id="clearChatBtn" class="icon-button" title="清空对话">↺</button>
+            <button id="settingsBtn" class="settings-button">⚙ 接入设置</button>
+          </div>
+        </section>
+
+        <section id="conversation" class="conversation">
+          <div id="welcome" class="welcome">
+            <div class="xuan-orb">
+              <div class="orb-core">玄</div>
+              <i class="orb-ring ring-one"></i>
+              <i class="orb-ring ring-two"></i>
+            </div>
+            <h2>嗨，洛尼。今天想一起做什么？</h2>
+            <p>接入一个兼容 OpenAI 协议的模型，小玄就能成为所有模块的大脑。</p>
+
+            <button id="setupBanner" class="setup-banner">
+              <span>
+                <strong>先连接一个 AI 服务</strong>
+                <small>已预设多个厂商，也支持自定义端点</small>
+              </span>
+              <b>去配置 ›</b>
+            </button>
+
+            <div class="suggestions">
+              <button class="suggestion" data-prompt="帮我规划一下今天最重要的三件事">
+                <i class="pink">☼</i>
+                <span><strong>规划今天</strong><small>整理优先级和行动步骤</small></span>
+              </button>
+              <button class="suggestion" data-prompt="看看我今天的待办，并给我安排建议">
+                <i class="blue">✓</i>
+                <span><strong>管理待办</strong><small>让 AI 调用日历模块</small></span>
+              </button>
+            </div>
+          </div>
+          <div id="messageList" class="message-list"></div>
+        </section>
+
+        <section class="composer-wrap">
+          <div class="composer">
+            <textarea id="messageInput" rows="1" maxlength="4000" placeholder="给小玄发消息…"></textarea>
+            <button id="sendBtn" class="send-button" disabled>↑</button>
+          </div>
+          <small id="composerTip">当前使用 OpenAI · gpt-5.4-mini</small>
+        </section>
+      </main>
+    </div>
+
+    <div id="settingsMask" class="modal-mask hidden">
+      <section class="settings-panel">
+        <header class="settings-head">
+          <div>
+            <p>OPENAI COMPATIBLE</p>
+            <h2>接入 AI 服务</h2>
+            <span>选择厂商预设，或填写任意兼容 OpenAI Chat Completions 的端点。</span>
+          </div>
+          <button id="closeSettingsBtn" class="close-button">×</button>
+        </header>
+
+        <section class="settings-section">
+          <h3>选择服务商</h3>
+          <div id="providerGrid" class="provider-grid"></div>
+        </section>
+
+        <section class="settings-section form-grid">
+          <label class="field endpoint-field">
+            <span>API 端点</span>
+            <input id="baseUrlInput" placeholder="https://api.example.com/v1" />
+            <small>可填写 Base URL，也可直接填写完整的 /chat/completions 地址</small>
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <div class="secret-input">
+              <input id="apiKeyInput" type="password" placeholder="sk-..." />
+              <button id="showKeyBtn" type="button">显示</button>
+            </div>
+            <small id="keyHelp">密钥使用系统安全存储，不会写入代码仓库</small>
+          </label>
+          <label class="field">
+            <span>模型名称</span>
+            <input id="modelInput" placeholder="例如：gpt-5.4-mini" />
+          </label>
+        </section>
+
+        <div id="testResult" class="test-result hidden"><i></i><span></span></div>
+
+        <div class="security-note">
+          <strong>说明</strong>
+          <span>“测试连接”会向当前模型发送一条极短消息，可能产生少量 Token。桌面端请求由 Electron 主进程发出，不受浏览器跨域限制。</span>
+        </div>
+
+        <footer class="settings-actions">
+          <button id="cancelSettingsBtn" class="secondary-button">取消</button>
+          <button id="testConnectionBtn" class="test-button">测试连接</button>
+          <button id="saveConfigBtn" class="save-button">保存配置</button>
+        </footer>
+      </section>
+    </div>
+
+    <script src="ai-providers.js"></script>
+    <script src="home.js"></script>
+  </body>
+</html>

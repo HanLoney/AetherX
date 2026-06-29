@@ -312,6 +312,25 @@ body.has-custom-background .ambient { opacity: .35; }
   -webkit-app-region: drag;
 }
 
+.titlebar-home {
+  height: 32px;
+  margin-right: auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  color: #7c91ad;
+  background: rgba(255, 255, 255, .42);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-home:hover {
+  color: #5f789c;
+  background: rgba(255, 255, 255, .72);
+}
+
 .brand {
   display: flex;
   align-items: center;

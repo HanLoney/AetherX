@@ -595,6 +595,9 @@ backgroundBlurInput.addEventListener("input", () => {
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
+document.querySelector("#homeBtn").addEventListener("click", () => {
+  window.location.href = "home.html";
+});
 
 document.querySelector("#todayText").textContent = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
