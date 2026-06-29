@@ -3,6 +3,7 @@ dist/
 
 .agents/
 .codex/
+.hbuilderx/
 
 *.log
 .DS_Store

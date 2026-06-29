@@ -42,11 +42,9 @@ export function parseDateTime(dateValue: string, timeValue: string): Date {
 }
 
 export function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(date);
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${hour}:${minute}`;
 }
 
 export function formatShortDate(date: Date): string {
@@ -54,10 +52,18 @@ export function formatShortDate(date: Date): string {
 }
 
 export function formatLongToday(date: Date): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long"
-  }).format(date);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日${formatWeekday(date)}`;
+}
+
+export function formatWeekday(date: Date): string {
+  const labels = [
+    "星期日",
+    "星期一",
+    "星期二",
+    "星期三",
+    "星期四",
+    "星期五",
+    "星期六"
+  ];
+  return labels[date.getDay()];
 }

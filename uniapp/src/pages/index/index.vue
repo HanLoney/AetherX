@@ -14,6 +14,7 @@ import {
   formatLongToday,
   formatShortDate,
   formatTime,
+  formatWeekday,
   parseDateTime,
   sameDay,
   startOfDay,
@@ -173,9 +174,7 @@ const progress = computed(() => {
 const monthTitle = computed(
   () => `${visibleMonth.value.getFullYear()}年 ${visibleMonth.value.getMonth() + 1}月`
 );
-const selectedWeekday = computed(() =>
-  new Intl.DateTimeFormat("zh-CN", { weekday: "long" }).format(selectedDate.value)
-);
+const selectedWeekday = computed(() => formatWeekday(selectedDate.value));
 const selectedDateTitle = computed(
   () => `${selectedDate.value.getMonth() + 1}月${selectedDate.value.getDate()}日`
 );
