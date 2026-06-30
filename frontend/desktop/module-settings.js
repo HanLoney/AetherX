@@ -11,6 +11,15 @@
       tools: 0
     }),
     Object.freeze({
+      id: "memory",
+      name: "记忆中心",
+      description: "管理用户画像、生活偏好、长期记忆与信息来源。",
+      icon: "🧠",
+      color: "pink",
+      core: false,
+      tools: 0
+    }),
+    Object.freeze({
       id: "todo",
       name: "日历待办",
       description: "管理日程、待办、完成状态与跨日期安排。",

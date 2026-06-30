@@ -83,3 +83,10 @@ button { cursor: pointer; }
   .main { padding: 30px 28px; }
   .module-grid { grid-template-columns: 1fr; }
 }
+
+body.embedded { min-width: 0; min-height: 0; background: transparent; }
+body.embedded .titlebar,
+body.embedded .sidebar,
+body.embedded > .ambient { display: none; }
+body.embedded .shell { height: 100vh; }
+body.embedded .main { padding: 64px 34px 40px; }

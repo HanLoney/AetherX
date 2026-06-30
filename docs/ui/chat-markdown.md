@@ -1,6 +1,6 @@
 # 聊天 Markdown 渲染
 
-桌面端助手消息由 `desktop/markdown-renderer.js` 渲染，用户消息、错误消息和
+桌面端助手消息由 `frontend/desktop/markdown-renderer.js` 渲染，用户消息、错误消息和
 工具参数仍按纯文本显示。
 
 ## 支持格式

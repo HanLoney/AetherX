@@ -1,7 +1,7 @@
 # 模块开关
 
-桌面端模块中心位于 `desktop/modules.html`，模块清单与状态由
-`desktop/module-settings.js` 统一管理。
+桌面端模块中心位于 `frontend/desktop/modules.html`，模块清单与状态由
+`frontend/desktop/module-settings.js` 统一管理。
 
 ## 状态规则
 

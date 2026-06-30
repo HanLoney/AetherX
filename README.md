@@ -1,31 +1,52 @@
 # XuanAI
 
-XuanAI 是一个以 AI 为核心、持续扩展能力模块的多端个人智能助手。
+XuanAI 是一个以 AI 为核心、可持续扩展生活与工作能力的个人智能助手。
 
 ## 项目结构
 
 ```text
 XuanAI/
-├─ desktop/  # Electron 桌面端
-└─ uniapp/   # UniApp 多端客户端
+├─ frontend/
+│  ├─ desktop/       Electron 桌面客户端
+│  └─ uniapp/        UniApp 多端客户端
+├─ backend/          可独立部署的 Node.js 服务端
+└─ docs/             架构、模块与决策文档
 ```
 
-两个客户端目前都包含小玄日历与待办功能，后续会共同接入 XuanAI 的 AI 大脑、账号和同步服务。
+业务数据和 AI Provider 请求统一由后端管理；前端只负责界面、交互和设备能力。
 
-## 运行桌面端
+## 启动后端
 
 ```bash
-cd desktop
+cd backend
+npm start
+```
+
+默认地址为 `http://127.0.0.1:4318`。
+
+## 启动桌面端
+
+先启动后端，然后打开另一个终端：
+
+```bash
+cd frontend/desktop
 npm install
 npm start
 ```
 
-## 运行 UniApp H5
+如后端不在本机默认端口，通过 `XUANAI_SERVER_URL` 指定：
+
+```powershell
+$env:XUANAI_SERVER_URL = "https://api.example.com"
+npm start
+```
+
+## 启动 UniApp H5
 
 ```bash
-cd uniapp
+cd frontend/uniapp
 npm install
 npm run dev:h5
 ```
 
-App 调试与发行可使用 HBuilderX 打开 `uniapp` 目录。
+UniApp 目前仍保留原有本地 Todo Store，后续将接入同一套 `/api/v1` 接口。

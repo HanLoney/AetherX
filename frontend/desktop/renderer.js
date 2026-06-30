@@ -1,10 +1,26 @@
-const STORAGE_KEY = "xuan-todo-items-v1";
+if (new URLSearchParams(window.location.search).has("embedded")) {
+  document.body.classList.add("embedded");
+  if (!window.desktop && window.parent?.desktop) {
+    window.desktop = window.parent.desktop;
+  }
+}
+
+function navigateHome() {
+  if (document.body.classList.contains("embedded")) {
+    window.parent.postMessage({ type: "xuan:navigate", target: "chat" }, "*");
+  } else {
+    window.location.href = "home.html";
+  }
+}
+
 const APPEARANCE_KEY = "xuan-calendar-appearance-v1";
 const BACKGROUND_DB = "xuan-calendar-assets";
+const LEGACY_TODO_KEY = "xuan-todo-items-v1";
+const TODO_MIGRATION_KEY = "xuan-todo-server-migration-v1";
 
 const now = new Date();
 const state = {
-  todos: loadTodos(),
+  todos: [],
   selectedDate: startOfDay(now),
   visibleMonth: new Date(now.getFullYear(), now.getMonth(), 1),
   filter: "all",
@@ -158,9 +174,9 @@ async function restoreBackground() {
   }
 }
 
-function loadTodos() {
+function loadLegacyTodos() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const saved = [];
     if (!Array.isArray(saved)) return [];
     return saved.map(todo => {
       const fallbackStart = todo.createdAt || Date.now();
@@ -175,14 +191,64 @@ function loadTodos() {
   }
 }
 
-function persist() {
+function showLegacyPersistStatus() {
   saveStatus.classList.add("saving");
   saveStatus.lastChild.textContent = " 正在保存";
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.todos));
   window.setTimeout(() => {
     saveStatus.classList.remove("saving");
     saveStatus.lastChild.textContent = " 已实时保存到本机";
   }, 260);
+}
+
+async function refreshTodos() {
+  state.todos = await window.desktop.listTodos();
+}
+
+async function migrateLegacyTodos() {
+  if (localStorage.getItem(TODO_MIGRATION_KEY) === "done") return;
+  let legacyTodos = [];
+  try {
+    const value = JSON.parse(localStorage.getItem(LEGACY_TODO_KEY));
+    legacyTodos = Array.isArray(value) ? value : [];
+  } catch {
+    legacyTodos = [];
+  }
+
+  if (legacyTodos.length) {
+    const existing = await window.desktop.listTodos();
+    const signatures = new Set(
+      existing.map((todo) => `${todo.text}|${todo.startAt}|${todo.endAt}`)
+    );
+    for (const todo of legacyTodos) {
+      const startAt = Number(todo.startAt || todo.createdAt);
+      const endAt = Number(todo.endAt || startAt + 60 * 60 * 1000);
+      const signature = `${todo.text}|${startAt}|${endAt}`;
+      if (signatures.has(signature)) continue;
+      await window.desktop.createTodo({
+        text: todo.text,
+        startAt,
+        endAt,
+        completed: Boolean(todo.completed)
+      });
+      signatures.add(signature);
+    }
+  }
+  localStorage.setItem(TODO_MIGRATION_KEY, "done");
+}
+
+async function mutateTodos(operation) {
+  saveStatus.classList.add("saving");
+  saveStatus.lastChild.textContent = " 正在同步";
+  try {
+    await operation();
+    await refreshTodos();
+    saveStatus.lastChild.textContent = " 已同步到服务器";
+  } catch (error) {
+    saveStatus.lastChild.textContent = ` 同步失败：${error.message}`;
+    throw error;
+  } finally {
+    saveStatus.classList.remove("saving");
+  }
 }
 
 function startOfDay(date) {
@@ -361,10 +427,15 @@ function renderAgenda() {
     if (relation.isRunning) appendTag(tags, "进行中", "running");
     if (!todo.completed && new Date(todo.endAt) < new Date()) appendTag(tags, "已逾期", "overdue");
 
-    item.querySelector(".check-button").addEventListener("click", () => {
-      todo.completed = !todo.completed;
-      persist();
-      render();
+    item.querySelector(".check-button").addEventListener("click", async () => {
+      try {
+        await mutateTodos(() =>
+          window.desktop.updateTodo(todo.id, { completed: !todo.completed })
+        );
+        render();
+      } catch {
+        // 同步错误已经显示在状态栏中。
+      }
     });
     item.querySelector(".todo-main").addEventListener("click", () => openDialog(todo.id));
     item.querySelector(".edit-button").addEventListener("click", () => openDialog(todo.id));
@@ -423,7 +494,7 @@ function closeDialog() {
   dialog.close();
 }
 
-form.addEventListener("submit", event => {
+form.addEventListener("submit", async event => {
   event.preventDefault();
   const text = todoInput.value.trim();
   const start = new Date(startInput.value);
@@ -443,32 +514,39 @@ form.addEventListener("submit", event => {
   }
 
   const existing = state.todos.find(todo => todo.id === state.editingId);
-  if (existing) {
-    existing.text = text;
-    existing.startAt = start.getTime();
-    existing.endAt = end.getTime();
-  } else {
-    state.todos.push({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      text,
-      startAt: start.getTime(),
-      endAt: end.getTime(),
-      completed: false,
-      createdAt: Date.now()
-    });
+  try {
+    await mutateTodos(() =>
+      existing
+        ? window.desktop.updateTodo(existing.id, {
+            text,
+            startAt: start.toISOString(),
+            endAt: end.toISOString()
+          })
+        : window.desktop.createTodo({
+            text,
+            startAt: start.toISOString(),
+            endAt: end.toISOString()
+          })
+    );
+  } catch (error) {
+    formError.textContent = error.message;
+    return;
   }
 
   state.selectedDate = startOfDay(start);
   state.visibleMonth = new Date(start.getFullYear(), start.getMonth(), 1);
-  persist();
   closeDialog();
   render();
 });
 
-deleteTodoBtn.addEventListener("click", () => {
+deleteTodoBtn.addEventListener("click", async () => {
   if (!state.editingId) return;
-  state.todos = state.todos.filter(todo => todo.id !== state.editingId);
-  persist();
+  try {
+    await mutateTodos(() => window.desktop.deleteTodo(state.editingId));
+  } catch (error) {
+    formError.textContent = error.message;
+    return;
+  }
   closeDialog();
   render();
 });
@@ -512,10 +590,13 @@ document.querySelectorAll(".filter").forEach(button => {
   });
 });
 
-clearCompleted.addEventListener("click", () => {
-  state.todos = state.todos.filter(todo => !todo.completed);
-  persist();
-  render();
+clearCompleted.addEventListener("click", async () => {
+  try {
+    await mutateTodos(() => window.desktop.clearCompletedTodos());
+    render();
+  } catch {
+    // 同步错误已经显示在状态栏中。
+  }
 });
 
 dialog.addEventListener("click", event => {
@@ -596,7 +677,7 @@ document.querySelector("#minimizeBtn").addEventListener("click", () => window.de
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
 document.querySelector("#homeBtn").addEventListener("click", () => {
-  window.location.href = "home.html";
+  navigateHome();
 });
 
 document.querySelector("#todayText").textContent = new Intl.DateTimeFormat("zh-CN", {
@@ -608,4 +689,10 @@ document.querySelector("#todayText").textContent = new Intl.DateTimeFormat("zh-C
 
 applyAppearance();
 restoreBackground();
-render();
+migrateLegacyTodos()
+  .then(refreshTodos)
+  .then(render)
+  .catch((error) => {
+    saveStatus.lastChild.textContent = ` 无法连接服务器：${error.message}`;
+    render();
+  });
