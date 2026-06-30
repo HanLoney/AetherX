@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("desktop", {
   clearCompletedTodos: () => ipcRenderer.invoke("todos:clear-completed"),
   getProfile: () => ipcRenderer.invoke("profile:get"),
   saveProfile: (profile) => ipcRenderer.invoke("profile:save", profile),
+  updateProfile: (changes) => ipcRenderer.invoke("profile:update", changes),
   listPreferences: (filters) => ipcRenderer.invoke("preferences:list", filters),
   savePreference: (preference) =>
     ipcRenderer.invoke("preferences:save", preference),

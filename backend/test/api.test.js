@@ -97,12 +97,20 @@ test("profile and preferences are managed through independent APIs", async () =>
     const profile = await request(baseUrl, "PUT", "/api/v1/profile", {
       displayName: "洛尼",
       preferredName: "洛尼",
+      birthday: "11-14",
       occupation: "产品创造者",
       bio: "希望小玄能同时照顾工作和生活。",
       goals: ["保持健康", "持续创造"]
     });
     assert.equal(profile.payload.data.preferredName, "洛尼");
+    assert.equal(profile.payload.data.birthday, "11-14");
     assert.deepEqual(profile.payload.data.goals, ["保持健康", "持续创造"]);
+
+    const patched = await request(baseUrl, "PATCH", "/api/v1/profile", {
+      occupation: "独立开发者"
+    });
+    assert.equal(patched.payload.data.occupation, "独立开发者");
+    assert.equal(patched.payload.data.birthday, "11-14");
 
     await request(baseUrl, "PUT", "/api/v1/preferences", {
       category: "communication",
@@ -222,6 +230,7 @@ test("automatic extraction creates deduplicated candidates only", async () => {
                     type: "routine",
                     content: "洛尼喜欢在下午喝咖啡",
                     entities: ["洛尼", "咖啡"],
+                    evidence: "我一般下午会喝一杯咖啡",
                     confidence: 0.8,
                     importance: 0.5,
                     sensitivity: "normal"
@@ -231,6 +240,7 @@ test("automatic extraction creates deduplicated candidates only", async () => {
                     type: "routine",
                     content: "洛尼喜欢在下午喝咖啡。",
                     entities: ["洛尼", "咖啡"],
+                    evidence: "我一般下午会喝一杯咖啡",
                     confidence: 0.8,
                     importance: 0.5,
                     sensitivity: "normal"
@@ -297,7 +307,8 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
                   type: "routine",
                   content: "洛尼喜欢晚上散步",
                   entities: ["洛尼"],
-                  confidence: 0.8,
+                  evidence: "我喜欢晚上散步",
+                  confidence: 0.95,
                   importance: 0.5,
                   sensitivity: "normal"
                 },
@@ -306,7 +317,8 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
                   type: "fact",
                   content: "洛尼最近需要关注一项健康问题",
                   entities: ["洛尼"],
-                  confidence: 0.8,
+                  evidence: "最近还有一项健康问题需要关注",
+                  confidence: 0.95,
                   importance: 0.8,
                   sensitivity: "sensitive"
                 }
@@ -327,6 +339,131 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
   assert.equal(result.candidates.length, 1);
   assert.equal(result.candidates[0].status, "candidate");
   assert.equal(result.candidates[0].sensitivity, "sensitive");
+});
+
+test("multi-turn extraction routes explicit birthday to profile and ignores product feedback", async () => {
+  const profileChanges = [];
+  const stored = [];
+  const service = new MemoryIntelligenceService({
+    profileService: {
+      get: () => ({ goals: [] }),
+      patch: (_userId, changes) => {
+        profileChanges.push(changes);
+        return changes;
+      }
+    },
+    preferenceService: { list: () => [] },
+    memoryService: {
+      list: () => stored,
+      create: (_userId, memory) => {
+        const created = { id: String(stored.length + 1), ...memory };
+        stored.push(created);
+        return created;
+      }
+    },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  target: "profile",
+                  field: "birthday",
+                  value: "11-14",
+                  domain: "life",
+                  type: "fact",
+                  content: "洛尼的生日是11月14日",
+                  entities: ["洛尼"],
+                  evidence: "我的生日是11月14日",
+                  confidence: 0.98,
+                  importance: 0.9,
+                  sensitivity: "personal"
+                },
+                {
+                  target: "memory",
+                  field: null,
+                  value: "",
+                  domain: "life",
+                  type: "fact",
+                  content: "洛尼希望系统使用记忆功能",
+                  entities: ["洛尼"],
+                  evidence: "为什么是待办，不应该是记忆吗",
+                  confidence: 0.96,
+                  importance: 0.5,
+                  sensitivity: "normal"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    conversationMessages: [
+      { role: "user", content: "我的生日是11月14日" },
+      { role: "assistant", content: "我会记住的。" },
+      { role: "user", content: "为什么是待办，不应该是记忆吗" }
+    ]
+  });
+  assert.deepEqual(profileChanges, [{ birthday: "11-14" }]);
+  assert.equal(result.profileUpdates.length, 1);
+  assert.equal(result.profileUpdates[0].field, "birthday");
+  assert.equal(result.candidates.length, 0);
+  assert.equal(stored.length, 0);
+});
+
+test("questions cannot become profile facts even when the model proposes them", async () => {
+  let patched = false;
+  const service = new MemoryIntelligenceService({
+    profileService: {
+      get: () => ({ goals: [] }),
+      patch: () => {
+        patched = true;
+      }
+    },
+    preferenceService: { list: () => [] },
+    memoryService: { list: () => [], create: () => assert.fail("must not create") },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([{
+                target: "profile",
+                field: "displayName",
+                value: "洛尼",
+                domain: "life",
+                type: "fact",
+                content: "用户名叫洛尼",
+                entities: ["洛尼"],
+                evidence: "你怎么知道我叫洛尼",
+                confidence: 1,
+                importance: 0.8,
+                sensitivity: "personal"
+              }])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "你怎么知道我叫洛尼",
+    assistantMessage: "来自当前对话。"
+  });
+  assert.equal(patched, false);
+  assert.equal(result.profileUpdates.length, 0);
+  assert.equal(result.candidates.length, 0);
 });
 
 test("complete conversations persist display and model message streams", async () => {

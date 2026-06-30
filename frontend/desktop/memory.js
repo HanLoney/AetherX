@@ -21,6 +21,7 @@ const state = {
 };
 const $ = (selector) => document.querySelector(selector);
 const DOMAIN_LABELS = {
+  profile: "用户画像",
   life: "生活",
   relationship: "人际关系",
   health: "健康",
@@ -92,6 +93,7 @@ function renderProfile() {
   const profile = state.profile;
   $("#displayName").value = profile.displayName || "";
   $("#preferredName").value = profile.preferredName || "";
+  $("#birthday").value = profile.birthday || "";
   $("#occupation").value = profile.occupation || "";
   $("#bio").value = profile.bio || "";
   $("#goals").value = (profile.goals || []).join("\n");
@@ -322,6 +324,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
     state.profile = await window.desktop.saveProfile({
       displayName: $("#displayName").value,
       preferredName: $("#preferredName").value,
+      birthday: $("#birthday").value,
       occupation: $("#occupation").value,
       bio: $("#bio").value,
       goals: $("#goals").value.split("\n").map((item) => item.trim()).filter(Boolean)
@@ -329,6 +332,12 @@ $("#profileForm").addEventListener("submit", async (event) => {
     showNotice("用户画像已保存。");
   } catch (error) {
     showNotice(error.message, true);
+  }
+});
+
+window.addEventListener("message", (event) => {
+  if (event.data?.type === "xuan:refresh-memory") {
+    loadAll().catch((error) => showNotice(error.message, true));
   }
 });
 

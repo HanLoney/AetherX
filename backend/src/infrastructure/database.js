@@ -136,6 +136,9 @@ const MIGRATIONS = [
       auto_confirm INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     );
+  `,
+  `
+    ALTER TABLE user_profiles ADD COLUMN birthday TEXT NOT NULL DEFAULT '';
   `
 ];
 

@@ -17,15 +17,30 @@ class ProfileService {
     return this.repository.save(userId, {
       displayName: text(input.displayName, 100),
       preferredName: text(input.preferredName, 100),
+      birthday: birthday(input.birthday),
       bio: text(input.bio, 2000),
       occupation: text(input.occupation, 200),
       goals: goals.map((goal) => text(goal, 500)).filter(Boolean).slice(0, 30)
+    });
+  }
+
+  patch(userId, input) {
+    const current = this.repository.get(userId);
+    return this.save(userId, {
+      ...current,
+      ...input,
+      goals: input.goals === undefined ? current.goals : input.goals
     });
   }
 }
 
 function text(value, maxLength) {
   return String(value ?? "").trim().slice(0, maxLength);
+}
+
+function birthday(value) {
+  const result = String(value ?? "").trim();
+  return /^(\d{4}-)?\d{2}-\d{2}$/.test(result) ? result : "";
 }
 
 module.exports = { ProfileService };
