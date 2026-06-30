@@ -129,6 +129,13 @@ const MIGRATIONS = [
     ALTER TABLE messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_stream_position
       ON messages(conversation_id, stream_type, position);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS memory_settings (
+      user_id TEXT PRIMARY KEY,
+      auto_confirm INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
   `
 ];
 

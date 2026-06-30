@@ -33,6 +33,15 @@ const {
 const {
   MemoryIntelligenceService
 } = require("./modules/memories/memory-intelligence-service");
+const {
+  MemorySettingsRepository
+} = require("./modules/memories/memory-settings-repository");
+const {
+  MemorySettingsService
+} = require("./modules/memories/memory-settings-service");
+const {
+  registerMemorySettingsRoutes
+} = require("./modules/memories/memory-settings-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -48,6 +57,9 @@ function createApp(config) {
     new PreferenceRepository(database)
   );
   const memoryService = new MemoryService(new MemoryRepository(database));
+  const memorySettingsService = new MemorySettingsService(
+    new MemorySettingsRepository(database)
+  );
   const conversationService = new ConversationService(
     new ConversationRepository(database)
   );
@@ -55,6 +67,7 @@ function createApp(config) {
     profileService,
     preferenceService,
     memoryService,
+    memorySettingsService,
     configRepository: aiConfigRepository,
     providerClient: aiProviderClient
   });
@@ -66,6 +79,7 @@ function createApp(config) {
   registerAiRoutes(router, aiConfigRepository, aiProviderClient);
   registerProfileRoutes(router, profileService);
   registerPreferenceRoutes(router, preferenceService);
+  registerMemorySettingsRoutes(router, memorySettingsService);
   registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
   registerConversationRoutes(router, conversationService);
 

@@ -941,13 +941,17 @@ function renderMemoryActivity(row, message) {
   const head = document.createElement("div");
   head.className = "memory-activity-head";
   const title = document.createElement("strong");
-  title.textContent =
-    message.kind === "recall"
-      ? `🧠 本轮参考了 ${message.items.length} 条个人信息`
-      : `✨ 新发现 ${message.items.length} 条候选记忆`;
+  title.textContent = {
+    recall: `🧠 本轮参考了 ${message.items.length} 条个人信息`,
+    candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
+    confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`
+  }[message.kind];
   const open = document.createElement("button");
   open.type = "button";
-  open.textContent = message.kind === "recall" ? "查看记忆中心" : "去确认";
+  open.textContent =
+    message.kind === "candidate"
+      ? "去确认"
+      : "查看记忆中心";
   open.addEventListener("click", () => {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
   });
@@ -1117,16 +1121,32 @@ async function sendMessage() {
       .extractMemories({ userMessage: content, assistantMessage: response })
       .then((result) => {
         if (chatGeneration !== state.chatGeneration) return;
-        if (!result.candidates?.length) return;
-        state.messages.push(
-          createMemoryActivity(
-            "candidate",
-            result.candidates.map((candidate) => ({
-              content: candidate.content,
-              reason: "等待洛尼确认"
-            }))
-          )
-        );
+        if (result.autoConfirmed?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "confirmed",
+              result.autoConfirmed.map((memory) => ({
+                content: memory.content,
+                reason: "已自动确认"
+              }))
+            )
+          );
+        }
+        if (result.candidates?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "candidate",
+              result.candidates.map((candidate) => ({
+                content: candidate.content,
+                reason:
+                  candidate.sensitivity === "sensitive"
+                    ? "敏感记忆需手动确认"
+                    : "等待洛尼确认"
+              }))
+            )
+          );
+        }
+        if (!result.autoConfirmed?.length && !result.candidates?.length) return;
         renderMessages();
       })
       .catch(() => {

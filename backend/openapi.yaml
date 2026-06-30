@@ -121,6 +121,15 @@ paths:
       summary: 从一轮对话中自动提取候选记忆
       responses:
         "200": { description: 去重后的候选记忆列表 }
+  /memories/settings:
+    get:
+      summary: 获取记忆自动确认设置
+      responses:
+        "200": { description: 当前用户的记忆设置 }
+    put:
+      summary: 开启或关闭自动确认
+      responses:
+        "200": { description: 已保存的记忆设置 }
   /conversations:
     get:
       summary: 获取全部历史会话

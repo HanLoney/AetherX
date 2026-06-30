@@ -61,6 +61,19 @@
         </nav>
 
         <section id="memoriesView" class="tab-view">
+          <section class="auto-confirm-setting">
+            <div class="auto-confirm-icon">⚡</div>
+            <div>
+              <strong>自动确认新记忆</strong>
+              <span>开启后，普通与个人级记忆将直接参与召回；敏感记忆仍需手动确认。</span>
+            </div>
+            <small id="autoConfirmStatus">已关闭</small>
+            <label class="memory-switch">
+              <input id="autoConfirmMemory" type="checkbox" />
+              <span><i></i></span>
+            </label>
+          </section>
+
           <div class="memory-toolbar">
             <div class="search-field">
               <span>⌕</span>

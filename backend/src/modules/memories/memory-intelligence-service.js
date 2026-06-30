@@ -12,12 +12,14 @@ class MemoryIntelligenceService {
     profileService,
     preferenceService,
     memoryService,
+    memorySettingsService,
     configRepository,
     providerClient
   }) {
     this.profileService = profileService;
     this.preferenceService = preferenceService;
     this.memoryService = memoryService;
+    this.memorySettingsService = memorySettingsService;
     this.configRepository = configRepository;
     this.providerClient = providerClient;
   }
@@ -112,6 +114,8 @@ class MemoryIntelligenceService {
     const extracted = parseJsonArray(content);
     const existing = this.memoryService.list(userId, {});
     const candidates = [];
+    const autoConfirmed = [];
+    const settings = this.memorySettingsService.get(userId);
 
     for (const candidate of extracted.slice(0, 5)) {
       if (!candidate || typeof candidate !== "object" || !candidate.content) continue;
@@ -119,16 +123,19 @@ class MemoryIntelligenceService {
         isNearDuplicate(memory.content, candidate.content)
       );
       if (duplicate) continue;
+      const shouldAutoConfirm =
+        settings.autoConfirm && candidate.sensitivity !== "sensitive";
       const created = this.memoryService.create(userId, {
         ...candidate,
         source: "inferred",
-        status: "candidate",
+        status: shouldAutoConfirm ? "active" : "candidate",
         sourceExcerpt: userMessage.slice(0, 500)
       });
       existing.push(created);
-      candidates.push(created);
+      if (shouldAutoConfirm) autoConfirmed.push(created);
+      else candidates.push(created);
     }
-    return { candidates };
+    return { candidates, autoConfirmed };
   }
 }
 

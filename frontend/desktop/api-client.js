@@ -172,6 +172,14 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/memories/extract", payload);
   }
 
+  getMemorySettings() {
+    return this.request("GET", "/api/v1/memories/settings");
+  }
+
+  saveMemorySettings(settings) {
+    return this.request("PUT", "/api/v1/memories/settings", settings);
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }

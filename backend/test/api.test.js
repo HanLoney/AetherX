@@ -207,6 +207,7 @@ test("automatic extraction creates deduplicated candidates only", async () => {
         return created;
       }
     },
+    memorySettingsService: { get: () => ({ autoConfirm: false }) },
     configRepository: { getCredentials: () => ({ apiKey: "test" }) },
     providerClient: {
       chat: async () => ({
@@ -251,6 +252,81 @@ test("automatic extraction creates deduplicated candidates only", async () => {
   assert.equal(result.candidates[0].status, "candidate");
   assert.equal(result.candidates[0].source, "inferred");
   assert.equal(result.candidates[0].sourceExcerpt, "我一般下午会喝一杯咖啡");
+});
+
+test("memory auto-confirm setting persists and never confirms sensitive memories", async () => {
+  await withServer(async (baseUrl) => {
+    const defaults = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/memories/settings"
+    );
+    assert.equal(defaults.payload.data.autoConfirm, false);
+    const saved = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/memories/settings",
+      { autoConfirm: true }
+    );
+    assert.equal(saved.payload.data.autoConfirm, true);
+  });
+
+  const stored = [];
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: {
+      list: () => stored,
+      create: (_userId, memory) => {
+        const created = { id: String(stored.length + 1), ...memory };
+        stored.push(created);
+        return created;
+      }
+    },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  domain: "life",
+                  type: "routine",
+                  content: "洛尼喜欢晚上散步",
+                  entities: ["洛尼"],
+                  confidence: 0.8,
+                  importance: 0.5,
+                  sensitivity: "normal"
+                },
+                {
+                  domain: "health",
+                  type: "fact",
+                  content: "洛尼最近需要关注一项健康问题",
+                  entities: ["洛尼"],
+                  confidence: 0.8,
+                  importance: 0.8,
+                  sensitivity: "sensitive"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "我喜欢晚上散步，最近还有一项健康问题需要关注",
+    assistantMessage: "我记下了"
+  });
+  assert.equal(result.autoConfirmed.length, 1);
+  assert.equal(result.autoConfirmed[0].status, "active");
+  assert.equal(result.candidates.length, 1);
+  assert.equal(result.candidates[0].status, "candidate");
+  assert.equal(result.candidates[0].sensitivity, "sensitive");
 });
 
 test("complete conversations persist display and model message streams", async () => {
