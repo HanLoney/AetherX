@@ -40,65 +40,116 @@
 
       <main class="memory-main">
         <section class="memory-topbar">
-          <div><p>PERSONAL MEMORY</p><h1>记忆中心</h1><span>管理小玄对洛尼的了解，以及这些信息从何而来。</span></div>
-          <div class="stats"><strong id="memoryCount">0</strong><span>条已确认记忆</span></div>
+          <div>
+            <p>PERSONAL MEMORY</p>
+            <h1>记忆中心</h1>
+            <span>清楚掌握小玄记住的每一件事。</span>
+          </div>
+          <div class="memory-stats">
+            <div><strong id="totalMemoryCount">0</strong><span>全部</span></div>
+            <div><strong id="memoryCount">0</strong><span>已确认</span></div>
+            <div class="candidate-stat"><strong id="candidateMemoryCount">0</strong><span>待确认</span></div>
+          </div>
         </section>
 
         <div id="notice" class="notice hidden"></div>
 
-        <section class="panel">
-          <header><div><h2>我的画像</h2><p>稳定、明确并且由洛尼亲自维护的信息。</p></div></header>
-          <form id="profileForm" class="profile-grid">
-            <label>名字<input id="displayName" maxlength="100" /></label>
-            <label>希望小玄怎么称呼<input id="preferredName" maxlength="100" /></label>
-            <label>职业 / 当前身份<input id="occupation" maxlength="200" /></label>
-            <label class="wide">关于我<textarea id="bio" maxlength="2000"></textarea></label>
-            <label class="wide">长期目标（每行一个）<textarea id="goals"></textarea></label>
-            <div class="wide actions"><button class="primary" type="submit">保存画像</button></div>
-          </form>
-        </section>
+        <nav class="memory-tabs" aria-label="记忆中心导航">
+          <button class="memory-tab active" data-view="memories">全部记忆</button>
+          <button class="memory-tab" data-view="profile">用户画像</button>
+          <button class="memory-tab" data-view="preferences">偏好与习惯</button>
+        </nav>
 
-        <section class="panel">
-          <header><div><h2>偏好与习惯</h2><p>明确告知与 AI 推测会被清楚区分。</p></div></header>
-          <form id="preferenceForm" class="inline-form">
-            <select id="preferenceCategory">
-              <option value="communication">沟通</option><option value="life">生活</option>
-              <option value="food">饮食</option><option value="work">工作</option>
-              <option value="entertainment">娱乐</option><option value="other">其他</option>
-            </select>
-            <input id="preferenceKey" placeholder="偏好名称" required />
-            <input id="preferenceValue" placeholder="具体内容" required />
-            <select id="preferenceSensitivity">
-              <option value="normal">普通</option><option value="personal">个人</option>
-              <option value="sensitive">敏感</option>
-            </select>
-            <button class="primary" type="submit">添加偏好</button>
-          </form>
-          <div id="preferenceList" class="chip-list"></div>
-        </section>
-
-        <section class="panel">
-          <header class="memory-head">
-            <div><h2>长期记忆</h2><p>生活、关系、经历、计划与工作都可以被妥善记录。</p></div>
-            <div class="search"><input id="memorySearch" placeholder="搜索记忆、人物或事件" /><select id="statusFilter"><option value="">全部状态</option><option value="active">已确认</option><option value="candidate">待确认</option><option value="archived">已归档</option></select></div>
-          </header>
-          <form id="memoryForm" class="memory-form">
-            <input id="memoryId" type="hidden" />
-            <textarea id="memoryContent" placeholder="小玄应该记住什么？" required></textarea>
-            <div class="form-row">
-              <select id="memoryDomain">
-                <option value="life">生活</option><option value="relationship">人际关系</option>
-                <option value="health">健康</option><option value="work">工作</option>
-                <option value="learning">学习</option><option value="emotion">情绪关怀</option>
-              </select>
-              <select id="memoryType"><option value="fact">事实</option><option value="episode">经历</option><option value="decision">决定</option><option value="plan">计划</option><option value="routine">习惯</option></select>
-              <select id="memorySensitivity"><option value="normal">普通</option><option value="personal">个人</option><option value="sensitive">敏感</option></select>
-              <input id="memoryEntities" placeholder="相关人物/地点，用逗号分隔" />
-              <button class="primary" type="submit"><span id="memorySubmitText">记住这件事</span></button>
-              <button id="cancelMemoryEdit" class="secondary hidden" type="button">取消编辑</button>
+        <section id="memoriesView" class="tab-view">
+          <div class="memory-toolbar">
+            <div class="search-field">
+              <span>⌕</span>
+              <input id="memorySearch" placeholder="搜索记忆、人物或事件" />
             </div>
-          </form>
-          <div id="memoryList" class="memory-list"></div>
+            <select id="domainFilter">
+              <option value="">全部领域</option>
+              <option value="life">生活</option>
+              <option value="relationship">人际关系</option>
+              <option value="health">健康</option>
+              <option value="work">工作</option>
+              <option value="learning">学习</option>
+              <option value="emotion">情绪关怀</option>
+            </select>
+            <select id="statusFilter">
+              <option value="">全部状态</option>
+              <option value="active">已确认</option>
+              <option value="candidate">待确认</option>
+              <option value="archived">已归档</option>
+            </select>
+            <button id="addMemoryBtn" class="primary" type="button">＋ 新增记忆</button>
+          </div>
+
+          <section id="memoryEditor" class="memory-editor hidden">
+            <header>
+              <div><strong id="memoryEditorTitle">新增记忆</strong><span>这条信息会直接成为已确认记忆。</span></div>
+              <button id="closeMemoryEditor" type="button">×</button>
+            </header>
+            <form id="memoryForm">
+              <input id="memoryId" type="hidden" />
+              <textarea id="memoryContent" placeholder="小玄应该记住什么？" required></textarea>
+              <div class="form-row">
+                <select id="memoryDomain">
+                  <option value="life">生活</option><option value="relationship">人际关系</option>
+                  <option value="health">健康</option><option value="work">工作</option>
+                  <option value="learning">学习</option><option value="emotion">情绪关怀</option>
+                </select>
+                <select id="memoryType">
+                  <option value="fact">事实</option><option value="episode">经历</option>
+                  <option value="decision">决定</option><option value="plan">计划</option>
+                  <option value="routine">习惯</option>
+                </select>
+                <select id="memorySensitivity">
+                  <option value="normal">普通</option><option value="personal">个人</option>
+                  <option value="sensitive">敏感</option>
+                </select>
+                <input id="memoryEntities" placeholder="相关人物/地点，用逗号分隔" />
+                <button class="primary" type="submit"><span id="memorySubmitText">记住这件事</span></button>
+                <button id="cancelMemoryEdit" class="secondary" type="button">取消</button>
+              </div>
+            </form>
+          </section>
+
+          <div id="memoryList" class="memory-groups"></div>
+        </section>
+
+        <section id="profileView" class="tab-view hidden">
+          <section class="panel">
+            <header><div><h2>我的画像</h2><p>稳定、明确并且由洛尼亲自维护的信息。</p></div></header>
+            <form id="profileForm" class="profile-grid">
+              <label>名字<input id="displayName" maxlength="100" /></label>
+              <label>希望小玄怎么称呼<input id="preferredName" maxlength="100" /></label>
+              <label>职业 / 当前身份<input id="occupation" maxlength="200" /></label>
+              <label class="wide">关于我<textarea id="bio" maxlength="2000"></textarea></label>
+              <label class="wide">长期目标（每行一个）<textarea id="goals"></textarea></label>
+              <div class="wide actions"><button class="primary" type="submit">保存画像</button></div>
+            </form>
+          </section>
+        </section>
+
+        <section id="preferencesView" class="tab-view hidden">
+          <section class="panel">
+            <header><div><h2>偏好与习惯</h2><p>明确告知与 AI 推测会被清楚区分。</p></div></header>
+            <form id="preferenceForm" class="inline-form">
+              <select id="preferenceCategory">
+                <option value="communication">沟通</option><option value="life">生活</option>
+                <option value="food">饮食</option><option value="work">工作</option>
+                <option value="entertainment">娱乐</option><option value="other">其他</option>
+              </select>
+              <input id="preferenceKey" placeholder="偏好名称" required />
+              <input id="preferenceValue" placeholder="具体内容" required />
+              <select id="preferenceSensitivity">
+                <option value="normal">普通</option><option value="personal">个人</option>
+                <option value="sensitive">敏感</option>
+              </select>
+              <button class="primary" type="submit">添加偏好</button>
+            </form>
+            <div id="preferenceList" class="chip-list"></div>
+          </section>
         </section>
       </main>
     </div>

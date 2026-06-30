@@ -15,6 +15,26 @@ function navigate(target, fallback) {
 
 const state = { profile: null, preferences: [], memories: [] };
 const $ = (selector) => document.querySelector(selector);
+const DOMAIN_LABELS = {
+  life: "生活",
+  relationship: "人际关系",
+  health: "健康",
+  work: "工作",
+  learning: "学习",
+  emotion: "情绪关怀"
+};
+const TYPE_LABELS = {
+  fact: "事实",
+  episode: "经历",
+  decision: "决定",
+  plan: "计划",
+  routine: "习惯"
+};
+const STATUS_GROUPS = [
+  { status: "candidate", label: "待确认记忆", description: "需要洛尼确认后才会参与召回" },
+  { status: "active", label: "已确认记忆", description: "小玄会在相关场景中主动参考" },
+  { status: "archived", label: "已归档记忆", description: "保留记录，但不会参与召回" }
+];
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -25,7 +45,9 @@ function showNotice(message, error = false) {
 }
 
 function formatDate(value) {
-  return value ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(value) : "长期";
+  return value
+    ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(value)
+    : "长期有效";
 }
 
 async function loadAll() {
@@ -40,6 +62,15 @@ async function loadAll() {
   renderProfile();
   renderPreferences();
   renderMemories();
+}
+
+function switchView(view) {
+  document.querySelectorAll(".memory-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === view);
+  });
+  document.querySelectorAll(".tab-view").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.id !== `${view}View`);
+  });
 }
 
 function renderProfile() {
@@ -61,11 +92,13 @@ function renderPreferences() {
       typeof preference.value === "string"
         ? preference.value
         : JSON.stringify(preference.value);
-    chip.innerHTML = `<strong></strong><span></span><small></small>`;
+    chip.innerHTML = "<strong></strong><span></span><small></small>";
     chip.querySelector("strong").textContent = preference.key;
     chip.querySelector("span").textContent = value;
     chip.querySelector("small").textContent =
-      preference.source === "explicit" ? "明确告知" : `AI 推测 ${Math.round(preference.confidence * 100)}%`;
+      preference.source === "explicit"
+        ? "明确告知"
+        : `AI 推测 ${Math.round(preference.confidence * 100)}%`;
     const remove = document.createElement("button");
     remove.className = "icon-btn";
     remove.textContent = "×";
@@ -77,48 +110,110 @@ function renderPreferences() {
     chip.append(remove);
     list.append(chip);
   });
-  if (!state.preferences.length) list.innerHTML = '<div class="empty">还没有记录偏好。</div>';
+  if (!state.preferences.length) {
+    list.innerHTML = '<div class="empty">还没有记录偏好。</div>';
+  }
+}
+
+function visibleMemories() {
+  const query = $("#memorySearch").value.trim().toLowerCase();
+  const domain = $("#domainFilter").value;
+  const status = $("#statusFilter").value;
+  return state.memories.filter((memory) => {
+    const searchText = `${memory.content} ${memory.entities.join(" ")}`.toLowerCase();
+    return (
+      (!query || searchText.includes(query)) &&
+      (!domain || memory.domain === domain) &&
+      (!status || memory.status === status)
+    );
+  });
 }
 
 function renderMemories() {
+  const activeCount = state.memories.filter((memory) => memory.status === "active").length;
+  const candidateCount = state.memories.filter((memory) => memory.status === "candidate").length;
+  $("#totalMemoryCount").textContent = String(state.memories.length);
+  $("#memoryCount").textContent = String(activeCount);
+  $("#candidateMemoryCount").textContent = String(candidateCount);
+
   const list = $("#memoryList");
   list.replaceChildren();
-  $("#memoryCount").textContent = String(
-    state.memories.filter((memory) => memory.status === "active").length
-  );
-  state.memories.forEach((memory) => {
-    const card = document.createElement("article");
-    card.className = `memory-card ${memory.status}`;
-    const statusText = { active: "已确认", candidate: "待确认", archived: "已归档" }[memory.status];
-    card.innerHTML = `
-      <div class="memory-card-top"><div><span class="badge"></span> <span class="badge status"></span></div></div>
-      <p></p><div class="meta"></div><div class="memory-card-actions"></div>`;
-    card.querySelector(".badge").textContent = `${memory.domain} · ${memory.type}`;
-    const status = card.querySelector(".status");
-    status.textContent = statusText;
-    if (memory.status === "candidate") status.classList.add("warning");
-    card.querySelector("p").textContent = memory.content;
-    const meta = card.querySelector(".meta");
-    const source = memory.source === "explicit" ? "洛尼明确告知" : memory.source === "inferred" ? "AI 推测" : "导入";
-    meta.textContent = `来源：${source}　置信度：${Math.round(memory.confidence * 100)}%　敏感级别：${memory.sensitivity}　有效期：${formatDate(memory.validUntil)}`;
-    if (memory.entities.length) meta.textContent += `　相关：${memory.entities.join("、")}`;
-    if (memory.sourceExcerpt) {
-      const excerpt = document.createElement("div");
-      excerpt.className = "source-excerpt";
-      excerpt.textContent = `原话：“${memory.sourceExcerpt}”`;
-      card.insertBefore(excerpt, card.querySelector(".memory-card-actions"));
-    }
-    const actions = card.querySelector(".memory-card-actions");
-    if (memory.status === "candidate") actions.append(actionButton("确认记住", () => confirmMemory(memory.id)));
-    actions.append(actionButton("编辑", () => editMemory(memory)));
-    actions.append(actionButton("忘记", () => deleteMemory(memory.id), "danger"));
-    list.append(card);
+  const visible = visibleMemories();
+
+  STATUS_GROUPS.forEach((groupInfo) => {
+    const memories = visible.filter((memory) => memory.status === groupInfo.status);
+    if (!memories.length) return;
+    const group = document.createElement("section");
+    group.className = `memory-group ${groupInfo.status}`;
+    const header = document.createElement("header");
+    header.innerHTML = `
+      <div><i class="status-dot"></i><strong></strong><span></span></div>
+      <span class="group-count"></span>`;
+    header.querySelector("strong").textContent = groupInfo.label;
+    header.querySelector("div span").textContent = groupInfo.description;
+    header.querySelector(".group-count").textContent = `${memories.length} 条`;
+    const rows = document.createElement("div");
+    rows.className = "memory-list";
+    memories.forEach((memory) => rows.append(createMemoryRow(memory)));
+    group.append(header, rows);
+    list.append(group);
   });
-  if (!state.memories.length) list.innerHTML = '<div class="empty">还没有长期记忆。可以先亲自告诉小玄一件重要的事。</div>';
+
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "memory-group empty";
+    empty.textContent = state.memories.length
+      ? "没有符合当前筛选条件的记忆。"
+      : "小玄还没有长期记忆。可以点击“新增记忆”告诉我一件重要的事。";
+    list.append(empty);
+  }
+}
+
+function createMemoryRow(memory) {
+  const row = document.createElement("article");
+  row.className = "memory-row";
+  const content = document.createElement("div");
+  content.className = "memory-content";
+  const text = document.createElement("p");
+  text.textContent = memory.content;
+  const meta = document.createElement("div");
+  meta.className = "memory-meta";
+  const domain = document.createElement("span");
+  domain.className = "memory-tag";
+  domain.textContent = DOMAIN_LABELS[memory.domain] || memory.domain;
+  const type = document.createElement("span");
+  type.textContent = TYPE_LABELS[memory.type] || memory.type;
+  const source = document.createElement("span");
+  source.textContent =
+    memory.source === "explicit" ? "洛尼明确告知" : memory.source === "inferred" ? "AI 推测" : "导入";
+  const confidence = document.createElement("span");
+  confidence.textContent = `置信度 ${Math.round(memory.confidence * 100)}%`;
+  const validity = document.createElement("span");
+  validity.textContent = formatDate(memory.validUntil);
+  meta.append(domain, type, source, confidence, validity);
+  content.append(text, meta);
+
+  if (memory.sourceExcerpt) {
+    const excerpt = document.createElement("div");
+    excerpt.className = "source-excerpt";
+    excerpt.textContent = `来源原话：“${memory.sourceExcerpt}”`;
+    content.append(excerpt);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  if (memory.status === "candidate") {
+    actions.append(actionButton("确认", () => confirmMemory(memory.id), "confirm"));
+  }
+  actions.append(actionButton("编辑", () => editMemory(memory)));
+  actions.append(actionButton("忘记", () => deleteMemory(memory.id), "danger"));
+  row.append(content, actions);
+  return row;
 }
 
 function actionButton(text, handler, className = "") {
   const button = document.createElement("button");
+  button.type = "button";
   button.textContent = text;
   button.className = className;
   button.addEventListener("click", handler);
@@ -131,10 +226,7 @@ async function refreshPreferences() {
 }
 
 async function refreshMemories() {
-  state.memories = await window.desktop.listMemories({
-    q: $("#memorySearch").value.trim(),
-    status: $("#statusFilter").value
-  });
+  state.memories = await window.desktop.listMemories();
   renderMemories();
 }
 
@@ -142,6 +234,12 @@ async function confirmMemory(id) {
   await window.desktop.confirmMemory(id);
   showNotice("这条记忆已经由洛尼确认。");
   await refreshMemories();
+}
+
+function openMemoryEditor(editing = false) {
+  $("#memoryEditorTitle").textContent = editing ? "编辑记忆" : "新增记忆";
+  $("#memoryEditor").classList.remove("hidden");
+  $("#memoryContent").focus();
 }
 
 function editMemory(memory) {
@@ -152,15 +250,14 @@ function editMemory(memory) {
   $("#memorySensitivity").value = memory.sensitivity;
   $("#memoryEntities").value = memory.entities.join(", ");
   $("#memorySubmitText").textContent = "保存修改";
-  $("#cancelMemoryEdit").classList.remove("hidden");
-  $("#memoryContent").focus();
+  openMemoryEditor(true);
 }
 
 function resetMemoryForm() {
   $("#memoryForm").reset();
   $("#memoryId").value = "";
   $("#memorySubmitText").textContent = "记住这件事";
-  $("#cancelMemoryEdit").classList.add("hidden");
+  $("#memoryEditor").classList.add("hidden");
 }
 
 async function deleteMemory(id) {
@@ -169,6 +266,20 @@ async function deleteMemory(id) {
   showNotice("这条记忆已经彻底删除。");
   await refreshMemories();
 }
+
+document.querySelectorAll(".memory-tab").forEach((button) => {
+  button.addEventListener("click", () => switchView(button.dataset.view));
+});
+
+$("#addMemoryBtn").addEventListener("click", () => {
+  resetMemoryForm();
+  openMemoryEditor(false);
+});
+$("#closeMemoryEditor").addEventListener("click", resetMemoryForm);
+$("#cancelMemoryEdit").addEventListener("click", resetMemoryForm);
+$("#memorySearch").addEventListener("input", renderMemories);
+$("#domainFilter").addEventListener("change", renderMemories);
+$("#statusFilter").addEventListener("change", renderMemories);
 
 $("#profileForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -213,7 +324,10 @@ $("#memoryForm").addEventListener("submit", async (event) => {
     domain: $("#memoryDomain").value,
     type: $("#memoryType").value,
     sensitivity: $("#memorySensitivity").value,
-    entities: $("#memoryEntities").value.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
+    entities: $("#memoryEntities").value
+      .split(/[,，]/)
+      .map((item) => item.trim())
+      .filter(Boolean),
     source: "explicit",
     confidence: 1,
     status: "active"
@@ -229,12 +343,6 @@ $("#memoryForm").addEventListener("submit", async (event) => {
   }
 });
 
-$("#cancelMemoryEdit").addEventListener("click", resetMemoryForm);
-$("#memorySearch").addEventListener("input", () => {
-  clearTimeout(refreshMemories.timer);
-  refreshMemories.timer = setTimeout(() => refreshMemories().catch((error) => showNotice(error.message, true)), 250);
-});
-$("#statusFilter").addEventListener("change", () => refreshMemories().catch((error) => showNotice(error.message, true)));
 $("#homeBtn").addEventListener("click", () => navigate("chat", "home.html"));
 $("#todoBtn").addEventListener("click", () => navigate("todo", "index.html"));
 $("#modulesBtn").addEventListener("click", () => navigate("modules", "modules.html"));
