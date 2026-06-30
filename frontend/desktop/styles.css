@@ -283,6 +283,23 @@ body.has-custom-background .check-button {
   z-index: 3;
 }
 
+body.embedded {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+body.embedded .titlebar,
+body.embedded > .ambient {
+  display: none;
+}
+
+body.embedded .app-shell {
+  width: calc(100vw - 48px);
+  height: calc(100vh - 48px);
+  margin: 24px auto;
+}
+
 .ambient-pink {
   width: 500px;
   height: 500px;

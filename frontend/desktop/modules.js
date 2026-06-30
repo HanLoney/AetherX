@@ -1,7 +1,27 @@
+if (new URLSearchParams(window.location.search).has("embedded")) {
+  document.body.classList.add("embedded");
+  if (!window.desktop && window.parent?.desktop) {
+    window.desktop = window.parent.desktop;
+  }
+}
+
+function navigate(target, fallback) {
+  if (document.body.classList.contains("embedded")) {
+    window.parent.postMessage({ type: "xuan:navigate", target }, "*");
+  } else {
+    window.location.href = fallback;
+  }
+}
+
 const moduleGrid = document.querySelector("#moduleGrid");
 const template = document.querySelector("#moduleTemplate");
 const todoModuleBtn = document.querySelector("#todoModuleBtn");
 const autoApproveInput = document.querySelector("#autoApproveInput");
+const memoryModuleBtn = document.createElement("button");
+memoryModuleBtn.id = "memoryModuleBtn";
+memoryModuleBtn.className = "nav-item";
+memoryModuleBtn.innerHTML = "<i>🧠</i>记忆中心";
+todoModuleBtn.after(memoryModuleBtn);
 
 function renderModules() {
   const modules = window.XuanModules.snapshot();
@@ -44,6 +64,10 @@ function renderModules() {
     "hidden",
     !window.XuanModules.isEnabled("todo")
   );
+  memoryModuleBtn.classList.toggle(
+    "hidden",
+    !window.XuanModules.isEnabled("memory")
+  );
   autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
 }
 
@@ -52,10 +76,13 @@ autoApproveInput.addEventListener("change", () => {
 });
 
 document.querySelector("#homeBtn").addEventListener("click", () => {
-  window.location.href = "home.html";
+  navigate("chat", "home.html");
 });
 todoModuleBtn.addEventListener("click", () => {
-  if (window.XuanModules.isEnabled("todo")) window.location.href = "index.html";
+  if (window.XuanModules.isEnabled("todo")) navigate("todo", "index.html");
+});
+memoryModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("memory")) navigate("memory", "memory.html");
 });
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());

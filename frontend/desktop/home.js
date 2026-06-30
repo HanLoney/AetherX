@@ -14,11 +14,26 @@ const state = {
   draft: null,
   messages: [],
   modelMessages: [],
+  memoryContext: "",
+  chatGeneration: 0,
+  conversations: [],
+  conversationId: null,
+  conversationSyncing: false,
+  conversationSyncRequested: false,
+  restoringConversation: false,
+  conversationPromise: null,
+  persistedMessageHashes: new Map(),
   pendingApprovals: new Map(),
   connectionStatus: "idle",
   sending: false,
   testing: false
 };
+
+function memoryContextMessages() {
+  return state.memoryContext
+    ? [{ role: "system", content: state.memoryContext }]
+    : [];
+}
 
 const elements = {
   providerLogo: document.querySelector("#providerLogo"),
@@ -51,10 +66,176 @@ const toolRegistry = window.registerTodoTools(
   })
 );
 
+const memoryModuleBtn = document.createElement("button");
+memoryModuleBtn.id = "memoryModuleBtn";
+memoryModuleBtn.className = "nav-item";
+memoryModuleBtn.innerHTML = "<i>🧠</i>记忆中心";
+document.querySelector("#moduleSettingsBtn").before(memoryModuleBtn);
+
+const historyPanel = document.createElement("section");
+historyPanel.className = "history-panel";
+historyPanel.innerHTML = `
+  <header>
+    <span>历史对话</span>
+    <button id="newConversationBtn" type="button" title="新对话">＋</button>
+  </header>
+  <div id="conversationHistoryList" class="history-list"></div>
+`;
+document.querySelector(".nav-list").after(historyPanel);
+
+const aiNavBtn = document.querySelector(".nav-list .nav-item.active");
+const chatWorkspace = document.querySelector(".main");
+const moduleViewHost = document.createElement("section");
+moduleViewHost.className = "module-view-host hidden";
+chatWorkspace.after(moduleViewHost);
+const moduleFrame = document.createElement("iframe");
+moduleFrame.className = "module-view-frame";
+moduleViewHost.append(moduleFrame);
+let activeModuleId = "";
+let viewTransitionId = 0;
+const VIEW_TRANSITION_MS = 220;
+
+function setActiveNavigation(activeButton) {
+  [aiNavBtn, document.querySelector("#todoModuleBtn"), memoryModuleBtn,
+    document.querySelector("#moduleSettingsBtn")].forEach((button) => {
+    button.classList.toggle("active", button === activeButton);
+  });
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function nextPaint() {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  );
+}
+
+function resetViewAnimationClasses() {
+  [chatWorkspace, moduleViewHost].forEach((view) => {
+    view.classList.remove("view-entering", "view-leaving");
+  });
+  moduleFrame.classList.remove("frame-entering", "frame-leaving");
+}
+
+async function showChatWorkspace() {
+  if (!chatWorkspace.classList.contains("hidden")) {
+    setActiveNavigation(aiNavBtn);
+    return;
+  }
+  const transitionId = ++viewTransitionId;
+  resetViewAnimationClasses();
+  setActiveNavigation(aiNavBtn);
+  moduleViewHost.classList.add("view-leaving");
+  await wait(VIEW_TRANSITION_MS);
+  if (transitionId !== viewTransitionId) return;
+  moduleViewHost.classList.add("hidden");
+  moduleViewHost.classList.remove("view-leaving", "is-loading");
+  chatWorkspace.classList.add("view-entering");
+  chatWorkspace.classList.remove("hidden");
+  await nextPaint();
+  if (transitionId === viewTransitionId) {
+    chatWorkspace.classList.remove("view-entering");
+  }
+}
+
+async function loadModuleFrame(moduleId, source, activeButton, transitionId) {
+  if (activeModuleId === moduleId) return;
+  moduleViewHost.classList.add("is-loading");
+  moduleFrame.classList.add("frame-leaving");
+  await wait(140);
+  if (transitionId !== viewTransitionId) return;
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      moduleFrame.removeEventListener("load", finish);
+      resolve();
+    };
+    moduleFrame.addEventListener("load", finish, { once: true });
+    window.setTimeout(finish, 6000);
+    moduleFrame.title = activeButton.textContent.trim();
+    moduleFrame.src = `${source}?embedded=1`;
+  });
+  if (transitionId !== viewTransitionId) return;
+  activeModuleId = moduleId;
+  moduleFrame.classList.remove("frame-leaving");
+  moduleFrame.classList.add("frame-entering");
+  moduleViewHost.classList.remove("is-loading");
+  await nextPaint();
+  if (transitionId === viewTransitionId) {
+    moduleFrame.classList.remove("frame-entering");
+  }
+}
+
+async function showModuleWorkspace(moduleId, source, activeButton) {
+  if (
+    activeModuleId === moduleId &&
+    !moduleViewHost.classList.contains("hidden")
+  ) {
+    setActiveNavigation(activeButton);
+    return;
+  }
+  const transitionId = ++viewTransitionId;
+  resetViewAnimationClasses();
+  setActiveNavigation(activeButton);
+
+  const leavingChat = !chatWorkspace.classList.contains("hidden");
+  if (leavingChat) {
+    chatWorkspace.classList.add("view-leaving");
+    await wait(VIEW_TRANSITION_MS);
+    if (transitionId !== viewTransitionId) return;
+    chatWorkspace.classList.add("hidden");
+    chatWorkspace.classList.remove("view-leaving");
+    moduleViewHost.classList.add("view-entering");
+    moduleViewHost.classList.remove("hidden");
+  } else {
+    moduleViewHost.classList.remove("hidden");
+  }
+
+  await loadModuleFrame(moduleId, source, activeButton, transitionId);
+  if (transitionId !== viewTransitionId) return;
+  await nextPaint();
+  moduleViewHost.classList.remove("view-entering");
+}
+
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== moduleFrame.contentWindow ||
+    event.data?.type !== "xuan:navigate"
+  ) {
+    return;
+  }
+  const target = event.data.target;
+  if (target === "chat") showChatWorkspace();
+  if (target === "todo" && window.XuanModules.isEnabled("todo")) {
+    showModuleWorkspace(
+      "todo",
+      "index.html",
+      document.querySelector("#todoModuleBtn")
+    );
+  }
+  if (target === "memory" && window.XuanModules.isEnabled("memory")) {
+    showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  }
+  if (target === "modules") {
+    showModuleWorkspace(
+      "modules",
+      "modules.html",
+      document.querySelector("#moduleSettingsBtn")
+    );
+  }
+});
+
 function syncModuleState() {
   const todoEnabled = window.XuanModules.isEnabled("todo");
+  const memoryEnabled = window.XuanModules.isEnabled("memory");
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
+  memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
 }
 
 function providerById(id) {
@@ -257,6 +438,7 @@ async function finalizeToolRun(summaries, reason) {
             `${SYSTEM_PROMPT}\n工具阶段已经结束，原因：${reason}。` +
             "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
         },
+        ...memoryContextMessages(),
         ...state.modelMessages
       ],
       tools: []
@@ -289,6 +471,7 @@ async function runAgentLoop() {
           role: "system",
           content: `${SYSTEM_PROMPT}\n当前本地时间：${new Date().toISOString()}`
         },
+        ...memoryContextMessages(),
         ...state.modelMessages
       ],
       tools: toolRegistry.modelTools()
@@ -309,6 +492,7 @@ async function runAgentLoop() {
               `${SYSTEM_PROMPT}\n当前端点没有返回工具调用能力。请直接回答用户，` +
               "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
           },
+          ...memoryContextMessages(),
           ...state.modelMessages
         ],
         tools: []
@@ -495,6 +679,187 @@ function createMessage(role, content, error = false) {
   };
 }
 
+function historyRecord(message, stream, position) {
+  if (!message.id) {
+    message.id = `${stream}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+  if (!message.createdAt) message.createdAt = Date.now();
+  const payload = {};
+  Object.entries(message).forEach(([key, value]) => {
+    if (!["id", "role", "content"].includes(key)) payload[key] = value;
+  });
+  return {
+    id: message.id,
+    stream,
+    position,
+    role: message.role,
+    content: message.content ?? null,
+    payload,
+    createdAt: message.createdAt
+  };
+}
+
+function conversationRecords() {
+  return [
+    ...state.messages.map((message, index) =>
+      historyRecord(message, "display", index)
+    ),
+    ...state.modelMessages.map((message, index) =>
+      historyRecord(message, "model", index)
+    )
+  ];
+}
+
+function recordHash(record) {
+  return JSON.stringify(record);
+}
+
+async function ensureConversation() {
+  if (state.conversationId) return state.conversationId;
+  if (state.conversationPromise) return state.conversationPromise;
+  const firstUserMessage = state.messages.find(
+    (message) => message.role === "user"
+  );
+  if (!firstUserMessage) return null;
+  state.conversationPromise = window.desktop
+    .createConversation(firstUserMessage.content.slice(0, 60))
+    .then((conversation) => {
+      state.conversationId = conversation.id;
+      return conversation.id;
+    })
+    .finally(() => {
+      state.conversationPromise = null;
+    });
+  const id = await state.conversationPromise;
+  await refreshConversationHistory();
+  return id;
+}
+
+function scheduleConversationSync() {
+  if (state.restoringConversation) return;
+  state.conversationSyncRequested = true;
+  clearTimeout(scheduleConversationSync.timer);
+  scheduleConversationSync.timer = setTimeout(syncConversation, 90);
+}
+
+async function syncConversation() {
+  if (state.conversationSyncing || state.restoringConversation) return;
+  state.conversationSyncing = true;
+  try {
+    while (state.conversationSyncRequested) {
+      state.conversationSyncRequested = false;
+      const conversationId = await ensureConversation();
+      if (!conversationId) continue;
+      const records = conversationRecords();
+      const changed = records.filter(
+        (record) =>
+          state.persistedMessageHashes.get(record.id) !== recordHash(record)
+      );
+      if (!changed.length) continue;
+      await window.desktop.saveConversationMessages(conversationId, changed);
+      changed.forEach((record) => {
+        state.persistedMessageHashes.set(record.id, recordHash(record));
+      });
+    }
+  } catch (error) {
+    console.error("Failed to persist conversation:", error.message);
+    clearTimeout(syncConversation.retryTimer);
+    syncConversation.retryTimer = setTimeout(() => {
+      state.conversationSyncRequested = true;
+      syncConversation();
+    }, 3000);
+  } finally {
+    state.conversationSyncing = false;
+    if (state.conversationSyncRequested) scheduleConversationSync();
+  }
+}
+
+async function flushConversationSync() {
+  state.conversationSyncRequested = true;
+  await syncConversation();
+  while (state.conversationSyncing) await wait(20);
+}
+
+function renderConversationHistory() {
+  const list = document.querySelector("#conversationHistoryList");
+  list.replaceChildren();
+  state.conversations.forEach((conversation) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+    button.classList.toggle("active", conversation.id === state.conversationId);
+    const title = document.createElement("strong");
+    title.textContent = conversation.title || "新对话";
+    const time = document.createElement("small");
+    time.textContent = new Intl.DateTimeFormat("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(conversation.updatedAt);
+    button.append(title, time);
+    button.addEventListener("click", () => loadConversation(conversation.id));
+    list.append(button);
+  });
+  if (!state.conversations.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "还没有历史对话";
+    list.append(empty);
+  }
+}
+
+async function refreshConversationHistory() {
+  state.conversations = await window.desktop.listConversations();
+  renderConversationHistory();
+}
+
+async function loadConversation(id) {
+  if (state.sending || id === state.conversationId) return;
+  await flushConversationSync();
+  const result = await window.desktop.getConversation(id);
+  state.restoringConversation = true;
+  state.conversationId = id;
+  state.messages = result.displayMessages || [];
+  state.modelMessages = result.modelMessages || [];
+  state.memoryContext = "";
+  state.pendingApprovals.clear();
+  state.persistedMessageHashes.clear();
+  conversationRecords().forEach((record) => {
+    state.persistedMessageHashes.set(record.id, recordHash(record));
+  });
+  renderMessages();
+  state.restoringConversation = false;
+  showChatWorkspace();
+  renderConversationHistory();
+}
+
+async function startNewConversation() {
+  if (state.sending) return;
+  await flushConversationSync();
+  state.restoringConversation = true;
+  state.conversationId = null;
+  state.messages = [];
+  state.modelMessages = [];
+  state.memoryContext = "";
+  state.pendingApprovals.clear();
+  state.persistedMessageHashes.clear();
+  state.chatGeneration += 1;
+  renderMessages();
+  state.restoringConversation = false;
+  showChatWorkspace();
+  renderConversationHistory();
+}
+
+function createMemoryActivity(kind, items) {
+  return {
+    id: `memory-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    role: "memory",
+    kind,
+    items
+  };
+}
+
 function createToolActivity(tool, call) {
   return {
     id: `tool-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -570,6 +935,39 @@ function renderToolActivity(row, message) {
   row.append(card);
 }
 
+function renderMemoryActivity(row, message) {
+  const card = document.createElement("div");
+  card.className = `memory-activity ${message.kind}`;
+  const head = document.createElement("div");
+  head.className = "memory-activity-head";
+  const title = document.createElement("strong");
+  title.textContent =
+    message.kind === "recall"
+      ? `🧠 本轮参考了 ${message.items.length} 条个人信息`
+      : `✨ 新发现 ${message.items.length} 条候选记忆`;
+  const open = document.createElement("button");
+  open.type = "button";
+  open.textContent = message.kind === "recall" ? "查看记忆中心" : "去确认";
+  open.addEventListener("click", () => {
+    showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  });
+  head.append(title, open);
+  card.append(head);
+  const list = document.createElement("ul");
+  message.items.slice(0, 5).forEach((item) => {
+    const entry = document.createElement("li");
+    entry.textContent = item.content;
+    if (item.reason) {
+      const reason = document.createElement("small");
+      reason.textContent = ` · ${item.reason}`;
+      entry.append(reason);
+    }
+    list.append(entry);
+  });
+  card.append(list);
+  row.append(card);
+}
+
 function renderMessages() {
   elements.welcome.classList.toggle("hidden", state.messages.length > 0);
   elements.messageList.replaceChildren();
@@ -579,6 +977,11 @@ function renderMessages() {
     row.className = `message-row ${message.role}`;
     if (message.role === "tool") {
       renderToolActivity(row, message);
+      elements.messageList.append(row);
+      return;
+    }
+    if (message.role === "memory") {
+      renderMemoryActivity(row, message);
       elements.messageList.append(row);
       return;
     }
@@ -616,6 +1019,7 @@ function renderMessages() {
     elements.messageList.append(row);
   }
   elements.conversation.scrollTop = elements.conversation.scrollHeight;
+  scheduleConversationSync();
 }
 
 async function testConnection() {
@@ -679,6 +1083,7 @@ async function saveConfig() {
 
 async function sendMessage() {
   const content = elements.messageInput.value.trim();
+  const chatGeneration = state.chatGeneration;
   if (!content || state.sending) return;
   if (!state.config.hasApiKey) {
     openSettings();
@@ -688,15 +1093,45 @@ async function sendMessage() {
 
   state.messages.push(createMessage("user", content));
   state.modelMessages.push({ role: "user", content });
+  state.memoryContext = "";
   elements.messageInput.value = "";
   elements.sendBtn.disabled = true;
   state.sending = true;
   renderMessages();
 
   try {
+    try {
+      const recalled = await window.desktop.recallMemories(content);
+      state.memoryContext = recalled.context || "";
+      if (recalled.items?.length) {
+        state.messages.push(createMemoryActivity("recall", recalled.items));
+        renderMessages();
+      }
+    } catch {
+      state.memoryContext = "";
+    }
     const response = await runAgentLoop();
     state.messages.push(createMessage("assistant", response));
     state.connectionStatus = "success";
+    window.desktop
+      .extractMemories({ userMessage: content, assistantMessage: response })
+      .then((result) => {
+        if (chatGeneration !== state.chatGeneration) return;
+        if (!result.candidates?.length) return;
+        state.messages.push(
+          createMemoryActivity(
+            "candidate",
+            result.candidates.map((candidate) => ({
+              content: candidate.content,
+              reason: "等待洛尼确认"
+            }))
+          )
+        );
+        renderMessages();
+      })
+      .catch(() => {
+        // 自动提取失败不影响本轮正常对话。
+      });
   } catch (error) {
     state.messages.push(
       createMessage(
@@ -716,11 +1151,27 @@ async function sendMessage() {
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
+aiNavBtn.addEventListener("click", showChatWorkspace);
 document.querySelector("#todoModuleBtn").addEventListener("click", () => {
-  if (window.XuanModules.isEnabled("todo")) window.location.href = "index.html";
+  if (window.XuanModules.isEnabled("todo")) {
+    showModuleWorkspace(
+      "todo",
+      "index.html",
+      document.querySelector("#todoModuleBtn")
+    );
+  }
+});
+memoryModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("memory")) {
+    showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  }
 });
 document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
-  window.location.href = "modules.html";
+  showModuleWorkspace(
+    "modules",
+    "modules.html",
+    document.querySelector("#moduleSettingsBtn")
+  );
 });
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
@@ -750,12 +1201,12 @@ elements.messageInput.addEventListener("keydown", (event) => {
   }
 });
 elements.sendBtn.addEventListener("click", sendMessage);
-document.querySelector("#clearChatBtn").addEventListener("click", () => {
-  if (state.sending) return;
-  state.messages = [];
-  state.modelMessages = [];
-  renderMessages();
-});
+document
+  .querySelector("#clearChatBtn")
+  .addEventListener("click", startNewConversation);
+document
+  .querySelector("#newConversationBtn")
+  .addEventListener("click", startNewConversation);
 document.querySelectorAll(".suggestion").forEach((button) => {
   button.addEventListener("click", () => {
     elements.messageInput.value = button.dataset.prompt;
@@ -772,10 +1223,16 @@ async function initialize() {
   state.draft = { ...state.config, apiKey: "" };
   syncModuleState();
   renderHeader();
-  renderMessages();
+  await refreshConversationHistory();
+  if (state.conversations.length) {
+    await loadConversation(state.conversations[0].id);
+  } else {
+    renderMessages();
+  }
 }
 
 window.addEventListener("xuan:modules-changed", syncModuleState);
+window.addEventListener("storage", syncModuleState);
 
 initialize().catch((error) => {
   console.error("Failed to initialize AI configuration:", error.message);

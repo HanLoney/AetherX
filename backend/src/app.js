@@ -1,0 +1,96 @@
+const http = require("node:http");
+const { createRouter } = require("./lib/router");
+const { openDatabase } = require("./infrastructure/database");
+const { createSecretBox } = require("./infrastructure/secret-box");
+const { TodoRepository } = require("./modules/todos/todo-repository");
+const { TodoService } = require("./modules/todos/todo-service");
+const { registerTodoRoutes } = require("./modules/todos/todo-routes");
+const { AiConfigRepository } = require("./modules/ai/ai-config-repository");
+const { AiProviderClient } = require("./modules/ai/ai-provider-client");
+const { registerAiRoutes } = require("./modules/ai/ai-routes");
+const { ProfileRepository } = require("./modules/profiles/profile-repository");
+const { ProfileService } = require("./modules/profiles/profile-service");
+const { registerProfileRoutes } = require("./modules/profiles/profile-routes");
+const {
+  PreferenceRepository
+} = require("./modules/preferences/preference-repository");
+const { PreferenceService } = require("./modules/preferences/preference-service");
+const {
+  registerPreferenceRoutes
+} = require("./modules/preferences/preference-routes");
+const { MemoryRepository } = require("./modules/memories/memory-repository");
+const { MemoryService } = require("./modules/memories/memory-service");
+const { registerMemoryRoutes } = require("./modules/memories/memory-routes");
+const {
+  ConversationRepository
+} = require("./modules/conversations/conversation-repository");
+const {
+  ConversationService
+} = require("./modules/conversations/conversation-service");
+const {
+  registerConversationRoutes
+} = require("./modules/conversations/conversation-routes");
+const {
+  MemoryIntelligenceService
+} = require("./modules/memories/memory-intelligence-service");
+
+function createApp(config) {
+  const database = openDatabase(config.dataDir);
+  const secretBox = createSecretBox(config.dataDir, config.masterKey);
+  const router = createRouter({ corsOrigin: config.corsOrigin });
+
+  const todoRepository = new TodoRepository(database);
+  const todoService = new TodoService(todoRepository);
+  const aiConfigRepository = new AiConfigRepository(database, secretBox);
+  const aiProviderClient = new AiProviderClient();
+  const profileService = new ProfileService(new ProfileRepository(database));
+  const preferenceService = new PreferenceService(
+    new PreferenceRepository(database)
+  );
+  const memoryService = new MemoryService(new MemoryRepository(database));
+  const conversationService = new ConversationService(
+    new ConversationRepository(database)
+  );
+  const memoryIntelligenceService = new MemoryIntelligenceService({
+    profileService,
+    preferenceService,
+    memoryService,
+    configRepository: aiConfigRepository,
+    providerClient: aiProviderClient
+  });
+
+  router.add("GET", "/health", () => ({
+    data: { status: "ok", service: "xuanai-backend" }
+  }));
+  registerTodoRoutes(router, todoService);
+  registerAiRoutes(router, aiConfigRepository, aiProviderClient);
+  registerProfileRoutes(router, profileService);
+  registerPreferenceRoutes(router, preferenceService);
+  registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
+  registerConversationRoutes(router, conversationService);
+
+  const server = http.createServer((request, response) =>
+    router.handle(request, response)
+  );
+
+  return {
+    server,
+    database,
+    listen() {
+      return new Promise((resolve) => {
+        server.listen(config.port, config.host, () => resolve(server.address()));
+      });
+    },
+    close() {
+      return new Promise((resolve, reject) => {
+        server.close((error) => {
+          database.close();
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    }
+  };
+}
+
+module.exports = { createApp };
