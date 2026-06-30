@@ -440,8 +440,8 @@ body.embedded > .ambient { display: none; }
 body.embedded .memory-main { padding: 64px 34px 40px; }
 
 @media (max-width: 1050px) {
-  .memory-toolbar { grid-template-columns: 1fr 115px 110px; }
-  .memory-toolbar .primary { grid-column: 1 / -1; }
+  .memory-toolbar { grid-template-columns: minmax(0, 1fr) 115px 110px auto; }
+  .memory-toolbar .primary { grid-column: auto; white-space: nowrap; }
   .form-row { grid-template-columns: 1fr 1fr; }
   .inline-form { grid-template-columns: 1fr 1fr; }
 }

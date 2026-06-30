@@ -109,6 +109,10 @@ class XuanApiClient {
     return this.request("PUT", "/api/v1/profile", profile);
   }
 
+  updateProfile(changes) {
+    return this.request("PATCH", "/api/v1/profile", changes);
+  }
+
   listPreferences(filters = {}) {
     const query = new URLSearchParams(
       Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")

@@ -1,5 +1,5 @@
 const SYSTEM_PROMPT =
-  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。需要读取信息时主动调用工具；需要写入或删除时发起工具调用，客户端会根据用户设置自动同意或在聊天中请求授权。只有收到 ok=true 的工具结果后才能声称操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。用户姓名、称呼、生日、职业和简介属于用户画像；稳定事实、经历、决定和习惯属于长期记忆；只有需要完成或提醒的行动才属于待办。不要用待办替代画像或记忆。需要读取信息时主动调用工具；需要写入或删除时发起工具调用。对话上下文不等于持久记忆，不要声称系统没有记忆功能。只有收到 ok=true 的工具结果后才能声称读取或操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
 const MAX_TOOL_ROUNDS = 6;
 
 class EmptyCompletionError extends Error {
@@ -59,11 +59,15 @@ const elements = {
   testConnectionBtn: document.querySelector("#testConnectionBtn")
 };
 
-const toolRegistry = window.registerTodoTools(
-  new window.XuanToolRegistry({
-    isEnabled: (toolName) =>
-      window.XuanModules.isEnabled(toolName.split(".")[0])
-  })
+const toolRegistry = window.registerMemoryTools(
+  window.registerTodoTools(new window.XuanToolRegistry({
+    isEnabled: (toolName) => {
+      const moduleId = toolName.split(".")[0];
+      return window.XuanModules.isEnabled(
+        moduleId === "profile" ? "memory" : moduleId
+      );
+    }
+  }))
 );
 
 const memoryModuleBtn = document.createElement("button");
@@ -177,6 +181,9 @@ async function showModuleWorkspace(moduleId, source, activeButton) {
     !moduleViewHost.classList.contains("hidden")
   ) {
     setActiveNavigation(activeButton);
+    if (moduleId === "memory") {
+      moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-memory" }, "*");
+    }
     return;
   }
   const transitionId = ++viewTransitionId;
@@ -200,6 +207,9 @@ async function showModuleWorkspace(moduleId, source, activeButton) {
   if (transitionId !== viewTransitionId) return;
   await nextPaint();
   moduleViewHost.classList.remove("view-entering");
+  if (moduleId === "memory") {
+    moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-memory" }, "*");
+  }
 }
 
 window.addEventListener("message", (event) => {
@@ -944,7 +954,8 @@ function renderMemoryActivity(row, message) {
   title.textContent = {
     recall: `🧠 本轮参考了 ${message.items.length} 条个人信息`,
     candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
-    confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`
+    confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`,
+    profile: `✓ 已自动更新 ${message.items.length} 项用户画像`
   }[message.kind];
   const open = document.createElement("button");
   open.type = "button";
@@ -1118,7 +1129,21 @@ async function sendMessage() {
     state.messages.push(createMessage("assistant", response));
     state.connectionStatus = "success";
     window.desktop
-      .extractMemories({ userMessage: content, assistantMessage: response })
+      .extractMemories({
+        userMessage: content,
+        assistantMessage: response,
+        conversationMessages: state.modelMessages
+          .filter(
+            (message) =>
+              ["user", "assistant"].includes(message.role) &&
+              typeof message.content === "string"
+          )
+          .slice(-12)
+          .map(({ role, content: messageContent }) => ({
+            role,
+            content: messageContent
+          }))
+      })
       .then((result) => {
         if (chatGeneration !== state.chatGeneration) return;
         if (result.autoConfirmed?.length) {
@@ -1146,7 +1171,28 @@ async function sendMessage() {
             )
           );
         }
-        if (!result.autoConfirmed?.length && !result.candidates?.length) return;
+        if (result.profileUpdates?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "profile",
+              result.profileUpdates.map((item) => ({
+                content: `${item.label}：${item.value}`,
+                reason: "来自用户明确陈述"
+              }))
+            )
+          );
+        }
+        if (
+          !result.autoConfirmed?.length &&
+          !result.candidates?.length &&
+          !result.profileUpdates?.length
+        ) return;
+        if (activeModuleId === "memory") {
+          moduleFrame.contentWindow?.postMessage(
+            { type: "xuan:refresh-memory" },
+            "*"
+          );
+        }
         renderMessages();
       })
       .catch(() => {

@@ -39,6 +39,9 @@ function registerIpcHandlers() {
 
   ipcMain.handle("profile:get", () => api.getProfile());
   ipcMain.handle("profile:save", (_event, profile) => api.saveProfile(profile));
+  ipcMain.handle("profile:update", (_event, changes) =>
+    api.updateProfile(changes)
+  );
   ipcMain.handle("preferences:list", (_event, filters) =>
     api.listPreferences(filters)
   );
