@@ -13,7 +13,12 @@ function navigate(target, fallback) {
   }
 }
 
-const state = { profile: null, preferences: [], memories: [] };
+const state = {
+  profile: null,
+  preferences: [],
+  memories: [],
+  settings: { autoConfirm: false }
+};
 const $ = (selector) => document.querySelector(selector);
 const DOMAIN_LABELS = {
   life: "生活",
@@ -51,17 +56,27 @@ function formatDate(value) {
 }
 
 async function loadAll() {
-  const [profile, preferences, memories] = await Promise.all([
+  const [profile, preferences, memories, settings] = await Promise.all([
     window.desktop.getProfile(),
     window.desktop.listPreferences(),
-    window.desktop.listMemories()
+    window.desktop.listMemories(),
+    window.desktop.getMemorySettings()
   ]);
   state.profile = profile;
   state.preferences = preferences;
   state.memories = memories;
+  state.settings = settings;
   renderProfile();
   renderPreferences();
   renderMemories();
+  renderMemorySettings();
+}
+
+function renderMemorySettings() {
+  $("#autoConfirmMemory").checked = Boolean(state.settings.autoConfirm);
+  $("#autoConfirmStatus").textContent = state.settings.autoConfirm
+    ? "已开启"
+    : "已关闭";
 }
 
 function switchView(view) {
@@ -280,6 +295,26 @@ $("#cancelMemoryEdit").addEventListener("click", resetMemoryForm);
 $("#memorySearch").addEventListener("input", renderMemories);
 $("#domainFilter").addEventListener("change", renderMemories);
 $("#statusFilter").addEventListener("change", renderMemories);
+$("#autoConfirmMemory").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  input.disabled = true;
+  try {
+    state.settings = await window.desktop.saveMemorySettings({
+      autoConfirm: input.checked
+    });
+    renderMemorySettings();
+    showNotice(
+      state.settings.autoConfirm
+        ? "自动确认已开启；敏感记忆仍会等待确认。"
+        : "自动确认已关闭。"
+    );
+  } catch (error) {
+    input.checked = !input.checked;
+    showNotice(error.message, true);
+  } finally {
+    input.disabled = false;
+  }
+});
 
 $("#profileForm").addEventListener("submit", async (event) => {
   event.preventDefault();

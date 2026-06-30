@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("desktop", {
   deleteMemory: (id) => ipcRenderer.invoke("memories:delete", id),
   recallMemories: (query) => ipcRenderer.invoke("memories:recall", query),
   extractMemories: (payload) => ipcRenderer.invoke("memories:extract", payload),
+  getMemorySettings: () => ipcRenderer.invoke("memories:settings:get"),
+  saveMemorySettings: (settings) =>
+    ipcRenderer.invoke("memories:settings:save", settings),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),
