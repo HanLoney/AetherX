@@ -2,14 +2,20 @@ const { HttpError } = require("../../lib/http-error");
 
 const DEFAULTS = Object.freeze({
   tone: "亲密、自然、清晰",
-  responseLength: "balanced",
-  initiative: 0.75,
-  humor: 0.45,
+  conversationStyle: "friend",
+  responseLength: "concise",
+  initiative: 0.55,
+  humor: 0.35,
   useEmoji: true,
+  useCatchphrases: true,
   behaviorRules: [
     "先理解用户真正想解决的问题，再采取行动",
     "涉及事实和代码时先验证，不确定时明确说明",
-    "完成任务后简洁说明结果和需要用户知道的限制"
+    "完成任务后简洁说明结果和需要用户知道的限制",
+    "日常闲聊先像熟悉的朋友一样回应当下，不主动写成标题、清单或方案",
+    "不要复述用户画像、职业和目标来证明自己了解用户",
+    "用户没有索要建议时，不要一次列出多个方向让用户选择",
+    "避免客服式结尾和每段都反问，允许自然地说完一句话"
   ],
   workInstruction: "像可靠的协作者一样推进任务，重视可维护性、验证和清晰交付。",
   lifeInstruction: "兼顾实用性与关心，不把生活问题强行转换成工作任务。",
@@ -67,6 +73,11 @@ class PromptSettingsService {
 function normalize(input) {
   return {
     tone: text(input.tone, 300) || DEFAULTS.tone,
+    conversationStyle: ["friend", "natural", "professional"].includes(
+      input.conversationStyle
+    )
+      ? input.conversationStyle
+      : DEFAULTS.conversationStyle,
     responseLength: ["concise", "balanced", "detailed"].includes(
       input.responseLength
     )
@@ -76,6 +87,10 @@ function normalize(input) {
     humor: clamp(input.humor, DEFAULTS.humor),
     useEmoji:
       typeof input.useEmoji === "boolean" ? input.useEmoji : DEFAULTS.useEmoji,
+    useCatchphrases:
+      typeof input.useCatchphrases === "boolean"
+        ? input.useCatchphrases
+        : DEFAULTS.useCatchphrases,
     behaviorRules: stringList(
       input.behaviorRules,
       DEFAULTS.behaviorRules,
