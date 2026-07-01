@@ -62,6 +62,7 @@ function formatDate(value) {
 }
 
 async function loadAll() {
+  await window.desktop.consolidateMemories();
   const [
     profile,
     assistantProfile,
@@ -431,6 +432,11 @@ function createMemoryRow(memory) {
   const validity = document.createElement("span");
   validity.textContent = formatDate(memory.validUntil);
   meta.append(domain, type, source, confidence, validity);
+  if (memory.mergeCount > 1) {
+    const merged = document.createElement("span");
+    merged.textContent = `${memory.mergeCount} 份证据`;
+    meta.append(merged);
+  }
   content.append(text, meta);
 
   if (memory.sourceExcerpt) {

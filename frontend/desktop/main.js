@@ -100,6 +100,7 @@ function registerIpcHandlers() {
   ipcMain.handle("memories:extract", (_event, payload) =>
     api.extractMemories(payload)
   );
+  ipcMain.handle("memories:consolidate", () => api.consolidateMemories());
   ipcMain.handle("memories:settings:get", () => api.getMemorySettings());
   ipcMain.handle("memories:settings:save", (_event, settings) =>
     api.saveMemorySettings(settings)

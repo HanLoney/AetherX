@@ -981,6 +981,8 @@ function renderMemoryActivity(row, message) {
     candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
     confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`,
     profile: `✓ 已自动更新 ${message.items.length} 项用户画像`,
+    preference: `✓ 已自动更新 ${message.items.length} 项偏好`,
+    merged: `✓ 已合并 ${message.items.length} 条相似记忆`,
     assistant: `✓ 人格画像发生了 ${message.items.length} 项变化`,
     growth: `🌱 记录了 ${message.items.length} 条人格成长事件`,
     shared: `🤝 新增了 ${message.items.length} 条共同记忆`
@@ -1162,6 +1164,7 @@ async function sendMessage() {
       .extractMemories({
         userMessage: content,
         assistantMessage: response,
+        conversationId: state.conversationId || "",
         conversationMessages: state.modelMessages
           .filter(
             (message) =>
@@ -1212,6 +1215,32 @@ async function sendMessage() {
             )
           );
         }
+        if (result.preferenceUpdates?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "preference",
+              result.preferenceUpdates.map((item) => ({
+                content: `${item.key}：${
+                  typeof item.value === "string"
+                    ? item.value
+                    : JSON.stringify(item.value)
+                }`,
+                reason: "已归入偏好与习惯"
+              }))
+            )
+          );
+        }
+        if (result.mergedMemories?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "merged",
+              result.mergedMemories.map((item) => ({
+                content: item.content,
+                reason: `已合并 ${item.mergeCount} 份独立证据`
+              }))
+            )
+          );
+        }
         if (result.assistantUpdates?.length) {
           state.messages.push(
             createMemoryActivity(
@@ -1255,6 +1284,8 @@ async function sendMessage() {
           !result.autoConfirmed?.length &&
           !result.candidates?.length &&
           !result.profileUpdates?.length &&
+          !result.preferenceUpdates?.length &&
+          !result.mergedMemories?.length &&
           !result.assistantUpdates?.length &&
           !result.personalityEvents?.length &&
           !result.sharedMemories?.length
