@@ -1,8 +1,8 @@
 {
-  "name": "xuanai-uniapp",
+  "name": "aetherx-uniapp",
   "version": "0.1.0",
   "private": true,
-  "description": "XuanAI multi-platform client",
+  "description": "AetherX multi-platform client",
   "scripts": {
     "dev:h5": "uni",
     "dev:app": "uni -p app",

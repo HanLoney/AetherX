@@ -1,11 +1,11 @@
-# XuanAI
+# AetherX
 
-XuanAI 是一个以 AI 为核心、可持续扩展生活与工作能力的个人智能助手。
+AetherX 是一个以 AI 为核心、可持续扩展生活与工作能力的个人智能助手。
 
 ## 项目结构
 
 ```text
-XuanAI/
+AetherX/
 ├─ frontend/
 │  ├─ desktop/       Electron 桌面客户端
 │  └─ uniapp/        UniApp 多端客户端
@@ -34,10 +34,10 @@ npm install
 npm start
 ```
 
-如后端不在本机默认端口，通过 `XUANAI_SERVER_URL` 指定：
+如后端不在本机默认端口，通过 `AETHERX_SERVER_URL` 指定：
 
 ```powershell
-$env:XUANAI_SERVER_URL = "https://api.example.com"
+$env:AETHERX_SERVER_URL = "https://api.example.com"
 npm start
 ```
 

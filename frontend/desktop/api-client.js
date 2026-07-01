@@ -46,7 +46,7 @@ class XuanApiClient {
         throw new ApiError("后端请求超时。", 504, "BACKEND_TIMEOUT");
       }
       throw new ApiError(
-        `无法连接 XuanAI 后端：${error.message}`,
+        `无法连接 AetherX 后端：${error.message}`,
         0,
         "BACKEND_UNAVAILABLE"
       );

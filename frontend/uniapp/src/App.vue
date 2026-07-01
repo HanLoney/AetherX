@@ -2,7 +2,7 @@
 import { onLaunch } from "@dcloudio/uni-app";
 
 onLaunch(() => {
-  console.info("XuanAI UniApp launched");
+  console.info("AetherX UniApp launched");
 });
 </script>
 
