@@ -254,6 +254,26 @@ class XuanApiClient {
     return this.request("PUT", "/api/v1/memories/settings", settings);
   }
 
+  getPromptSettings() {
+    return this.request("GET", "/api/v1/prompt-settings");
+  }
+
+  savePromptSettings(settings) {
+    return this.request("PUT", "/api/v1/prompt-settings", settings);
+  }
+
+  listPromptVersions() {
+    return this.request("GET", "/api/v1/prompt-settings/versions");
+  }
+
+  restorePromptVersion(version) {
+    return this.request(
+      "POST",
+      `/api/v1/prompt-settings/versions/${encodeURIComponent(version)}/restore`,
+      {}
+    );
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }

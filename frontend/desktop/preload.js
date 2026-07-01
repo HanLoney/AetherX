@@ -50,6 +50,12 @@ contextBridge.exposeInMainWorld("desktop", {
   getMemorySettings: () => ipcRenderer.invoke("memories:settings:get"),
   saveMemorySettings: (settings) =>
     ipcRenderer.invoke("memories:settings:save", settings),
+  getPromptSettings: () => ipcRenderer.invoke("prompt-settings:get"),
+  savePromptSettings: (settings) =>
+    ipcRenderer.invoke("prompt-settings:save", settings),
+  listPromptVersions: () => ipcRenderer.invoke("prompt-settings:versions"),
+  restorePromptVersion: (version) =>
+    ipcRenderer.invoke("prompt-settings:restore", version),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),

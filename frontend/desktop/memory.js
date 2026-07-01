@@ -18,6 +18,8 @@ const state = {
   assistantProfile: null,
   personalityEvents: [],
   sharedMemories: [],
+  promptBundle: null,
+  promptVersions: [],
   preferences: [],
   memories: [],
   settings: { autoConfirm: false }
@@ -41,7 +43,7 @@ const TYPE_LABELS = {
 };
 const STATUS_GROUPS = [
   { status: "candidate", label: "待确认记忆", description: "需要洛尼确认后才会参与召回" },
-  { status: "active", label: "已确认记忆", description: "小玄会在相关场景中主动参考" },
+  { status: "active", label: "已确认记忆", description: "AI 伙伴会在相关场景中主动参考" },
   { status: "archived", label: "已归档记忆", description: "保留记录，但不会参与召回" }
 ];
 
@@ -65,6 +67,8 @@ async function loadAll() {
     assistantProfile,
     personalityEvents,
     sharedMemories,
+    promptBundle,
+    promptVersions,
     preferences,
     memories,
     settings
@@ -73,6 +77,8 @@ async function loadAll() {
     window.desktop.getAssistantProfile(),
     window.desktop.listPersonalityEvents(),
     window.desktop.listSharedMemories(),
+    window.desktop.getPromptSettings(),
+    window.desktop.listPromptVersions(),
     window.desktop.listPreferences(),
     window.desktop.listMemories(),
     window.desktop.getMemorySettings()
@@ -81,6 +87,8 @@ async function loadAll() {
   state.assistantProfile = assistantProfile;
   state.personalityEvents = personalityEvents;
   state.sharedMemories = sharedMemories;
+  state.promptBundle = promptBundle;
+  state.promptVersions = promptVersions;
   state.preferences = preferences;
   state.memories = memories;
   state.settings = settings;
@@ -88,6 +96,7 @@ async function loadAll() {
   renderAssistantProfile();
   renderPersonalityEvents();
   renderSharedMemories();
+  renderPromptSettings();
   renderPreferences();
   renderMemories();
   renderMemorySettings();
@@ -144,8 +153,63 @@ function renderAssistantProfile() {
     list.append(card);
   });
   if (!(profile.traits || []).length) {
-    list.innerHTML = '<div class="empty">小玄的人格还在成长中。</div>';
+    list.innerHTML = '<div class="empty">AI 伙伴的人格还在成长中。</div>';
   }
+}
+
+function renderPromptSettings() {
+  const bundle = state.promptBundle;
+  if (!bundle) return;
+  const settings = bundle.settings;
+  $("#promptTone").value = settings.tone || "";
+  $("#promptResponseLength").value = settings.responseLength || "balanced";
+  $("#promptInitiative").value = String(
+    Math.round((settings.initiative || 0) * 100)
+  );
+  $("#promptHumor").value = String(Math.round((settings.humor || 0) * 100));
+  $("#promptUseEmoji").checked = Boolean(settings.useEmoji);
+  $("#promptBehaviorRules").value = (settings.behaviorRules || []).join("\n");
+  $("#promptWorkInstruction").value = settings.workInstruction || "";
+  $("#promptLifeInstruction").value = settings.lifeInstruction || "";
+  $("#promptEmotionalInstruction").value =
+    settings.emotionalInstruction || "";
+  $("#promptProhibitedBehaviors").value = (
+    settings.prohibitedBehaviors || []
+  ).join("\n");
+  $("#promptCustomInstruction").value = settings.customInstruction || "";
+  $("#initiativeValue").textContent = `${$("#promptInitiative").value}%`;
+  $("#humorValue").textContent = `${$("#promptHumor").value}%`;
+  $("#promptVersionLabel").textContent = bundle.version
+    ? `版本 ${bundle.version}`
+    : "默认配置";
+
+  const sections = $("#promptSectionList");
+  sections.replaceChildren();
+  bundle.sections.forEach((section) => {
+    const card = document.createElement("article");
+    card.className = `prompt-section${section.editable ? "" : " locked"}`;
+    const header = document.createElement("header");
+    const title = document.createElement("strong");
+    title.textContent = section.title;
+    const badge = document.createElement("span");
+    badge.textContent = section.editable ? "可修改" : "系统锁定";
+    const content = document.createElement("pre");
+    content.textContent = section.content;
+    header.append(title, badge);
+    card.append(header, content);
+    sections.append(card);
+  });
+
+  const versionSelect = $("#promptVersionSelect");
+  versionSelect.replaceChildren(new Option("历史版本", ""));
+  state.promptVersions.forEach((item) => {
+    versionSelect.append(
+      new Option(
+        `版本 ${item.version} · ${new Date(item.createdAt).toLocaleString("zh-CN")}`,
+        String(item.version)
+      )
+    );
+  });
 }
 
 function renderPersonalityEvents() {
@@ -337,7 +401,7 @@ function renderMemories() {
     empty.className = "memory-group empty";
     empty.textContent = state.memories.length
       ? "没有符合当前筛选条件的记忆。"
-      : "小玄还没有长期记忆。可以点击“新增记忆”告诉我一件重要的事。";
+      : "AI 伙伴还没有长期记忆。可以点击“新增记忆”记录一件重要的事。";
     list.append(empty);
   }
 }
@@ -434,7 +498,7 @@ function resetMemoryForm() {
 }
 
 async function deleteMemory(id) {
-  if (!confirm("确定让小玄忘记这条记忆吗？删除后无法恢复。")) return;
+  if (!confirm("确定让 AI 伙伴忘记这条记忆吗？删除后无法恢复。")) return;
   await window.desktop.deleteMemory(id);
   showNotice("这条记忆已经彻底删除。");
   await refreshMemories();
@@ -501,8 +565,62 @@ $("#assistantProfileForm").addEventListener("submit", async (event) => {
       relationshipSummary: $("#assistantRelationship").value,
       values: parseKeyValueLines($("#assistantValues").value)
     });
+    state.promptBundle = await window.desktop.getPromptSettings();
     renderAssistantProfile();
-    showNotice("小玄的画像已经更新。");
+    renderPromptSettings();
+    window.parent?.postMessage({ type: "xuan:prompt-updated" }, "*");
+    showNotice("人格画像已经更新。");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+$("#promptInitiative").addEventListener("input", (event) => {
+  $("#initiativeValue").textContent = `${event.currentTarget.value}%`;
+});
+$("#promptHumor").addEventListener("input", (event) => {
+  $("#humorValue").textContent = `${event.currentTarget.value}%`;
+});
+
+$("#promptSettingsForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    state.promptBundle = await window.desktop.savePromptSettings({
+      tone: $("#promptTone").value,
+      responseLength: $("#promptResponseLength").value,
+      initiative: Number($("#promptInitiative").value) / 100,
+      humor: Number($("#promptHumor").value) / 100,
+      useEmoji: $("#promptUseEmoji").checked,
+      behaviorRules: splitLines($("#promptBehaviorRules").value),
+      workInstruction: $("#promptWorkInstruction").value,
+      lifeInstruction: $("#promptLifeInstruction").value,
+      emotionalInstruction: $("#promptEmotionalInstruction").value,
+      prohibitedBehaviors: splitLines(
+        $("#promptProhibitedBehaviors").value
+      ),
+      customInstruction: $("#promptCustomInstruction").value
+    });
+    state.promptVersions = await window.desktop.listPromptVersions();
+    renderPromptSettings();
+    window.parent?.postMessage({ type: "xuan:prompt-updated" }, "*");
+    showNotice("提示词设置已保存并立即生效。");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+$("#restorePromptVersion").addEventListener("click", async () => {
+  const version = $("#promptVersionSelect").value;
+  if (!version) {
+    showNotice("请先选择要恢复的历史版本。", true);
+    return;
+  }
+  try {
+    state.promptBundle = await window.desktop.restorePromptVersion(version);
+    state.promptVersions = await window.desktop.listPromptVersions();
+    renderPromptSettings();
+    window.parent?.postMessage({ type: "xuan:prompt-updated" }, "*");
+    showNotice(`已恢复版本 ${version}，并生成了一个新版本。`);
   } catch (error) {
     showNotice(error.message, true);
   }
@@ -513,6 +631,13 @@ window.addEventListener("message", (event) => {
     loadAll().catch((error) => showNotice(error.message, true));
   }
 });
+
+function splitLines(value) {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 $("#preferenceForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -553,7 +678,7 @@ $("#memoryForm").addEventListener("submit", async (event) => {
     if (id) await window.desktop.updateMemory(id, payload);
     else await window.desktop.createMemory(payload);
     resetMemoryForm();
-    showNotice(id ? "记忆已修改。" : "小玄记住啦。");
+    showNotice(id ? "记忆已修改。" : "AI 伙伴记住啦。");
     await refreshMemories();
   } catch (error) {
     showNotice(error.message, true);

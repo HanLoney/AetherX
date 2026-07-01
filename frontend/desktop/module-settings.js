@@ -3,7 +3,7 @@
   const manifest = Object.freeze([
     Object.freeze({
       id: "ai",
-      name: "小玄 AI",
+      name: "AI 伙伴",
       description: "负责对话、理解意图并调度其他模块。",
       icon: "✦",
       color: "pink",
