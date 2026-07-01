@@ -51,6 +51,18 @@ const {
 const {
   registerAssistantMemoryRoutes
 } = require("./modules/assistant-memory/assistant-memory-routes");
+const {
+  PromptSettingsRepository
+} = require("./modules/prompt-settings/prompt-settings-repository");
+const {
+  PromptSettingsService
+} = require("./modules/prompt-settings/prompt-settings-service");
+const {
+  PromptComposer
+} = require("./modules/prompt-settings/prompt-composer");
+const {
+  registerPromptSettingsRoutes
+} = require("./modules/prompt-settings/prompt-settings-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -75,6 +87,11 @@ function createApp(config) {
   const assistantMemoryService = new AssistantMemoryService(
     new AssistantMemoryRepository(database)
   );
+  const promptSettingsService = new PromptSettingsService(
+    new PromptSettingsRepository(database),
+    new PromptComposer(),
+    assistantMemoryService
+  );
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -95,6 +112,7 @@ function createApp(config) {
   registerMemorySettingsRoutes(router, memorySettingsService);
   registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
   registerAssistantMemoryRoutes(router, assistantMemoryService);
+  registerPromptSettingsRoutes(router, promptSettingsService);
   registerConversationRoutes(router, conversationService);
 
   const server = http.createServer((request, response) =>

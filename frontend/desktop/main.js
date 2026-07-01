@@ -104,6 +104,14 @@ function registerIpcHandlers() {
   ipcMain.handle("memories:settings:save", (_event, settings) =>
     api.saveMemorySettings(settings)
   );
+  ipcMain.handle("prompt-settings:get", () => api.getPromptSettings());
+  ipcMain.handle("prompt-settings:save", (_event, settings) =>
+    api.savePromptSettings(settings)
+  );
+  ipcMain.handle("prompt-settings:versions", () => api.listPromptVersions());
+  ipcMain.handle("prompt-settings:restore", (_event, version) =>
+    api.restorePromptVersion(version)
+  );
   ipcMain.handle("conversations:list", () => api.listConversations());
   ipcMain.handle("conversations:create", (_event, title) =>
     api.createConversation(title)

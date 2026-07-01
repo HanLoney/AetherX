@@ -185,6 +185,24 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_shared_memories_user_status
       ON shared_memories(user_id, status, updated_at);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS prompt_settings (
+      user_id TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
+      settings_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS prompt_setting_versions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      settings_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(user_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS idx_prompt_versions_user
+      ON prompt_setting_versions(user_id, version DESC);
   `
 ];
 

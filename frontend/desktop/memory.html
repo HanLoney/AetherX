@@ -27,7 +27,7 @@
           <div><strong>AetherX</strong><span>你的智能生活中枢</span></div>
         </div>
         <nav class="nav-list">
-          <button id="homeBtn" class="nav-item"><i>✦</i>小玄 AI</button>
+          <button id="homeBtn" class="nav-item"><i>✦</i>AI 伙伴</button>
           <button id="todoBtn" class="nav-item"><i>✓</i>日历待办</button>
           <button class="nav-item active"><i>🧠</i>记忆中心</button>
           <button id="modulesBtn" class="nav-item"><i>◫</i>模块中心</button>
@@ -43,7 +43,7 @@
           <div>
             <p>PERSONAL MEMORY</p>
             <h1>记忆中心</h1>
-            <span>清楚掌握小玄记住的每一件事。</span>
+            <span>清楚掌握 AI 伙伴记住的每一件事。</span>
           </div>
           <div class="memory-stats">
             <div><strong id="totalMemoryCount">0</strong><span>全部</span></div>
@@ -57,8 +57,9 @@
         <nav class="memory-tabs" aria-label="记忆中心导航">
           <button class="memory-tab active" data-view="memories">全部记忆</button>
           <button class="memory-tab" data-view="profile">用户画像</button>
-          <button class="memory-tab" data-view="assistant">小玄画像</button>
+          <button class="memory-tab" data-view="assistant">人格画像</button>
           <button class="memory-tab" data-view="shared">共同记忆</button>
+          <button class="memory-tab" data-view="prompts">提示词设置</button>
           <button class="memory-tab" data-view="preferences">偏好与习惯</button>
         </nav>
 
@@ -106,7 +107,7 @@
             </header>
             <form id="memoryForm">
               <input id="memoryId" type="hidden" />
-              <textarea id="memoryContent" placeholder="小玄应该记住什么？" required></textarea>
+              <textarea id="memoryContent" placeholder="AI 伙伴应该记住什么？" required></textarea>
               <div class="form-row">
                 <select id="memoryDomain">
                   <option value="life">生活</option><option value="relationship">人际关系</option>
@@ -137,7 +138,7 @@
             <header><div><h2>我的画像</h2><p>稳定、明确并且由洛尼亲自维护的信息。</p></div></header>
             <form id="profileForm" class="profile-grid">
               <label>名字<input id="displayName" maxlength="100" /></label>
-              <label>希望小玄怎么称呼<input id="preferredName" maxlength="100" /></label>
+              <label>希望 AI 伙伴怎么称呼<input id="preferredName" maxlength="100" /></label>
               <label>生日<input id="birthday" maxlength="10" placeholder="11-14 或 1990-11-14" /></label>
               <label>职业 / 当前身份<input id="occupation" maxlength="200" /></label>
               <label class="wide">关于我<textarea id="bio" maxlength="2000"></textarea></label>
@@ -151,7 +152,7 @@
           <section class="panel">
             <header>
               <div>
-                <h2>小玄的当前画像</h2>
+                <h2>当前人格画像</h2>
                 <p>人格会根据明确要求和长期经历逐渐变化，每次变化都保留证据。</p>
               </div>
             </header>
@@ -161,7 +162,7 @@
               <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
               <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
               <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
-              <div class="wide actions"><button class="primary" type="submit">保存小玄画像</button></div>
+              <div class="wide actions"><button class="primary" type="submit">保存人格画像</button></div>
             </form>
           </section>
           <section class="panel">
@@ -169,7 +170,7 @@
             <div id="assistantTraitList" class="trait-grid"></div>
           </section>
           <section class="panel">
-            <header><div><h2>人格变化记录</h2><p>记录小玄的承诺、行为、纠正与成长。</p></div></header>
+            <header><div><h2>人格变化记录</h2><p>记录 AI 伙伴的承诺、行为、纠正与成长。</p></div></header>
             <div id="personalityEventList" class="timeline-list"></div>
           </section>
         </section>
@@ -177,9 +178,61 @@
         <section id="sharedView" class="tab-view hidden">
           <section class="panel">
             <header>
-              <div><h2>我们的共同记忆</h2><p>记录洛尼和小玄共同完成、共同决定与共同约定的事情。</p></div>
+              <div><h2>我们的共同记忆</h2><p>记录用户与 AI 伙伴共同完成、决定和约定的事情。</p></div>
             </header>
             <div id="sharedMemoryList" class="timeline-list"></div>
+          </section>
+        </section>
+
+        <section id="promptsView" class="tab-view hidden">
+          <section class="panel">
+            <header>
+              <div>
+                <h2>通用沟通与行为设置</h2>
+                <p>这里修改的是结构化配置，系统会安全地组合成最终提示词。</p>
+              </div>
+              <span id="promptVersionLabel" class="version-label">默认配置</span>
+            </header>
+            <form id="promptSettingsForm" class="prompt-settings-grid">
+              <label>整体语气<input id="promptTone" maxlength="300" /></label>
+              <label>回复长度
+                <select id="promptResponseLength">
+                  <option value="concise">简洁</option>
+                  <option value="balanced">适中</option>
+                  <option value="detailed">详细</option>
+                </select>
+              </label>
+              <label>主动程度 <output id="initiativeValue">75%</output>
+                <input id="promptInitiative" type="range" min="0" max="100" />
+              </label>
+              <label>幽默程度 <output id="humorValue">45%</output>
+                <input id="promptHumor" type="range" min="0" max="100" />
+              </label>
+              <label class="check-setting">
+                <input id="promptUseEmoji" type="checkbox" />
+                <span>允许自然使用表情和口头禅</span>
+              </label>
+              <label class="wide">做事原则（每行一条）<textarea id="promptBehaviorRules"></textarea></label>
+              <label class="wide">工作协作方式<textarea id="promptWorkInstruction"></textarea></label>
+              <label class="wide">生活陪伴方式<textarea id="promptLifeInstruction"></textarea></label>
+              <label class="wide">情绪陪伴方式<textarea id="promptEmotionalInstruction"></textarea></label>
+              <label class="wide">禁止行为（每行一条）<textarea id="promptProhibitedBehaviors"></textarea></label>
+              <label class="wide">自定义补充指令<textarea id="promptCustomInstruction" maxlength="4000"></textarea></label>
+              <div class="wide actions">
+                <button class="primary" type="submit">保存提示词设置</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <header>
+              <div><h2>最终提示词预览</h2><p>可编辑内容与系统锁定规则分区展示。</p></div>
+              <div class="version-actions">
+                <select id="promptVersionSelect"><option value="">历史版本</option></select>
+                <button id="restorePromptVersion" class="secondary" type="button">恢复</button>
+              </div>
+            </header>
+            <div id="promptSectionList" class="prompt-section-list"></div>
           </section>
         </section>
 

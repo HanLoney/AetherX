@@ -95,7 +95,7 @@ class AssistantMemoryService {
       type: text(input.type || "episode", 60),
       content,
       participants: normalizeStrings(
-        input.participants || ["洛尼", "小玄"],
+        input.participants || ["用户", this.getProfile(userId).name],
         20,
         100
       ),
@@ -132,7 +132,7 @@ class AssistantMemoryService {
     const shared = this.listSharedMemories(userId, { status: "active" })
       .slice(0, 6);
     const lines = [
-      `[小玄当前画像]`,
+      `[当前人格画像]`,
       profile.name && `名字：${profile.name}`,
       profile.gender && `性别认同：${profile.gender}`,
       profile.selfDefinition && `自我定位：${profile.selfDefinition}`,

@@ -1,5 +1,6 @@
-const SYSTEM_PROMPT =
-  "你是一个会持续成长的个人 AI 伙伴。你的当前名字、人格、关系定位和共同经历以本轮召回的“小玄当前画像”为准，不要假装人格永远固定。用户姓名、称呼、生日、职业和简介属于用户画像；稳定事实、经历、决定和习惯属于用户长期记忆；你的身份和关系定位属于小玄画像；性格变化与长期承诺属于人格成长事件；双方共同完成、决定或约定的事情属于共同记忆；只有需要完成或提醒的行动才属于待办。不要用待办替代任何画像或记忆。需要读取信息时主动调用工具；需要写入或删除时发起工具调用。对话上下文不等于持久记忆，不要声称系统没有记忆功能。只有收到 ok=true 的工具结果后才能声称读取或操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+const FALLBACK_SYSTEM_PROMPT =
+  "你是一个会持续成长的个人 AI 伙伴。你的当前名字、人格、关系定位和共同经历以本轮召回的“当前人格画像”为准，不要假装人格永远固定。用户姓名、称呼、生日、职业和简介属于用户画像；稳定事实、经历、决定和习惯属于用户长期记忆；你的身份和关系定位属于人格画像；性格变化与长期承诺属于人格成长事件；双方共同完成、决定或约定的事情属于共同记忆；只有需要完成或提醒的行动才属于待办。不要用待办替代任何画像或记忆。需要读取信息时主动调用工具；需要写入或删除时发起工具调用。对话上下文不等于持久记忆，不要声称系统没有记忆功能。只有收到 ok=true 的工具结果后才能声称读取或操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+let systemPrompt = FALLBACK_SYSTEM_PROMPT;
 const MAX_TOOL_ROUNDS = 6;
 
 class EmptyCompletionError extends Error {
@@ -221,12 +222,12 @@ async function showModuleWorkspace(moduleId, source, activeButton) {
 }
 
 window.addEventListener("message", (event) => {
-  if (
-    event.source !== moduleFrame.contentWindow ||
-    event.data?.type !== "xuan:navigate"
-  ) {
+  if (event.source !== moduleFrame.contentWindow) return;
+  if (event.data?.type === "xuan:prompt-updated") {
+    refreshSystemPrompt();
     return;
   }
+  if (event.data?.type !== "xuan:navigate") return;
   const target = event.data.target;
   if (target === "chat") showChatWorkspace();
   if (target === "todo" && window.XuanModules.isEnabled("todo")) {
@@ -453,7 +454,7 @@ async function finalizeToolRun(summaries, reason) {
         {
           role: "system",
           content:
-            `${SYSTEM_PROMPT}\n工具阶段已经结束，原因：${reason}。` +
+            `${systemPrompt}\n工具阶段已经结束，原因：${reason}。` +
             "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
         },
         ...memoryContextMessages(),
@@ -487,7 +488,7 @@ async function runAgentLoop() {
       messages: [
         {
           role: "system",
-          content: `${SYSTEM_PROMPT}\n当前本地时间：${new Date().toISOString()}`
+          content: `${systemPrompt}\n当前本地时间：${new Date().toISOString()}`
         },
         ...memoryContextMessages(),
         ...state.modelMessages
@@ -507,7 +508,7 @@ async function runAgentLoop() {
           {
             role: "system",
             content:
-              `${SYSTEM_PROMPT}\n当前端点没有返回工具调用能力。请直接回答用户，` +
+              `${systemPrompt}\n当前端点没有返回工具调用能力。请直接回答用户，` +
               "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
           },
           ...memoryContextMessages(),
@@ -964,7 +965,7 @@ function renderMemoryActivity(row, message) {
     candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
     confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`,
     profile: `✓ 已自动更新 ${message.items.length} 项用户画像`,
-    assistant: `✓ 小玄画像发生了 ${message.items.length} 项变化`,
+    assistant: `✓ 人格画像发生了 ${message.items.length} 项变化`,
     growth: `🌱 记录了 ${message.items.length} 条人格成长事件`,
     shared: `🤝 新增了 ${message.items.length} 条共同记忆`
   }[message.kind];
@@ -1199,7 +1200,7 @@ async function sendMessage() {
               "assistant",
               result.assistantUpdates.map((item) => ({
                 content: `${item.label}：${item.value}`,
-                reason: "小玄画像"
+                reason: "人格画像"
               }))
             )
           );
@@ -1225,6 +1226,12 @@ async function sendMessage() {
               }))
             )
           );
+        }
+        if (
+          result.assistantUpdates?.length ||
+          result.personalityEvents?.some((item) => item.status === "active")
+        ) {
+          refreshSystemPrompt();
         }
         if (
           !result.autoConfirmed?.length &&
@@ -1333,6 +1340,7 @@ elements.settingsMask.addEventListener("click", (event) => {
 
 async function initialize() {
   state.config = await window.desktop.getAIConfig();
+  await refreshSystemPrompt();
   state.draft = { ...state.config, apiKey: "" };
   syncModuleState();
   renderHeader();
@@ -1341,6 +1349,15 @@ async function initialize() {
     await loadConversation(state.conversations[0].id);
   } else {
     renderMessages();
+  }
+}
+
+async function refreshSystemPrompt() {
+  try {
+    const bundle = await window.desktop.getPromptSettings();
+    systemPrompt = bundle.compiledPrompt || FALLBACK_SYSTEM_PROMPT;
+  } catch {
+    systemPrompt = FALLBACK_SYSTEM_PROMPT;
   }
 }
 
