@@ -274,6 +274,10 @@ class XuanApiClient {
     );
   }
 
+  getTimeAwarenessContext(input) {
+    return this.request("POST", "/api/v1/time-awareness/context", input);
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }

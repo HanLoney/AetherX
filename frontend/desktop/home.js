@@ -16,6 +16,7 @@ const state = {
   messages: [],
   modelMessages: [],
   memoryContext: "",
+  timeContext: "",
   chatGeneration: 0,
   conversations: [],
   conversationId: null,
@@ -34,6 +35,10 @@ function memoryContextMessages() {
   return state.memoryContext
     ? [{ role: "system", content: state.memoryContext }]
     : [];
+}
+
+function currentSystemPrompt() {
+  return [systemPrompt, state.timeContext].filter(Boolean).join("\n\n");
 }
 
 const elements = {
@@ -255,6 +260,9 @@ function syncModuleState() {
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
+  if (!window.XuanModules.isEnabled("time-awareness")) {
+    state.timeContext = "";
+  }
 }
 
 function providerById(id) {
@@ -462,7 +470,7 @@ async function finalizeToolRun(summaries, reason) {
         {
           role: "system",
           content:
-            `${systemPrompt}\n工具阶段已经结束，原因：${reason}。` +
+            `${currentSystemPrompt()}\n工具阶段已经结束，原因：${reason}。` +
             "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
         },
         ...memoryContextMessages(),
@@ -496,7 +504,7 @@ async function runAgentLoop() {
       messages: [
         {
           role: "system",
-          content: `${systemPrompt}\n当前本地时间：${new Date().toISOString()}`
+          content: currentSystemPrompt()
         },
         ...memoryContextMessages(),
         ...state.modelMessages
@@ -516,7 +524,7 @@ async function runAgentLoop() {
           {
             role: "system",
             content:
-              `${systemPrompt}\n当前端点没有返回工具调用能力。请直接回答用户，` +
+              `${currentSystemPrompt()}\n当前端点没有返回工具调用能力。请直接回答用户，` +
               "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
           },
           ...memoryContextMessages(),
@@ -1125,6 +1133,8 @@ async function sendMessage() {
     showTestResult("error", "请先完成 AI 配置并测试连接");
     return;
   }
+  await refreshSystemPrompt();
+  await refreshTimeContext();
 
   state.messages.push(createMessage("user", content));
   state.modelMessages.push({ role: "user", content });
@@ -1366,6 +1376,24 @@ async function refreshSystemPrompt() {
     systemPrompt = bundle.compiledPrompt || FALLBACK_SYSTEM_PROMPT;
   } catch {
     systemPrompt = FALLBACK_SYSTEM_PROMPT;
+  }
+}
+
+async function refreshTimeContext() {
+  if (!window.XuanModules.isEnabled("time-awareness")) {
+    state.timeContext = "";
+    return;
+  }
+  try {
+    const context = await window.desktop.getTimeAwarenessContext({
+      now: Date.now(),
+      timeZone:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+      locale: navigator.language || "zh-CN"
+    });
+    state.timeContext = context.context || "";
+  } catch {
+    state.timeContext = "";
   }
 }
 

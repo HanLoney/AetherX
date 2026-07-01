@@ -7,6 +7,9 @@ const { createApp } = require("../src/app");
 const {
   MemoryIntelligenceService
 } = require("../src/modules/memories/memory-intelligence-service");
+const {
+  TimeAwarenessService
+} = require("../src/modules/time-awareness/time-awareness-service");
 
 async function withServer(run) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "xuanai-test-"));
@@ -44,6 +47,48 @@ test("health endpoint reports readiness", async () => {
     const { response, payload } = await request(baseUrl, "GET", "/health");
     assert.equal(response.status, 200);
     assert.equal(payload.data.status, "ok");
+  });
+});
+
+test("time awareness uses the user timezone and measures elapsed interaction", () => {
+  const now = Date.parse("2026-07-01T14:30:00+08:00");
+  const lastInteraction = Date.parse("2026-07-01T12:15:00+08:00");
+  const service = new TimeAwarenessService({
+    getLastUserInteraction: (_userId, before) => {
+      assert.ok(before < now);
+      return lastInteraction;
+    }
+  });
+  const result = service.getContext("user", {
+    now,
+    timeZone: "Asia/Shanghai",
+    locale: "zh-CN"
+  });
+  assert.equal(result.localDate, "2026-07-01");
+  assert.equal(result.localTime, "14:30");
+  assert.equal(result.period, "afternoon");
+  assert.equal(result.elapsedMs, 2 * 3600000 + 15 * 60000);
+  assert.equal(result.elapsedLabel, "2 小时 15 分钟前");
+  assert.equal(result.isFirstInteractionToday, false);
+  assert.match(result.context, /除非用户明确询问/);
+});
+
+test("time awareness API reports first recorded interaction", async () => {
+  await withServer(async (baseUrl) => {
+    const result = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/time-awareness/context",
+      {
+        now: Date.parse("2026-07-01T23:10:00+08:00"),
+        timeZone: "Asia/Shanghai",
+        locale: "zh-CN"
+      }
+    );
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.data.period, "late-evening");
+    assert.equal(result.payload.data.lastInteractionAt, null);
+    assert.equal(result.payload.data.isFirstInteractionToday, true);
   });
 });
 

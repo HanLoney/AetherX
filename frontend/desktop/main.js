@@ -112,6 +112,9 @@ function registerIpcHandlers() {
   ipcMain.handle("prompt-settings:restore", (_event, version) =>
     api.restorePromptVersion(version)
   );
+  ipcMain.handle("time-awareness:context", (_event, input) =>
+    api.getTimeAwarenessContext(input)
+  );
   ipcMain.handle("conversations:list", () => api.listConversations());
   ipcMain.handle("conversations:create", (_event, title) =>
     api.createConversation(title)

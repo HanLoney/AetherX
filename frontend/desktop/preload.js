@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld("desktop", {
   listPromptVersions: () => ipcRenderer.invoke("prompt-settings:versions"),
   restorePromptVersion: (version) =>
     ipcRenderer.invoke("prompt-settings:restore", version),
+  getTimeAwarenessContext: (input) =>
+    ipcRenderer.invoke("time-awareness:context", input),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),

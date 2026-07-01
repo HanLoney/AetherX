@@ -63,6 +63,15 @@ const {
 const {
   registerPromptSettingsRoutes
 } = require("./modules/prompt-settings/prompt-settings-routes");
+const {
+  TimeAwarenessRepository
+} = require("./modules/time-awareness/time-awareness-repository");
+const {
+  TimeAwarenessService
+} = require("./modules/time-awareness/time-awareness-service");
+const {
+  registerTimeAwarenessRoutes
+} = require("./modules/time-awareness/time-awareness-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -92,6 +101,9 @@ function createApp(config) {
     new PromptComposer(),
     assistantMemoryService
   );
+  const timeAwarenessService = new TimeAwarenessService(
+    new TimeAwarenessRepository(database)
+  );
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -113,6 +125,7 @@ function createApp(config) {
   registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
   registerAssistantMemoryRoutes(router, assistantMemoryService);
   registerPromptSettingsRoutes(router, promptSettingsService);
+  registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);
 
   const server = http.createServer((request, response) =>
