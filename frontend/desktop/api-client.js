@@ -113,6 +113,76 @@ class XuanApiClient {
     return this.request("PATCH", "/api/v1/profile", changes);
   }
 
+  getAssistantProfile() {
+    return this.request("GET", "/api/v1/assistant/profile");
+  }
+
+  updateAssistantProfile(changes) {
+    return this.request("PATCH", "/api/v1/assistant/profile", changes);
+  }
+
+  listPersonalityEvents(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/assistant/personality-events${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  createPersonalityEvent(event) {
+    return this.request(
+      "POST",
+      "/api/v1/assistant/personality-events",
+      event
+    );
+  }
+
+  deletePersonalityEvent(id) {
+    return this.request(
+      "DELETE",
+      `/api/v1/assistant/personality-events/${encodeURIComponent(id)}`
+    );
+  }
+
+  confirmPersonalityEvent(id) {
+    return this.request(
+      "POST",
+      `/api/v1/assistant/personality-events/${encodeURIComponent(id)}/confirm`,
+      {}
+    );
+  }
+
+  listSharedMemories(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/shared-memories${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  createSharedMemory(memory) {
+    return this.request("POST", "/api/v1/shared-memories", memory);
+  }
+
+  deleteSharedMemory(id) {
+    return this.request(
+      "DELETE",
+      `/api/v1/shared-memories/${encodeURIComponent(id)}`
+    );
+  }
+
+  confirmSharedMemory(id) {
+    return this.request(
+      "POST",
+      `/api/v1/shared-memories/${encodeURIComponent(id)}/confirm`,
+      {}
+    );
+  }
+
   listPreferences(filters = {}) {
     const query = new URLSearchParams(
       Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")

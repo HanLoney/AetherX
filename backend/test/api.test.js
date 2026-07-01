@@ -466,6 +466,157 @@ test("questions cannot become profile facts even when the model proposes them", 
   assert.equal(result.candidates.length, 0);
 });
 
+test("assistant personality and shared memories are modular, confirmable APIs", async () => {
+  await withServer(async (baseUrl) => {
+    const profile = await request(
+      baseUrl,
+      "PATCH",
+      "/api/v1/assistant/profile",
+      {
+        name: "小玄",
+        gender: "女",
+        selfDefinition: "会持续成长的全能助手",
+        relationshipSummary: "洛尼亲密无间的伙伴"
+      }
+    );
+    assert.equal(profile.payload.data.gender, "女");
+    assert.match(profile.payload.data.selfDefinition, /持续成长/);
+
+    const event = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/assistant/personality-events",
+      {
+        category: "growth",
+        traitKey: "细心",
+        traitValue: "主动检查容易遗漏的细节",
+        content: "小玄会在完成修改后主动检查细节",
+        evidence: "以后记得检查细节",
+        sourceRole: "user",
+        confidence: 0.95,
+        weight: 0.8,
+        status: "candidate"
+      }
+    );
+    assert.equal(event.payload.data.status, "candidate");
+    const confirmedEvent = await request(
+      baseUrl,
+      "POST",
+      `/api/v1/assistant/personality-events/${event.payload.data.id}/confirm`,
+      {}
+    );
+    assert.equal(confirmedEvent.payload.data.status, "active");
+
+    const evolved = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/profile"
+    );
+    assert.equal(evolved.payload.data.traits[0].key, "细心");
+    assert.equal(evolved.payload.data.traits[0].evidenceCount, 1);
+
+    const shared = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/shared-memories",
+      {
+        type: "episode",
+        content: "洛尼和小玄一起完成了可演化人格模块",
+        evidence: "可以，但是人格也不要固定",
+        status: "candidate"
+      }
+    );
+    assert.equal(shared.payload.data.status, "candidate");
+    assert.deepEqual(shared.payload.data.participants, ["洛尼", "小玄"]);
+    const confirmedShared = await request(
+      baseUrl,
+      "POST",
+      `/api/v1/shared-memories/${shared.payload.data.id}/confirm`,
+      {}
+    );
+    assert.equal(confirmedShared.payload.data.status, "active");
+  });
+});
+
+test("multi-turn extraction separates assistant growth from shared memories", async () => {
+  const events = [];
+  const shared = [];
+  const assistantMemoryService = {
+    recordEvent: (_userId, input) => {
+      const item = { id: `event-${events.length + 1}`, ...input };
+      events.push(item);
+      return item;
+    },
+    createSharedMemory: (_userId, input) => {
+      const item = { id: `shared-${shared.length + 1}`, ...input };
+      shared.push(item);
+      return item;
+    }
+  };
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: { list: () => [], create: () => assert.fail("unexpected user memory") },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    assistantMemoryService,
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  target: "personality_event",
+                  field: null,
+                  value: "",
+                  traitKey: "细心",
+                  traitValue: "主动检查遗漏",
+                  domain: "work",
+                  type: "decision",
+                  content: "小玄决定以后主动检查遗漏",
+                  entities: ["小玄"],
+                  evidence: "以后我会主动检查遗漏",
+                  confidence: 0.96,
+                  importance: 0.8,
+                  sensitivity: "normal"
+                },
+                {
+                  target: "shared_memory",
+                  field: null,
+                  value: "",
+                  traitKey: "",
+                  traitValue: "",
+                  domain: "work",
+                  type: "episode",
+                  content: "洛尼和小玄共同完成了人格模块设计",
+                  entities: ["洛尼", "小玄"],
+                  evidence: "我们把人格模块设计完成了",
+                  confidence: 0.95,
+                  importance: 0.8,
+                  sensitivity: "normal"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    conversationMessages: [
+      { role: "assistant", content: "以后我会主动检查遗漏" },
+      { role: "user", content: "我们把人格模块设计完成了" }
+    ]
+  });
+  assert.equal(result.personalityEvents.length, 1);
+  assert.equal(result.personalityEvents[0].status, "candidate");
+  assert.equal(result.sharedMemories.length, 1);
+  assert.equal(result.sharedMemories[0].status, "active");
+});
+
 test("complete conversations persist display and model message streams", async () => {
   await withServer(async (baseUrl) => {
     const created = await request(

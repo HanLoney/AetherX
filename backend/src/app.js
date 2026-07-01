@@ -42,6 +42,15 @@ const {
 const {
   registerMemorySettingsRoutes
 } = require("./modules/memories/memory-settings-routes");
+const {
+  AssistantMemoryRepository
+} = require("./modules/assistant-memory/assistant-memory-repository");
+const {
+  AssistantMemoryService
+} = require("./modules/assistant-memory/assistant-memory-service");
+const {
+  registerAssistantMemoryRoutes
+} = require("./modules/assistant-memory/assistant-memory-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -63,11 +72,15 @@ function createApp(config) {
   const conversationService = new ConversationService(
     new ConversationRepository(database)
   );
+  const assistantMemoryService = new AssistantMemoryService(
+    new AssistantMemoryRepository(database)
+  );
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
     memoryService,
     memorySettingsService,
+    assistantMemoryService,
     configRepository: aiConfigRepository,
     providerClient: aiProviderClient
   });
@@ -81,6 +94,7 @@ function createApp(config) {
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);
   registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
+  registerAssistantMemoryRoutes(router, assistantMemoryService);
   registerConversationRoutes(router, conversationService);
 
   const server = http.createServer((request, response) =>

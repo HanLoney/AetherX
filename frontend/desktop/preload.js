@@ -16,6 +16,25 @@ contextBridge.exposeInMainWorld("desktop", {
   getProfile: () => ipcRenderer.invoke("profile:get"),
   saveProfile: (profile) => ipcRenderer.invoke("profile:save", profile),
   updateProfile: (changes) => ipcRenderer.invoke("profile:update", changes),
+  getAssistantProfile: () => ipcRenderer.invoke("assistant-profile:get"),
+  updateAssistantProfile: (changes) =>
+    ipcRenderer.invoke("assistant-profile:update", changes),
+  listPersonalityEvents: (filters) =>
+    ipcRenderer.invoke("personality-events:list", filters),
+  createPersonalityEvent: (input) =>
+    ipcRenderer.invoke("personality-events:create", input),
+  deletePersonalityEvent: (id) =>
+    ipcRenderer.invoke("personality-events:delete", id),
+  confirmPersonalityEvent: (id) =>
+    ipcRenderer.invoke("personality-events:confirm", id),
+  listSharedMemories: (filters) =>
+    ipcRenderer.invoke("shared-memories:list", filters),
+  createSharedMemory: (input) =>
+    ipcRenderer.invoke("shared-memories:create", input),
+  deleteSharedMemory: (id) =>
+    ipcRenderer.invoke("shared-memories:delete", id),
+  confirmSharedMemory: (id) =>
+    ipcRenderer.invoke("shared-memories:confirm", id),
   listPreferences: (filters) => ipcRenderer.invoke("preferences:list", filters),
   savePreference: (preference) =>
     ipcRenderer.invoke("preferences:save", preference),

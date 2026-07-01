@@ -13,6 +13,7 @@ class MemoryIntelligenceService {
     preferenceService,
     memoryService,
     memorySettingsService,
+    assistantMemoryService,
     configRepository,
     providerClient
   }) {
@@ -20,6 +21,7 @@ class MemoryIntelligenceService {
     this.preferenceService = preferenceService;
     this.memoryService = memoryService;
     this.memorySettingsService = memorySettingsService;
+    this.assistantMemoryService = assistantMemoryService;
     this.configRepository = configRepository;
     this.providerClient = providerClient;
   }
@@ -79,7 +81,10 @@ class MemoryIntelligenceService {
     return {
       scenes: [...scenes],
       items,
-      context: buildContext(profile, recalledPreferences, recalledMemories)
+      context: [
+        buildContext(profile, recalledPreferences, recalledMemories),
+        this.assistantMemoryService?.context(userId)
+      ].filter(Boolean).join("\n\n")
     };
   }
 
@@ -89,7 +94,14 @@ class MemoryIntelligenceService {
       .filter((message) => message.role === "user")
       .map((message) => message.content);
     if (!userMessages.some((message) => message.length >= 4)) {
-      return { candidates: [], autoConfirmed: [], profileUpdates: [] };
+      return {
+        candidates: [],
+        autoConfirmed: [],
+        profileUpdates: [],
+        assistantUpdates: [],
+        personalityEvents: [],
+        sharedMemories: []
+      };
     }
 
     const config = this.configRepository.getCredentials(userId);
@@ -97,13 +109,15 @@ class MemoryIntelligenceService {
       messages: [
         {
           role: "system",
-          content: `你是 XuanAI 的长期记忆筛选器。阅读最近多轮对话，只提取用户本人明确陈述、未来有帮助且相对稳定的信息。
-助手的话只能帮助理解上下文，绝不能作为事实来源。疑问、反问、假设、否定、玩笑，以及用户对产品、系统、工具或记忆功能的反馈，都不是个人事实。
-姓名、称呼、生日、职业、个人简介写入 profile；其余稳定事实、经历、决定、计划和习惯写入 memory。需要执行或提醒的事项不是长期记忆。
+          content: `你是 XuanAI 的长期记忆筛选器。阅读最近多轮对话，提取未来有帮助且相对稳定的信息。
+用户个人事实必须来自用户原话。助手原话只能产生助手自己的承诺、行为或成长事件，不能反过来证明用户事实。疑问、反问、假设、否定和玩笑不是事实。
+用户姓名、称呼、生日、职业、简介写入 profile；用户其他稳定信息写入 memory；小玄身份变化写入 assistant_profile；性格成长与承诺写入 personality_event；双方共同完成或约定的事情写入 shared_memory。需要执行或提醒的事项不是长期记忆。
+用户对产品、系统和工具的反馈不是用户画像，但如果小玄据此形成了明确改进承诺，可以成为低置信度 personality_event。
 不要提取密码、密钥、证件号、银行卡号或精确住址。健康、财务、感情等信息标记为 sensitive。
-每项必须提供 evidence，它必须是用户消息中的连续原文，不能改写。无法提供直接原文证据就不要输出。
+每项必须提供 evidence，它必须是对话消息中的连续原文，不能改写。无法提供直接原文证据就不要输出。
 只返回 JSON 数组，不要 Markdown，最多 5 项。格式：
-{"target":"memory|profile","field":"displayName|preferredName|birthday|occupation|bio|null","value":"画像字段值或空字符串","domain":"life|relationship|health|work|learning|emotion","type":"fact|episode|decision|plan|routine","content":"简洁且可独立理解的事实","entities":["相关人物或事物"],"evidence":"用户连续原话","confidence":0到1,"importance":0到1,"sensitivity":"normal|personal|sensitive"}
+{"target":"memory|profile|assistant_profile|personality_event|shared_memory","field":"画像字段或null","value":"字段值或空字符串","traitKey":"性格特征名或空字符串","traitValue":"性格特征值或空字符串","domain":"life|relationship|health|work|learning|emotion","type":"fact|episode|decision|plan|routine","content":"简洁且可独立理解的事实","entities":["相关人物或事物"],"evidence":"对话连续原话","confidence":0到1,"importance":0到1,"sensitivity":"normal|personal|sensitive"}
+assistant_profile 的 field 只能是 name、gender、selfDefinition、relationshipSummary。
 生日 value 必须规范成 MM-DD 或 YYYY-MM-DD。只有非常明确、无歧义的直接陈述才给 confidence >= 0.9。`
         },
         {
@@ -123,6 +137,9 @@ class MemoryIntelligenceService {
         candidates: [],
         autoConfirmed: [],
         profileUpdates: [],
+        assistantUpdates: [],
+        personalityEvents: [],
+        sharedMemories: [],
         skipped: "provider_error"
       };
     }
@@ -133,6 +150,9 @@ class MemoryIntelligenceService {
     const candidates = [];
     const autoConfirmed = [];
     const profileUpdates = [];
+    const assistantUpdates = [];
+    const personalityEvents = [];
+    const sharedMemories = [];
     const settings = this.memorySettingsService.get(userId);
 
     for (const candidate of extracted.slice(0, 5)) {
@@ -140,14 +160,20 @@ class MemoryIntelligenceService {
         continue;
       }
       const evidence = String(candidate.evidence || "").trim();
-      const sourceMessage = findEvidenceSource(userMessages, evidence);
+      const source = findEvidenceSource(conversationMessages, evidence);
       if (
-        !sourceMessage ||
-        isQuestion(sourceMessage) ||
-        isSystemFeedback(sourceMessage)
+        !source ||
+        isQuestion(source.content) ||
+        (source.role === "user" &&
+          isSystemFeedback(source.content) &&
+          !["personality_event"].includes(candidate.target))
       ) {
         continue;
       }
+      if (
+        ["memory", "profile", "assistant_profile"].includes(candidate.target) &&
+        source.role !== "user"
+      ) continue;
 
       const confidence = clampConfidence(candidate.confidence);
       const sensitivity = ["normal", "personal", "sensitive"].includes(
@@ -159,6 +185,77 @@ class MemoryIntelligenceService {
         settings.autoConfirm &&
         sensitivity !== "sensitive" &&
         confidence >= 0.9;
+
+      if (candidate.target === "assistant_profile") {
+        const field = ASSISTANT_PROFILE_FIELDS[candidate.field];
+        const value = String(candidate.value || "").trim().slice(0, 1000);
+        if (!field || !value) continue;
+        if (shouldAutoConfirm && this.assistantMemoryService) {
+          this.assistantMemoryService.saveProfile(userId, {
+            [candidate.field]: value
+          });
+          assistantUpdates.push({
+            field: candidate.field,
+            label: field,
+            value,
+            evidence
+          });
+        } else if (this.assistantMemoryService) {
+          const identityEvent = this.assistantMemoryService.recordEvent(userId, {
+            category: "identity",
+            traitKey: `identity.${candidate.field}`,
+            traitValue: value,
+            content: `小玄的${field}调整为：${value}`,
+            evidence,
+            sourceRole: source.role,
+            confidence,
+            weight: candidate.importance,
+            status: "candidate"
+          });
+          if (!identityEvent.duplicate) personalityEvents.push(identityEvent);
+        }
+        continue;
+      }
+
+      if (candidate.target === "personality_event") {
+        if (!this.assistantMemoryService) continue;
+        const event = this.assistantMemoryService.recordEvent(userId, {
+          category: candidate.type || "growth",
+          traitKey: candidate.traitKey,
+          traitValue: candidate.traitValue,
+          content: candidate.content,
+          evidence,
+          sourceRole: source.role,
+          confidence,
+          weight: candidate.importance,
+          status:
+            shouldAutoConfirm &&
+            source.role === "user" &&
+            !isSystemFeedback(source.content)
+            ? "active"
+            : "candidate"
+        });
+        if (!event.duplicate) personalityEvents.push(event);
+        continue;
+      }
+
+      if (candidate.target === "shared_memory") {
+        if (!this.assistantMemoryService) continue;
+        const shared = this.assistantMemoryService.createSharedMemory(userId, {
+          type: candidate.type,
+          content: candidate.content,
+          participants: candidate.entities,
+          evidence,
+          source: source.role === "user" ? "explicit" : "inferred",
+          confidence,
+          importance: candidate.importance,
+          status: shouldAutoConfirm && source.role === "user"
+            ? "active"
+            : "candidate"
+        });
+        if (!shared.duplicate) sharedMemories.push(shared);
+        continue;
+      }
 
       if (candidate.target === "profile") {
         const label = PROFILE_FIELDS[candidate.field];
@@ -195,7 +292,14 @@ class MemoryIntelligenceService {
       if (shouldAutoConfirm) autoConfirmed.push(created);
       else candidates.push(created);
     }
-    return { candidates, autoConfirmed, profileUpdates };
+    return {
+      candidates,
+      autoConfirmed,
+      profileUpdates,
+      assistantUpdates,
+      personalityEvents,
+      sharedMemories
+    };
   }
 }
 
@@ -205,6 +309,13 @@ const PROFILE_FIELDS = Object.freeze({
   birthday: "生日",
   occupation: "职业 / 身份",
   bio: "个人简介"
+});
+
+const ASSISTANT_PROFILE_FIELDS = Object.freeze({
+  name: "名字",
+  gender: "性别认同",
+  selfDefinition: "自我定位",
+  relationshipSummary: "关系定位"
 });
 
 function normalizeConversationMessages(input) {
@@ -237,9 +348,9 @@ function normalizeConversationMessages(input) {
   return normalized;
 }
 
-function findEvidenceSource(userMessages, evidence) {
-  if (!evidence || evidence.length < 2) return "";
-  return userMessages.find((message) => message.includes(evidence)) || "";
+function findEvidenceSource(messages, evidence) {
+  if (!evidence || evidence.length < 2) return null;
+  return messages.find((message) => message.content.includes(evidence)) || null;
 }
 
 function isQuestion(message) {

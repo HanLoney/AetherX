@@ -42,6 +42,34 @@ function registerIpcHandlers() {
   ipcMain.handle("profile:update", (_event, changes) =>
     api.updateProfile(changes)
   );
+  ipcMain.handle("assistant-profile:get", () => api.getAssistantProfile());
+  ipcMain.handle("assistant-profile:update", (_event, changes) =>
+    api.updateAssistantProfile(changes)
+  );
+  ipcMain.handle("personality-events:list", (_event, filters) =>
+    api.listPersonalityEvents(filters)
+  );
+  ipcMain.handle("personality-events:create", (_event, input) =>
+    api.createPersonalityEvent(input)
+  );
+  ipcMain.handle("personality-events:delete", (_event, id) =>
+    api.deletePersonalityEvent(id)
+  );
+  ipcMain.handle("personality-events:confirm", (_event, id) =>
+    api.confirmPersonalityEvent(id)
+  );
+  ipcMain.handle("shared-memories:list", (_event, filters) =>
+    api.listSharedMemories(filters)
+  );
+  ipcMain.handle("shared-memories:create", (_event, input) =>
+    api.createSharedMemory(input)
+  );
+  ipcMain.handle("shared-memories:delete", (_event, id) =>
+    api.deleteSharedMemory(id)
+  );
+  ipcMain.handle("shared-memories:confirm", (_event, id) =>
+    api.confirmSharedMemory(id)
+  );
   ipcMain.handle("preferences:list", (_event, filters) =>
     api.listPreferences(filters)
   );

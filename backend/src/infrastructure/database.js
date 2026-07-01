@@ -139,6 +139,52 @@ const MIGRATIONS = [
   `,
   `
     ALTER TABLE user_profiles ADD COLUMN birthday TEXT NOT NULL DEFAULT '';
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS assistant_profiles (
+      user_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '小玄',
+      gender TEXT NOT NULL DEFAULT '女',
+      self_definition TEXT NOT NULL DEFAULT '会持续成长的全能助手',
+      relationship_summary TEXT NOT NULL DEFAULT '洛尼亲密无间的伙伴和得力编程助手',
+      traits_json TEXT NOT NULL DEFAULT '[]',
+      values_json TEXT NOT NULL DEFAULT '[]',
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS assistant_personality_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      trait_key TEXT NOT NULL DEFAULT '',
+      trait_value TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL,
+      evidence TEXT NOT NULL DEFAULT '',
+      source_role TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      weight REAL NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_assistant_events_user_status
+      ON assistant_personality_events(user_id, status, created_at);
+
+    CREATE TABLE IF NOT EXISTS shared_memories (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      memory_type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      participants_json TEXT NOT NULL DEFAULT '[]',
+      evidence TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      importance REAL NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_shared_memories_user_status
+      ON shared_memories(user_id, status, updated_at);
   `
 ];
 
