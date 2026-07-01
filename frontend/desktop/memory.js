@@ -162,12 +162,15 @@ function renderPromptSettings() {
   if (!bundle) return;
   const settings = bundle.settings;
   $("#promptTone").value = settings.tone || "";
+  $("#promptConversationStyle").value =
+    settings.conversationStyle || "friend";
   $("#promptResponseLength").value = settings.responseLength || "balanced";
   $("#promptInitiative").value = String(
     Math.round((settings.initiative || 0) * 100)
   );
   $("#promptHumor").value = String(Math.round((settings.humor || 0) * 100));
   $("#promptUseEmoji").checked = Boolean(settings.useEmoji);
+  $("#promptUseCatchphrases").checked = Boolean(settings.useCatchphrases);
   $("#promptBehaviorRules").value = (settings.behaviorRules || []).join("\n");
   $("#promptWorkInstruction").value = settings.workInstruction || "";
   $("#promptLifeInstruction").value = settings.lifeInstruction || "";
@@ -587,10 +590,12 @@ $("#promptSettingsForm").addEventListener("submit", async (event) => {
   try {
     state.promptBundle = await window.desktop.savePromptSettings({
       tone: $("#promptTone").value,
+      conversationStyle: $("#promptConversationStyle").value,
       responseLength: $("#promptResponseLength").value,
       initiative: Number($("#promptInitiative").value) / 100,
       humor: Number($("#promptHumor").value) / 100,
       useEmoji: $("#promptUseEmoji").checked,
+      useCatchphrases: $("#promptUseCatchphrases").checked,
       behaviorRules: splitLines($("#promptBehaviorRules").value),
       workInstruction: $("#promptWorkInstruction").value,
       lifeInstruction: $("#promptLifeInstruction").value,

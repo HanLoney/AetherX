@@ -195,6 +195,13 @@
             </header>
             <form id="promptSettingsForm" class="prompt-settings-grid">
               <label>整体语气<input id="promptTone" maxlength="300" /></label>
+              <label>对话质感
+                <select id="promptConversationStyle">
+                  <option value="friend">像熟悉的朋友</option>
+                  <option value="natural">自然随和</option>
+                  <option value="professional">专业克制</option>
+                </select>
+              </label>
               <label>回复长度
                 <select id="promptResponseLength">
                   <option value="concise">简洁</option>
@@ -210,7 +217,11 @@
               </label>
               <label class="check-setting">
                 <input id="promptUseEmoji" type="checkbox" />
-                <span>允许自然使用表情和口头禅</span>
+                <span>允许少量自然使用 Emoji</span>
+              </label>
+              <label class="check-setting">
+                <input id="promptUseCatchphrases" type="checkbox" />
+                <span>允许自然使用口头禅</span>
               </label>
               <label class="wide">做事原则（每行一条）<textarea id="promptBehaviorRules"></textarea></label>
               <label class="wide">工作协作方式<textarea id="promptWorkInstruction"></textarea></label>
