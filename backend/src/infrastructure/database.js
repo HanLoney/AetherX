@@ -203,6 +203,25 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_prompt_versions_user
       ON prompt_setting_versions(user_id, version DESC);
+  `,
+  `
+    ALTER TABLE memories ADD COLUMN memory_key TEXT NOT NULL DEFAULT '';
+    ALTER TABLE memories ADD COLUMN merge_count INTEGER NOT NULL DEFAULT 1;
+
+    CREATE TABLE IF NOT EXISTS memory_evidence (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      memory_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL DEFAULT '',
+      evidence TEXT NOT NULL,
+      evidence_hash TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+      UNIQUE(user_id, memory_id, evidence_hash)
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_evidence_hash
+      ON memory_evidence(user_id, evidence_hash);
   `
 ];
 

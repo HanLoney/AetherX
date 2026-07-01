@@ -20,6 +20,12 @@ const {
 } = require("./modules/preferences/preference-routes");
 const { MemoryRepository } = require("./modules/memories/memory-repository");
 const { MemoryService } = require("./modules/memories/memory-service");
+const {
+  MemoryEvidenceRepository
+} = require("./modules/memories/memory-evidence-repository");
+const {
+  MemoryConsolidationService
+} = require("./modules/memories/memory-consolidation-service");
 const { registerMemoryRoutes } = require("./modules/memories/memory-routes");
 const {
   ConversationRepository
@@ -87,6 +93,11 @@ function createApp(config) {
     new PreferenceRepository(database)
   );
   const memoryService = new MemoryService(new MemoryRepository(database));
+  const memoryConsolidationService = new MemoryConsolidationService(
+    memoryService,
+    new MemoryEvidenceRepository(database),
+    { preferenceService, profileService }
+  );
   const memorySettingsService = new MemorySettingsService(
     new MemorySettingsRepository(database)
   );
@@ -109,6 +120,7 @@ function createApp(config) {
     preferenceService,
     memoryService,
     memorySettingsService,
+    memoryConsolidationService,
     assistantMemoryService,
     configRepository: aiConfigRepository,
     providerClient: aiProviderClient
@@ -122,7 +134,12 @@ function createApp(config) {
   registerProfileRoutes(router, profileService);
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);
-  registerMemoryRoutes(router, memoryService, memoryIntelligenceService);
+  registerMemoryRoutes(
+    router,
+    memoryService,
+    memoryIntelligenceService,
+    memoryConsolidationService
+  );
   registerAssistantMemoryRoutes(router, assistantMemoryService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);

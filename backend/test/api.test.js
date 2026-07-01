@@ -210,6 +210,123 @@ test("memory candidates can be confirmed, searched and deleted", async () => {
   });
 });
 
+test("memory consolidation is idempotent per evidence and merges independent evidence", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      content: "用户想打造一个全能 AI 伙伴",
+      entities: ["用户", "AI 伙伴"],
+      source: "inferred",
+      confidence: 0.9,
+      memoryKey: "goal.build_ai_partner",
+      sourceExcerpt: "想做个全能的助手",
+      conversationId: "conversation-1"
+    });
+    const repeated = await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "learning",
+      type: "plan",
+      content: "用户计划把当前伙伴打造为全能助手",
+      entities: ["用户", "AI 伙伴"],
+      source: "inferred",
+      confidence: 0.95,
+      memoryKey: "goal.build_ai_partner",
+      sourceExcerpt: "想做个全能的助手",
+      conversationId: "conversation-1"
+    });
+    assert.equal(repeated.payload.data.id, first.payload.data.id);
+    assert.equal(repeated.payload.data.mergeCount, 1);
+
+    const independent = await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      content: "用户希望继续完善全能 AI 伙伴",
+      entities: ["用户", "AI 伙伴"],
+      source: "inferred",
+      confidence: 0.93,
+      memoryKey: "goal.build_ai_partner",
+      sourceExcerpt: "以后继续把这个全能伙伴做好",
+      conversationId: "conversation-2"
+    });
+    assert.equal(independent.payload.data.id, first.payload.data.id);
+    assert.equal(independent.payload.data.mergeCount, 2);
+
+    const listed = await request(baseUrl, "GET", "/api/v1/memories");
+    assert.equal(listed.payload.data.length, 1);
+  });
+});
+
+test("memory maintenance removes question and product-feedback pollution", async () => {
+  await withServer(async (baseUrl) => {
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "life",
+      type: "fact",
+      content: "用户名叫洛尼",
+      source: "inferred",
+      confidence: 1,
+      sourceExcerpt: "你怎么知道我叫洛尼"
+    });
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "life",
+      type: "episode",
+      content: "用户希望系统不要用待办代替记忆",
+      source: "inferred",
+      confidence: 0.7,
+      sourceExcerpt: "为什么是待办，不应该是记忆吗"
+    });
+    const consolidated = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/memories/consolidate",
+      {}
+    );
+    assert.equal(consolidated.payload.data.removedInvalid, 2);
+    assert.equal(consolidated.payload.data.remaining, 0);
+  });
+});
+
+test("memory maintenance migrates preferences and durable goals to structured stores", async () => {
+  await withServer(async (baseUrl) => {
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "emotion",
+      type: "fact",
+      content: "用户喜欢可爱的颜文字风格",
+      source: "inferred",
+      confidence: 0.95,
+      sourceExcerpt: "能不能带点颜文字，我喜欢可爱的"
+    });
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      content: "用户计划打造一个全能 AI 伙伴",
+      source: "inferred",
+      confidence: 0.9,
+      sourceExcerpt: "想做个全能的助手"
+    });
+
+    const result = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/memories/consolidate",
+      {}
+    );
+    assert.equal(result.payload.data.migratedPreferences, 1);
+    assert.equal(result.payload.data.migratedGoals, 1);
+    assert.equal(result.payload.data.remaining, 0);
+
+    const preferences = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/preferences"
+    );
+    assert.equal(preferences.payload.data.length, 1);
+    assert.equal(preferences.payload.data[0].key, "kaomoji_style");
+
+    const profile = await request(baseUrl, "GET", "/api/v1/profile");
+    assert.deepEqual(profile.payload.data.goals, ["想做个全能的助手"]);
+  });
+});
+
 test("scene recall returns relevant memories with explainable reasons", async () => {
   await withServer(async (baseUrl) => {
     await request(baseUrl, "PUT", "/api/v1/profile", {
@@ -307,6 +424,63 @@ test("automatic extraction creates deduplicated candidates only", async () => {
   assert.equal(result.candidates[0].status, "candidate");
   assert.equal(result.candidates[0].source, "inferred");
   assert.equal(result.candidates[0].sourceExcerpt, "我一般下午会喝一杯咖啡");
+});
+
+test("automatic extraction routes explicit communication preferences out of memories", async () => {
+  const savedPreferences = [];
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: {
+      list: () => [],
+      save: (_userId, input) => {
+        const saved = { id: "preference-1", ...input };
+        savedPreferences.push(saved);
+        return saved;
+      }
+    },
+    memoryService: {
+      list: () => [],
+      create: () => assert.fail("preference must not become a memory")
+    },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([{
+                target: "preference",
+                field: null,
+                category: "communication",
+                key: "kaomoji_style",
+                value: "喜欢可爱的颜文字",
+                memoryKey: "preference.communication.kaomoji_style",
+                domain: "emotion",
+                type: "fact",
+                content: "用户喜欢可爱的颜文字",
+                entities: ["用户", "颜文字"],
+                evidence: "能不能带点颜文字，我喜欢可爱的",
+                confidence: 0.98,
+                importance: 0.7,
+                sensitivity: "normal"
+              }])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "能不能带点颜文字，我喜欢可爱的",
+    assistantMessage: "好，我记住了。"
+  });
+  assert.equal(result.preferenceUpdates.length, 1);
+  assert.equal(savedPreferences[0].key, "kaomoji_style");
+  assert.equal(result.autoConfirmed.length, 0);
+  assert.equal(result.candidates.length, 0);
 });
 
 test("memory auto-confirm setting persists and never confirms sensitive memories", async () => {

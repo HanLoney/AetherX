@@ -13,6 +13,7 @@ class MemoryIntelligenceService {
     preferenceService,
     memoryService,
     memorySettingsService,
+    memoryConsolidationService,
     assistantMemoryService,
     configRepository,
     providerClient
@@ -21,6 +22,7 @@ class MemoryIntelligenceService {
     this.preferenceService = preferenceService;
     this.memoryService = memoryService;
     this.memorySettingsService = memorySettingsService;
+    this.memoryConsolidationService = memoryConsolidationService;
     this.assistantMemoryService = assistantMemoryService;
     this.configRepository = configRepository;
     this.providerClient = providerClient;
@@ -99,8 +101,10 @@ class MemoryIntelligenceService {
         autoConfirmed: [],
         profileUpdates: [],
         assistantUpdates: [],
+        preferenceUpdates: [],
         personalityEvents: [],
-        sharedMemories: []
+        sharedMemories: [],
+        mergedMemories: []
       };
     }
 
@@ -111,13 +115,16 @@ class MemoryIntelligenceService {
           role: "system",
           content: `你是 AetherX 的长期记忆筛选器。阅读最近多轮对话，提取未来有帮助且相对稳定的信息。
 用户个人事实必须来自用户原话。助手原话只能产生助手自己的承诺、行为或成长事件，不能反过来证明用户事实。疑问、反问、假设、否定和玩笑不是事实。
-用户姓名、称呼、生日、职业、简介写入 profile；用户其他稳定信息写入 memory；AI 伙伴身份变化写入 assistant_profile；性格成长与承诺写入 personality_event；双方共同完成或约定的事情写入 shared_memory。需要执行或提醒的事项不是长期记忆。
+用户姓名、称呼、生日、职业、简介和长期目标写入 profile；用户明确表达的喜好、厌恶和交流习惯写入 preference；其他稳定信息写入 memory；AI 伙伴身份变化写入 assistant_profile；性格成长与承诺写入 personality_event；双方共同完成或约定的事情写入 shared_memory。需要执行或提醒的事项不是长期记忆。
 用户对产品、系统和工具的反馈不是用户画像，但如果 AI 伙伴据此形成了明确改进承诺，可以成为低置信度 personality_event。
 不要提取密码、密钥、证件号、银行卡号或精确住址。健康、财务、感情等信息标记为 sensitive。
 每项必须提供 evidence，它必须是对话消息中的连续原文，不能改写。无法提供直接原文证据就不要输出。
 只返回 JSON 数组，不要 Markdown，最多 5 项。格式：
-{"target":"memory|profile|assistant_profile|personality_event|shared_memory","field":"画像字段或null","value":"字段值或空字符串","traitKey":"性格特征名或空字符串","traitValue":"性格特征值或空字符串","domain":"life|relationship|health|work|learning|emotion","type":"fact|episode|decision|plan|routine","content":"简洁且可独立理解的事实","entities":["相关人物或事物"],"evidence":"对话连续原话","confidence":0到1,"importance":0到1,"sensitivity":"normal|personal|sensitive"}
+{"target":"memory|profile|preference|assistant_profile|personality_event|shared_memory","field":"画像字段或null","category":"communication|life|food|work|entertainment|other|null","key":"稳定的英文偏好键或空字符串","value":"字段或偏好值","memoryKey":"稳定的英文语义键，如 goal.build_ai_assistant","traitKey":"性格特征名或空字符串","traitValue":"性格特征值或空字符串","domain":"life|relationship|health|work|learning|emotion","type":"fact|episode|decision|plan|routine","content":"简洁且可独立理解的事实","entities":["相关人物或事物"],"evidence":"对话连续原话","confidence":0到1,"importance":0到1,"sensitivity":"normal|personal|sensitive"}
 assistant_profile 的 field 只能是 name、gender、selfDefinition、relationshipSummary。
+profile 的 field 只能是 displayName、preferredName、birthday、occupation、bio、goals。
+偏好示例：用户说“我喜欢可爱的颜文字”，应输出 target=preference、category=communication、key=kaomoji_style，而不是普通 memory。
+同一事实即使在最近对话中反复出现，也只能输出一次，并始终使用相同 memoryKey。
 生日 value 必须规范成 MM-DD 或 YYYY-MM-DD。只有非常明确、无歧义的直接陈述才给 confidence >= 0.9。`
         },
         {
@@ -138,19 +145,22 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
         autoConfirmed: [],
         profileUpdates: [],
         assistantUpdates: [],
+        preferenceUpdates: [],
         personalityEvents: [],
         sharedMemories: [],
+        mergedMemories: [],
         skipped: "provider_error"
       };
     }
 
     const content = completion.data?.choices?.[0]?.message?.content;
     const extracted = parseJsonArray(content);
-    const existing = this.memoryService.list(userId, {});
     const candidates = [];
     const autoConfirmed = [];
     const profileUpdates = [];
     const assistantUpdates = [];
+    const preferenceUpdates = [];
+    const mergedMemories = [];
     const personalityEvents = [];
     const sharedMemories = [];
     const settings = this.memorySettingsService.get(userId);
@@ -163,7 +173,7 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
       const source = findEvidenceSource(conversationMessages, evidence);
       if (
         !source ||
-        isQuestion(source.content) ||
+        (source.role === "user" && isQuestion(source.content)) ||
         (source.role === "user" &&
           isSystemFeedback(source.content) &&
           !["personality_event"].includes(candidate.target))
@@ -171,7 +181,7 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
         continue;
       }
       if (
-        ["memory", "profile", "assistant_profile"].includes(candidate.target) &&
+        ["memory", "profile", "preference", "assistant_profile"].includes(candidate.target) &&
         source.role !== "user"
       ) continue;
 
@@ -185,6 +195,32 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
         settings.autoConfirm &&
         sensitivity !== "sensitive" &&
         confidence >= 0.9;
+
+      if (candidate.target === "preference") {
+        const category = PREFERENCE_CATEGORIES.includes(candidate.category)
+          ? candidate.category
+          : "other";
+        const key = String(candidate.key || candidate.memoryKey || "")
+          .trim()
+          .slice(0, 100);
+        const value = String(candidate.value || "").trim().slice(0, 1000);
+        if (!key || !value) continue;
+        if (shouldAutoConfirm) {
+          const preference = this.preferenceService.save(userId, {
+            category,
+            key,
+            value,
+            source: "inferred",
+            confidence,
+            sensitivity
+          });
+          preferenceUpdates.push(preference);
+          continue;
+        }
+        candidate.domain = "preference";
+        candidate.type = "fact";
+        candidate.content = `${key}：${value}`;
+      }
 
       if (candidate.target === "assistant_profile") {
         const field = ASSISTANT_PROFILE_FIELDS[candidate.field];
@@ -262,7 +298,13 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
         const value = normalizeProfileValue(candidate.field, candidate.value);
         if (!label || !value) continue;
         if (shouldAutoConfirm) {
-          this.profileService.patch(userId, { [candidate.field]: value });
+          if (candidate.field === "goals") {
+            const profile = this.profileService.get(userId);
+            const goals = [...new Set([...(profile.goals || []), value])];
+            this.profileService.patch(userId, { goals });
+          } else {
+            this.profileService.patch(userId, { [candidate.field]: value });
+          }
           profileUpdates.push({
             field: candidate.field,
             label,
@@ -276,29 +318,49 @@ assistant_profile 的 field 只能是 name、gender、selfDefinition、relations
         candidate.content = `${label}：${value}`;
       }
 
-      const duplicate = existing.some((memory) =>
-        isNearDuplicate(memory.content, candidate.content)
-      );
-      if (duplicate) continue;
-      const created = this.memoryService.create(userId, {
+      const memoryInput = {
         ...candidate,
+        memoryKey: candidate.memoryKey,
         confidence,
         sensitivity,
         source: "inferred",
         status: shouldAutoConfirm ? "active" : "candidate",
         sourceExcerpt: evidence.slice(0, 500)
-      });
-      existing.push(created);
-      if (shouldAutoConfirm) autoConfirmed.push(created);
-      else candidates.push(created);
+      };
+      const consolidation = this.memoryConsolidationService
+        ? this.memoryConsolidationService.consolidateCandidate(
+            userId,
+            memoryInput,
+            {
+              evidence,
+              conversationId: input.conversationId
+            }
+          )
+        : this.memoryService
+            .list(userId, {})
+            .some((memory) => isNearDuplicate(memory.content, memoryInput.content))
+          ? { action: "duplicate", memory: null }
+          : {
+              action: "created",
+              memory: this.memoryService.create(userId, memoryInput)
+            };
+      if (consolidation.action === "duplicate") continue;
+      if (consolidation.action === "merged") {
+        mergedMemories.push(consolidation.memory);
+        continue;
+      }
+      if (shouldAutoConfirm) autoConfirmed.push(consolidation.memory);
+      else candidates.push(consolidation.memory);
     }
     return {
       candidates,
       autoConfirmed,
       profileUpdates,
       assistantUpdates,
+      preferenceUpdates,
       personalityEvents,
-      sharedMemories
+      sharedMemories,
+      mergedMemories
     };
   }
 }
@@ -308,8 +370,18 @@ const PROFILE_FIELDS = Object.freeze({
   preferredName: "称呼",
   birthday: "生日",
   occupation: "职业 / 身份",
-  bio: "个人简介"
+  bio: "个人简介",
+  goals: "长期目标"
 });
+
+const PREFERENCE_CATEGORIES = [
+  "communication",
+  "life",
+  "food",
+  "work",
+  "entertainment",
+  "other"
+];
 
 const ASSISTANT_PROFILE_FIELDS = Object.freeze({
   name: "名字",
@@ -380,6 +452,7 @@ function normalizeProfileValue(field, value) {
   if (field === "birthday") {
     return /^(\d{4}-)?\d{2}-\d{2}$/.test(result) ? result : "";
   }
+  if (field === "goals") return result.slice(0, 500);
   const limits = {
     displayName: 100,
     preferredName: 100,

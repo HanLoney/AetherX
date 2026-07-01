@@ -64,8 +64,8 @@ class MemoryRepository {
             id, user_id, domain, memory_type, content, entities_json,
             source_message_id, source, confidence, importance, sensitivity,
             valid_from, valid_until, last_confirmed_at, status, created_at, updated_at,
-            source_excerpt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            source_excerpt, memory_key, merge_count
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -85,7 +85,9 @@ class MemoryRepository {
           memory.status,
           now,
           now,
-          memory.sourceExcerpt
+          memory.sourceExcerpt,
+          memory.memoryKey,
+          memory.mergeCount
         );
       this.writeFts(id, userId, memory.content, memory.entities);
       this.database.exec("COMMIT");
@@ -108,7 +110,8 @@ class MemoryRepository {
           `UPDATE memories SET domain = ?, memory_type = ?, content = ?,
             entities_json = ?, source = ?, confidence = ?, importance = ?,
             sensitivity = ?, valid_from = ?, valid_until = ?,
-            last_confirmed_at = ?, status = ?, updated_at = ?
+            last_confirmed_at = ?, status = ?, updated_at = ?,
+            memory_key = ?, merge_count = ?
            WHERE user_id = ? AND id = ?`
         )
         .run(
@@ -125,6 +128,8 @@ class MemoryRepository {
           next.lastConfirmedAt,
           next.status,
           next.updatedAt,
+          next.memoryKey,
+          next.mergeCount,
           userId,
           id
         );
@@ -177,6 +182,8 @@ function mapMemory(row) {
     entities: JSON.parse(row.entities_json),
     sourceMessageId: row.source_message_id,
     sourceExcerpt: row.source_excerpt || "",
+    memoryKey: row.memory_key || "",
+    mergeCount: row.merge_count || 1,
     source: row.source,
     confidence: row.confidence,
     importance: row.importance,

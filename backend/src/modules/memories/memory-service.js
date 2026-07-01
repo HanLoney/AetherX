@@ -69,6 +69,8 @@ function normalize(input) {
       : [],
     sourceMessageId: input.sourceMessageId || null,
     sourceExcerpt: String(input.sourceExcerpt || "").trim().slice(0, 500),
+    memoryKey: String(input.memoryKey || "").trim().slice(0, 200),
+    mergeCount: Math.max(1, Number(input.mergeCount) || 1),
     source,
     confidence: clamp(input.confidence ?? (source === "explicit" ? 1 : 0.6)),
     importance: clamp(input.importance ?? 0.5),

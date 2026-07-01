@@ -246,6 +246,10 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/memories/extract", payload);
   }
 
+  consolidateMemories() {
+    return this.request("POST", "/api/v1/memories/consolidate", {});
+  }
+
   getMemorySettings() {
     return this.request("GET", "/api/v1/memories/settings");
   }

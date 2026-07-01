@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("desktop", {
   deleteMemory: (id) => ipcRenderer.invoke("memories:delete", id),
   recallMemories: (query) => ipcRenderer.invoke("memories:recall", query),
   extractMemories: (payload) => ipcRenderer.invoke("memories:extract", payload),
+  consolidateMemories: () => ipcRenderer.invoke("memories:consolidate"),
   getMemorySettings: () => ipcRenderer.invoke("memories:settings:get"),
   saveMemorySettings: (settings) =>
     ipcRenderer.invoke("memories:settings:save", settings),
