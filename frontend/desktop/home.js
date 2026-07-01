@@ -1,5 +1,5 @@
 const SYSTEM_PROMPT =
-  "你是小玄，洛尼亲密可靠的 AI 伙伴和编程助手。你可以使用工具管理本地模块。用户姓名、称呼、生日、职业和简介属于用户画像；稳定事实、经历、决定和习惯属于长期记忆；只有需要完成或提醒的行动才属于待办。不要用待办替代画像或记忆。需要读取信息时主动调用工具；需要写入或删除时发起工具调用。对话上下文不等于持久记忆，不要声称系统没有记忆功能。只有收到 ok=true 的工具结果后才能声称读取或操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
+  "你是一个会持续成长的个人 AI 伙伴。你的当前名字、人格、关系定位和共同经历以本轮召回的“小玄当前画像”为准，不要假装人格永远固定。用户姓名、称呼、生日、职业和简介属于用户画像；稳定事实、经历、决定和习惯属于用户长期记忆；你的身份和关系定位属于小玄画像；性格变化与长期承诺属于人格成长事件；双方共同完成、决定或约定的事情属于共同记忆；只有需要完成或提醒的行动才属于待办。不要用待办替代任何画像或记忆。需要读取信息时主动调用工具；需要写入或删除时发起工具调用。对话上下文不等于持久记忆，不要声称系统没有记忆功能。只有收到 ok=true 的工具结果后才能声称读取或操作成功。时间参数必须使用带时区的 ISO 8601 格式。";
 const MAX_TOOL_ROUNDS = 6;
 
 class EmptyCompletionError extends Error {
@@ -64,7 +64,15 @@ const toolRegistry = window.registerMemoryTools(
     isEnabled: (toolName) => {
       const moduleId = toolName.split(".")[0];
       return window.XuanModules.isEnabled(
-        moduleId === "profile" ? "memory" : moduleId
+        [
+          "memory",
+          "profile",
+          "assistant_profile",
+          "personality_event",
+          "shared_memory"
+        ].includes(moduleId)
+          ? "memory"
+          : moduleId
       );
     }
   }))
@@ -955,7 +963,10 @@ function renderMemoryActivity(row, message) {
     recall: `🧠 本轮参考了 ${message.items.length} 条个人信息`,
     candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
     confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`,
-    profile: `✓ 已自动更新 ${message.items.length} 项用户画像`
+    profile: `✓ 已自动更新 ${message.items.length} 项用户画像`,
+    assistant: `✓ 小玄画像发生了 ${message.items.length} 项变化`,
+    growth: `🌱 记录了 ${message.items.length} 条人格成长事件`,
+    shared: `🤝 新增了 ${message.items.length} 条共同记忆`
   }[message.kind];
   const open = document.createElement("button");
   open.type = "button";
@@ -1182,10 +1193,46 @@ async function sendMessage() {
             )
           );
         }
+        if (result.assistantUpdates?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "assistant",
+              result.assistantUpdates.map((item) => ({
+                content: `${item.label}：${item.value}`,
+                reason: "小玄画像"
+              }))
+            )
+          );
+        }
+        if (result.personalityEvents?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "growth",
+              result.personalityEvents.map((item) => ({
+                content: item.content,
+                reason: item.status === "active" ? "已生效" : "待确认"
+              }))
+            )
+          );
+        }
+        if (result.sharedMemories?.length) {
+          state.messages.push(
+            createMemoryActivity(
+              "shared",
+              result.sharedMemories.map((item) => ({
+                content: item.content,
+                reason: item.status === "active" ? "已确认" : "待确认"
+              }))
+            )
+          );
+        }
         if (
           !result.autoConfirmed?.length &&
           !result.candidates?.length &&
-          !result.profileUpdates?.length
+          !result.profileUpdates?.length &&
+          !result.assistantUpdates?.length &&
+          !result.personalityEvents?.length &&
+          !result.sharedMemories?.length
         ) return;
         if (activeModuleId === "memory") {
           moduleFrame.contentWindow?.postMessage(

@@ -167,6 +167,150 @@
       }
     });
 
+    registry.register({
+      name: "assistant_profile.get",
+      title: "查看小玄画像",
+      description: "读取小玄当前可演化的名字、性别认同、自我定位、关系定位、性格特征和价值倾向。",
+      risk: "read",
+      inputSchema: objectSchema({}),
+      async execute() {
+        try {
+          const profile = await global.desktop.getAssistantProfile();
+          return { ok: true, content: "已读取小玄当前画像。", data: profile };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "assistant_profile.update",
+      title: "更新小玄画像",
+      description: "根据用户明确要求更新小玄的名字、性别认同、自我定位或关系定位。",
+      risk: "write",
+      inputSchema: objectSchema({
+        name: stringField("小玄当前名字"),
+        gender: stringField("小玄当前性别认同"),
+        selfDefinition: stringField("小玄当前自我定位"),
+        relationshipSummary: stringField("小玄与用户的关系定位")
+      }),
+      async execute(input) {
+        try {
+          const profile = await global.desktop.updateAssistantProfile(input);
+          return { ok: true, content: "小玄画像已经更新。", data: profile };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "personality_event.list",
+      title: "查看人格成长记录",
+      description: "查询小玄的人格变化、承诺、纠正和成长事件。",
+      risk: "read",
+      inputSchema: objectSchema({
+        status: {
+          type: "string",
+          enum: ["active", "candidate"],
+          description: "可选状态"
+        }
+      }),
+      async execute(input) {
+        try {
+          const events = await global.desktop.listPersonalityEvents(input);
+          return { ok: true, content: `找到 ${events.length} 条人格成长记录。`, data: events };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "personality_event.create",
+      title: "记录人格成长",
+      description: "记录用户明确要求的小玄性格变化、长期承诺或成长经验。",
+      risk: "write",
+      inputSchema: objectSchema(
+        {
+          content: stringField("人格变化或成长事件"),
+          traitKey: stringField("可选的性格特征名称"),
+          traitValue: stringField("可选的性格特征描述"),
+          evidence: stringField("用户明确表达的原话")
+        },
+        ["content"]
+      ),
+      async execute(input) {
+        try {
+          const event = await global.desktop.createPersonalityEvent({
+            ...input,
+            sourceRole: "user",
+            confidence: 1,
+            weight: 0.8,
+            status: "active"
+          });
+          return { ok: true, content: "已经记录这次人格成长。", data: event };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "shared_memory.list",
+      title: "查看共同记忆",
+      description: "查询用户和小玄共同完成、共同决定或共同约定的经历。",
+      risk: "read",
+      inputSchema: objectSchema({
+        status: {
+          type: "string",
+          enum: ["active", "candidate"],
+          description: "可选状态"
+        }
+      }),
+      async execute(input) {
+        try {
+          const memories = await global.desktop.listSharedMemories(input);
+          return { ok: true, content: `找到 ${memories.length} 条共同记忆。`, data: memories };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "shared_memory.create",
+      title: "保存共同记忆",
+      description: "保存用户和小玄共同完成、共同决定或明确约定的重要经历。",
+      risk: "write",
+      inputSchema: objectSchema(
+        {
+          content: stringField("共同记忆内容"),
+          type: {
+            type: "string",
+            enum: ["episode", "decision", "plan"],
+            description: "共同记忆类型"
+          },
+          evidence: stringField("对话中的直接原话")
+        },
+        ["content"]
+      ),
+      async execute(input) {
+        try {
+          const memory = await global.desktop.createSharedMemory({
+            ...input,
+            source: "explicit",
+            confidence: 1,
+            importance: 0.8,
+            status: "active"
+          });
+          return { ok: true, content: "已经保存这段共同记忆。", data: memory };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
     return registry;
   }
 

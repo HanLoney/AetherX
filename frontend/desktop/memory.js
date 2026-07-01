@@ -15,6 +15,9 @@ function navigate(target, fallback) {
 
 const state = {
   profile: null,
+  assistantProfile: null,
+  personalityEvents: [],
+  sharedMemories: [],
   preferences: [],
   memories: [],
   settings: { autoConfirm: false }
@@ -57,17 +60,34 @@ function formatDate(value) {
 }
 
 async function loadAll() {
-  const [profile, preferences, memories, settings] = await Promise.all([
+  const [
+    profile,
+    assistantProfile,
+    personalityEvents,
+    sharedMemories,
+    preferences,
+    memories,
+    settings
+  ] = await Promise.all([
     window.desktop.getProfile(),
+    window.desktop.getAssistantProfile(),
+    window.desktop.listPersonalityEvents(),
+    window.desktop.listSharedMemories(),
     window.desktop.listPreferences(),
     window.desktop.listMemories(),
     window.desktop.getMemorySettings()
   ]);
   state.profile = profile;
+  state.assistantProfile = assistantProfile;
+  state.personalityEvents = personalityEvents;
+  state.sharedMemories = sharedMemories;
   state.preferences = preferences;
   state.memories = memories;
   state.settings = settings;
   renderProfile();
+  renderAssistantProfile();
+  renderPersonalityEvents();
+  renderSharedMemories();
   renderPreferences();
   renderMemories();
   renderMemorySettings();
@@ -97,6 +117,142 @@ function renderProfile() {
   $("#occupation").value = profile.occupation || "";
   $("#bio").value = profile.bio || "";
   $("#goals").value = (profile.goals || []).join("\n");
+}
+
+function renderAssistantProfile() {
+  const profile = state.assistantProfile;
+  $("#assistantName").value = profile.name || "";
+  $("#assistantGender").value = profile.gender || "";
+  $("#assistantDefinition").value = profile.selfDefinition || "";
+  $("#assistantRelationship").value = profile.relationshipSummary || "";
+  $("#assistantValues").value = (profile.values || [])
+    .map((item) => `${item.key}：${item.value}`)
+    .join("\n");
+
+  const list = $("#assistantTraitList");
+  list.replaceChildren();
+  (profile.traits || []).forEach((trait) => {
+    const card = document.createElement("article");
+    card.className = "trait-card";
+    const title = document.createElement("strong");
+    title.textContent = trait.key;
+    const value = document.createElement("p");
+    value.textContent = trait.value;
+    const meta = document.createElement("small");
+    meta.textContent = `强度 ${Math.round((trait.strength || 0) * 100)}% · ${trait.evidenceCount || 0} 条证据`;
+    card.append(title, value, meta);
+    list.append(card);
+  });
+  if (!(profile.traits || []).length) {
+    list.innerHTML = '<div class="empty">小玄的人格还在成长中。</div>';
+  }
+}
+
+function renderPersonalityEvents() {
+  const list = $("#personalityEventList");
+  list.replaceChildren();
+  state.personalityEvents.forEach((event) => {
+    list.append(
+      createTimelineRow(
+        event.content,
+        `${event.status === "active" ? "已生效" : "待确认"} · ${Math.round(event.confidence * 100)}%`,
+        event.evidence,
+        async () => {
+          if (!confirm("确定删除这条人格变化记录吗？")) return;
+          await window.desktop.deletePersonalityEvent(event.id);
+          await loadAll();
+        },
+        event.status === "candidate"
+          ? async () => {
+              await window.desktop.confirmPersonalityEvent(event.id);
+              await loadAll();
+            }
+          : null
+      )
+    );
+  });
+  if (!state.personalityEvents.length) {
+    list.innerHTML = '<div class="empty">还没有人格变化记录。</div>';
+  }
+}
+
+function renderSharedMemories() {
+  const list = $("#sharedMemoryList");
+  list.replaceChildren();
+  state.sharedMemories.forEach((memory) => {
+    list.append(
+      createTimelineRow(
+        memory.content,
+        `${memory.status === "active" ? "已确认" : "待确认"} · ${memory.type}`,
+        memory.evidence,
+        async () => {
+          if (!confirm("确定忘记这段共同记忆吗？")) return;
+          await window.desktop.deleteSharedMemory(memory.id);
+          await loadAll();
+        },
+        memory.status === "candidate"
+          ? async () => {
+              await window.desktop.confirmSharedMemory(memory.id);
+              await loadAll();
+            }
+          : null
+      )
+    );
+  });
+  if (!state.sharedMemories.length) {
+    list.innerHTML = '<div class="empty">我们还没有被记录下来的共同经历。</div>';
+  }
+}
+
+function createTimelineRow(content, meta, evidence, onDelete, onConfirm = null) {
+  const row = document.createElement("article");
+  row.className = "timeline-row";
+  const body = document.createElement("div");
+  const text = document.createElement("strong");
+  text.textContent = content;
+  const detail = document.createElement("small");
+  detail.textContent = meta;
+  body.append(text, detail);
+  if (evidence) {
+    const source = document.createElement("p");
+    source.textContent = `来源：“${evidence}”`;
+    body.append(source);
+  }
+  const actions = document.createElement("div");
+  actions.className = "timeline-actions";
+  if (onConfirm) {
+    const confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "confirm";
+    confirmButton.textContent = "确认";
+    confirmButton.addEventListener("click", onConfirm);
+    actions.append(confirmButton);
+  }
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.textContent = "删除";
+  remove.addEventListener("click", onDelete);
+  actions.append(remove);
+  row.append(body, actions);
+  return row;
+}
+
+function parseKeyValueLines(value) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.search(/[:：]/);
+      return separator < 0
+        ? { key: line, value: "" }
+        : {
+            key: line.slice(0, separator).trim(),
+            value: line.slice(separator + 1).trim()
+          };
+    })
+    .filter((item) => item.key);
 }
 
 function renderPreferences() {
@@ -330,6 +486,23 @@ $("#profileForm").addEventListener("submit", async (event) => {
       goals: $("#goals").value.split("\n").map((item) => item.trim()).filter(Boolean)
     });
     showNotice("用户画像已保存。");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+$("#assistantProfileForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    state.assistantProfile = await window.desktop.updateAssistantProfile({
+      name: $("#assistantName").value,
+      gender: $("#assistantGender").value,
+      selfDefinition: $("#assistantDefinition").value,
+      relationshipSummary: $("#assistantRelationship").value,
+      values: parseKeyValueLines($("#assistantValues").value)
+    });
+    renderAssistantProfile();
+    showNotice("小玄的画像已经更新。");
   } catch (error) {
     showNotice(error.message, true);
   }

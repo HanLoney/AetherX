@@ -57,6 +57,8 @@
         <nav class="memory-tabs" aria-label="记忆中心导航">
           <button class="memory-tab active" data-view="memories">全部记忆</button>
           <button class="memory-tab" data-view="profile">用户画像</button>
+          <button class="memory-tab" data-view="assistant">小玄画像</button>
+          <button class="memory-tab" data-view="shared">共同记忆</button>
           <button class="memory-tab" data-view="preferences">偏好与习惯</button>
         </nav>
 
@@ -142,6 +144,42 @@
               <label class="wide">长期目标（每行一个）<textarea id="goals"></textarea></label>
               <div class="wide actions"><button class="primary" type="submit">保存画像</button></div>
             </form>
+          </section>
+        </section>
+
+        <section id="assistantView" class="tab-view hidden">
+          <section class="panel">
+            <header>
+              <div>
+                <h2>小玄的当前画像</h2>
+                <p>人格会根据明确要求和长期经历逐渐变化，每次变化都保留证据。</p>
+              </div>
+            </header>
+            <form id="assistantProfileForm" class="profile-grid">
+              <label>名字<input id="assistantName" maxlength="100" /></label>
+              <label>性别认同<input id="assistantGender" maxlength="50" /></label>
+              <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
+              <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+              <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
+              <div class="wide actions"><button class="primary" type="submit">保存小玄画像</button></div>
+            </form>
+          </section>
+          <section class="panel">
+            <header><div><h2>成长中的性格特征</h2><p>由人格事件累积形成，可追溯证据与强度。</p></div></header>
+            <div id="assistantTraitList" class="trait-grid"></div>
+          </section>
+          <section class="panel">
+            <header><div><h2>人格变化记录</h2><p>记录小玄的承诺、行为、纠正与成长。</p></div></header>
+            <div id="personalityEventList" class="timeline-list"></div>
+          </section>
+        </section>
+
+        <section id="sharedView" class="tab-view hidden">
+          <section class="panel">
+            <header>
+              <div><h2>我们的共同记忆</h2><p>记录洛尼和小玄共同完成、共同决定与共同约定的事情。</p></div>
+            </header>
+            <div id="sharedMemoryList" class="timeline-list"></div>
           </section>
         </section>
 

@@ -400,6 +400,51 @@ label { display: grid; gap: 6px; color: #777083; font-size: 10px; }
   gap: 8px;
 }
 .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+
+.trait-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.trait-card,
+.timeline-row {
+  border: 1px solid rgba(119, 113, 144, .13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .62);
+}
+.trait-card { padding: 14px; }
+.trait-card p { margin: 7px 0; color: #625b6d; }
+.trait-card small,
+.timeline-row small { display: block; color: #9992a3; }
+.timeline-list { display: grid; gap: 9px; }
+.timeline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 15px;
+}
+.timeline-row p {
+  margin: 7px 0 0;
+  color: #918a99;
+  font-size: 12px;
+}
+.timeline-row .danger {
+  flex: none;
+  border: 0;
+  color: #cf6d83;
+  background: transparent;
+}
+.timeline-actions { display: flex; gap: 6px; }
+.timeline-actions button {
+  border: 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+}
+.timeline-actions .confirm {
+  color: #5d78a8;
+  background: rgba(132, 184, 229, .14);
+}
 .preference-chip {
   display: flex;
   align-items: center;

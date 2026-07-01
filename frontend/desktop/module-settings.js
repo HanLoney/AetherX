@@ -17,7 +17,7 @@
       icon: "🧠",
       color: "pink",
       core: false,
-      tools: 6
+      tools: 12
     }),
     Object.freeze({
       id: "todo",
