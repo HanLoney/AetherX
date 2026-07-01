@@ -86,7 +86,7 @@ function createApp(config) {
   });
 
   router.add("GET", "/health", () => ({
-    data: { status: "ok", service: "xuanai-backend" }
+    data: { status: "ok", service: "aetherx-backend" }
   }));
   registerTodoRoutes(router, todoService);
   registerAiRoutes(router, aiConfigRepository, aiProviderClient);

@@ -1,7 +1,7 @@
 {
-  "name": "xuanai-desktop",
+  "name": "aetherx-desktop",
   "version": "1.2.4",
-  "description": "XuanAI modular personal assistant desktop client",
+  "description": "AetherX modular personal assistant desktop client",
   "main": "main.js",
   "author": "Xuanxiaotech",
   "license": "MIT",
@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.xuanxiaotech.todo",
-  "productName": "XuanAI",
+  "productName": "AetherX",
     "asar": true,
     "directories": {
       "output": "dist"
@@ -65,7 +65,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "XuanAI"
+      "shortcutName": "AetherX"
     }
   }
 }

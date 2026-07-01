@@ -4,13 +4,13 @@
       "path": "pages/index/index",
       "style": {
         "navigationStyle": "custom",
-        "navigationBarTitleText": "小玄日历"
+        "navigationBarTitleText": "AetherX"
       }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "小玄日历",
+    "navigationBarTitleText": "AetherX",
     "navigationBarBackgroundColor": "#f7f6fb",
     "backgroundColor": "#f7f6fb"
   }

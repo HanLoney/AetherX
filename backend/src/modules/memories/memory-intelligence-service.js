@@ -109,7 +109,7 @@ class MemoryIntelligenceService {
       messages: [
         {
           role: "system",
-          content: `你是 XuanAI 的长期记忆筛选器。阅读最近多轮对话，提取未来有帮助且相对稳定的信息。
+          content: `你是 AetherX 的长期记忆筛选器。阅读最近多轮对话，提取未来有帮助且相对稳定的信息。
 用户个人事实必须来自用户原话。助手原话只能产生助手自己的承诺、行为或成长事件，不能反过来证明用户事实。疑问、反问、假设、否定和玩笑不是事实。
 用户姓名、称呼、生日、职业、简介写入 profile；用户其他稳定信息写入 memory；小玄身份变化写入 assistant_profile；性格成长与承诺写入 personality_event；双方共同完成或约定的事情写入 shared_memory。需要执行或提醒的事项不是长期记忆。
 用户对产品、系统和工具的反馈不是用户画像，但如果小玄据此形成了明确改进承诺，可以成为低置信度 personality_event。

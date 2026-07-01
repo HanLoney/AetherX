@@ -1,8 +1,8 @@
 {
-  "name": "xuanai-backend",
+  "name": "aetherx-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Independently deployable backend for XuanAI",
+  "description": "Independently deployable backend for AetherX",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

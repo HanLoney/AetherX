@@ -4,8 +4,12 @@ const { XuanApiClient } = require("./api-client");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const api = new XuanApiClient({
-  baseUrl: process.env.XUANAI_SERVER_URL || "http://127.0.0.1:4318",
-  userId: process.env.XUANAI_USER_ID || "local-user"
+  baseUrl:
+    process.env.AETHERX_SERVER_URL ||
+    process.env.XUANAI_SERVER_URL ||
+    "http://127.0.0.1:4318",
+  userId:
+    process.env.AETHERX_USER_ID || process.env.XUANAI_USER_ID || "local-user"
 });
 
 function registerIpcHandlers() {

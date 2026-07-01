@@ -5,7 +5,7 @@ const config = loadConfig();
 const app = createApp(config);
 
 app.listen().then(() => {
-  console.log(`XuanAI backend listening on http://${config.host}:${config.port}`);
+  console.log(`AetherX backend listening on http://${config.host}:${config.port}`);
 });
 
 async function shutdown() {

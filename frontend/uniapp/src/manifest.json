@@ -1,5 +1,5 @@
 {
-    "name" : "xress",
+    "name" : "AetherX",
     "appid" : "__UNI__1A99973",
     "description" : "以 AI 为核心的多端个人智能助手",
     "versionName" : "0.1.0",
@@ -25,7 +25,7 @@
         }
     },
     "h5" : {
-        "title" : "小玄日历"
+        "title" : "AetherX"
     },
     "mp-weixin" : {
         "appid" : "",
