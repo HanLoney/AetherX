@@ -112,6 +112,9 @@ button { color: inherit; cursor: pointer; }
   place-items: center;
   color: #fff;
   background: linear-gradient(135deg, #e89fbe, #78b8e8);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   box-shadow: 0 9px 22px rgba(113, 157, 210, .25);
 }
 
@@ -121,6 +124,8 @@ button { color: inherit; cursor: pointer; }
   border-radius: 14px;
   font-size: 16px;
   font-weight: 700;
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .brand strong,
@@ -154,6 +159,14 @@ button { color: inherit; cursor: pointer; }
 
 .nav-item i {
   width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   font-style: normal;
   text-align: center;
 }
@@ -416,6 +429,8 @@ button { color: inherit; cursor: pointer; }
   border-radius: 20px;
   font-size: 20px;
   font-weight: 700;
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .orb-ring {
@@ -512,10 +527,14 @@ button { color: inherit; cursor: pointer; }
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
   border-radius: 10px;
   font-size: 10px;
   font-style: normal;
   font-weight: 700;
+  cursor: pointer;
 }
 
 .message-bubble {
