@@ -66,6 +66,18 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant-profile:update", (_event, changes) =>
     api.updateAssistantProfile(changes)
   );
+  ipcMain.handle("journals:list", (_event, filters) =>
+    api.listJournals(filters)
+  );
+  ipcMain.handle("journals:get", (_event, type, periodKey) =>
+    api.getJournal(type, periodKey)
+  );
+  ipcMain.handle("journals:material", (_event, from, to) =>
+    api.getJournalMaterial(from, to)
+  );
+  ipcMain.handle("journals:save", (_event, journal) =>
+    api.saveJournal(journal)
+  );
   ipcMain.handle("personality-events:list", (_event, filters) =>
     api.listPersonalityEvents(filters)
   );

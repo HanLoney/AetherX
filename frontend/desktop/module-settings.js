@@ -45,6 +45,15 @@
       color: "pink",
       core: false,
       tools: 0
+    }),
+    Object.freeze({
+      id: "autonomous-journal",
+      name: "自主手记",
+      description: "根据原始聊天与共同经历自动写日记和周记。",
+      icon: "≋",
+      color: "blue",
+      core: false,
+      tools: 2
     })
   ]);
 

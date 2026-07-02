@@ -77,23 +77,30 @@ const elements = {
   orbCore: document.querySelector(".orb-core")
 };
 
-const toolRegistry = window.registerMemoryTools(
-  window.registerTodoTools(new window.XuanToolRegistry({
-    isEnabled: (toolName) => {
-      const moduleId = toolName.split(".")[0];
-      return window.XuanModules.isEnabled(
-        [
-          "memory",
-          "profile",
-          "assistant_profile",
-          "personality_event",
-          "shared_memory"
-        ].includes(moduleId)
-          ? "memory"
-          : moduleId
-      );
-    }
-  }))
+const toolRegistry = window.registerJournalTools(
+  window.registerMemoryTools(
+    window.registerTodoTools(
+      new window.XuanToolRegistry({
+        isEnabled: (toolName) => {
+          const moduleId = toolName.split(".")[0];
+          if (moduleId === "journal") {
+            return window.XuanModules.isEnabled("autonomous-journal");
+          }
+          return window.XuanModules.isEnabled(
+            [
+              "memory",
+              "profile",
+              "assistant_profile",
+              "personality_event",
+              "shared_memory"
+            ].includes(moduleId)
+              ? "memory"
+              : moduleId
+          );
+        }
+      })
+    )
+  )
 );
 
 const memoryModuleBtn = document.createElement("button");
@@ -306,6 +313,7 @@ function syncModuleState() {
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
   reminderEngine?.runCheck();
+  journalWriter?.run();
 }
 
 function providerById(id) {
@@ -629,6 +637,10 @@ async function runAgentLoop() {
           toolResult.ok ? "执行成功" : "执行失败"
         );
       }
+      if (toolResult?.ok && tool?.name?.startsWith("journal.")) {
+        decorateJournalActivity(activity, tool.name, toolResult.data);
+        renderMessages();
+      }
       if (!shouldReuse) seenCalls.set(signature, toolResult);
       lastCallSignature = signature;
       summaries.push(toolResult.content);
@@ -806,6 +818,37 @@ const reminderEngine = new window.AetherReminderEngine({
     console.warn("Unable to check proactive reminders:", error.message)
 });
 
+const journalWriter = new window.AetherJournalWriter({
+  getJournal: (type, periodKey) =>
+    window.desktop.getJournal(type, periodKey),
+  getMaterial: (from, to) =>
+    window.desktop.getJournalMaterial(from, to),
+  saveJournal: (journal) => window.desktop.saveJournal(journal),
+  requestAI: (payload) => window.desktop.requestAI(payload),
+  extractText: extractResponse,
+  getSystemPrompt: () => systemPrompt,
+  getRuntime: runtimeOptions,
+  isEnabled: () =>
+    Boolean(state.config?.hasApiKey) &&
+    window.XuanModules.isEnabled("autonomous-journal"),
+  onSaved: async (journal) => {
+    moduleFrame.contentWindow?.postMessage(
+      { type: "aether:journals-updated" },
+      "*"
+    );
+    try {
+      await window.desktop.showNotification({
+        title: `${state.assistantProfile?.name || "AI 伙伴"}写完了${
+          journal.type === "daily" ? "日记" : "周记"
+        }`,
+        body: journal.title
+      });
+    } catch {}
+  },
+  onError: (error) =>
+    console.warn("Unable to write autonomous journal:", error.message)
+});
+
 function profileAvatar(role) {
   const profile =
     role === "user" ? state.userProfile : state.assistantProfile;
@@ -854,6 +897,9 @@ async function refreshProfiles() {
   state.assistantProfile = assistantProfile;
   applyAvatarSurface(elements.brandMark, "assistant");
   applyAvatarSurface(elements.orbCore, "assistant");
+  const assistantName = assistantProfile.name || "小玄";
+  document.querySelector("#brandAssistantName").textContent = assistantName;
+  document.querySelector("#workspaceAssistantName").textContent = assistantName;
   applyAvatarSurface(userProfileBtn.querySelector("i"), "user");
   applyAvatarSurface(assistantProfileBtn.querySelector("i"), "assistant");
   renderMessages();
@@ -1070,6 +1116,26 @@ function updateToolActivity(activity, status, statusText) {
   renderMessages();
 }
 
+function decorateJournalActivity(activity, toolName, data) {
+  const writing = toolName === "journal.write";
+  const journals = (Array.isArray(data) ? data : [data])
+    .filter(Boolean)
+    .map((journal) => ({
+      title: journal.title || "未命名手记",
+      periodKey: journal.periodKey || "",
+      type: journal.type || "daily",
+      mood: journal.mood || ""
+    }));
+  activity.journal = {
+    action: writing ? "write" : "read",
+    items: journals
+  };
+  activity.title = writing
+    ? `写下了 1 篇${journals[0]?.type === "weekly" ? "周记" : "日记"}`
+    : `本轮查阅了 ${journals.length} 篇手记`;
+  activity.statusText = writing ? "已写入手记" : "查阅完成";
+}
+
 function resolveToolApproval(id, approved) {
   const pending = state.pendingApprovals.get(id);
   if (!pending) return;
@@ -1120,6 +1186,10 @@ function createActivityDisclosure(card, message, defaultExpanded = false) {
 }
 
 function renderToolActivity(row, message) {
+  if (message.journal) {
+    renderJournalActivity(row, message);
+    return;
+  }
   const card = document.createElement("div");
   card.className = `tool-activity ${message.status}`;
   const { toggle, details } = createActivityDisclosure(
@@ -1165,6 +1235,57 @@ function renderToolActivity(row, message) {
     actions.append(deny, approve);
     details.append(actions);
   }
+  row.append(card);
+}
+
+function renderJournalActivity(row, message) {
+  const card = document.createElement("div");
+  card.className = `journal-activity ${message.journal.action}`;
+  const { toggle, details } = createActivityDisclosure(card, message);
+  const head = document.createElement("div");
+  head.className = "journal-activity-head";
+  const icon = document.createElement("i");
+  icon.textContent = "≋";
+  const title = document.createElement("strong");
+  title.textContent = message.title;
+  const status = document.createElement("span");
+  status.className = "journal-activity-status";
+  status.textContent = message.statusText;
+  head.append(icon, title, status, toggle);
+  card.append(head);
+
+  const list = document.createElement("ul");
+  message.journal.items.forEach((journal) => {
+    const item = document.createElement("li");
+    const kind = journal.type === "weekly" ? "周记" : "日记";
+    item.textContent = `《${journal.title}》`;
+    const meta = document.createElement("small");
+    meta.textContent = ` · ${kind}${journal.periodKey ? ` · ${journal.periodKey}` : ""}${
+      journal.mood ? ` · ${journal.mood}` : ""
+    }`;
+    item.append(meta);
+    list.append(item);
+  });
+  if (!message.journal.items.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "没有找到相关手记";
+    list.append(empty);
+  }
+  details.append(list);
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "journal-activity-open";
+  open.textContent = `查看${state.assistantProfile?.name || "AI 伙伴"}手记`;
+  open.addEventListener("click", () => {
+    showModuleWorkspace(
+      "assistant-profile",
+      "profile.html?kind=assistant",
+      assistantProfileBtn
+    );
+  });
+  details.append(open);
+  card.append(details);
   row.append(card);
 }
 
@@ -1625,6 +1746,7 @@ async function initialize() {
     renderMessages();
   }
   reminderEngine.start();
+  journalWriter.start();
 }
 
 async function refreshSystemPrompt() {
@@ -1636,9 +1758,19 @@ async function refreshSystemPrompt() {
   }
 }
 
+window.addEventListener("aether:journals-updated", async () => {
+  moduleFrame.contentWindow?.postMessage(
+    { type: "aether:journals-updated" },
+    "*"
+  );
+});
+
 window.addEventListener("xuan:modules-changed", syncModuleState);
 window.addEventListener("storage", syncModuleState);
-window.addEventListener("beforeunload", () => reminderEngine.stop());
+window.addEventListener("beforeunload", () => {
+  reminderEngine.stop();
+  journalWriter.stop();
+});
 
 initialize().catch((error) => {
   console.error("Failed to initialize AI configuration:", error.message);

@@ -121,6 +121,32 @@ class XuanApiClient {
     return this.request("PATCH", "/api/v1/assistant/profile", changes);
   }
 
+  listJournals(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/assistant/journals${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  getJournal(type, periodKey) {
+    return this.request(
+      "GET",
+      `/api/v1/assistant/journals/${encodeURIComponent(type)}/${encodeURIComponent(periodKey)}`
+    );
+  }
+
+  getJournalMaterial(from, to) {
+    const query = new URLSearchParams({ from: String(from), to: String(to) });
+    return this.request("GET", `/api/v1/assistant/journals/material?${query}`);
+  }
+
+  saveJournal(journal) {
+    return this.request("PUT", "/api/v1/assistant/journals", journal);
+  }
+
   listPersonalityEvents(filters = {}) {
     const query = new URLSearchParams(
       Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")

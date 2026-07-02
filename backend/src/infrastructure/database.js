@@ -228,6 +228,30 @@ const MIGRATIONS = [
       ADD COLUMN avatar_data_url TEXT NOT NULL DEFAULT '';
     ALTER TABLE assistant_profiles
       ADD COLUMN avatar_data_url TEXT NOT NULL DEFAULT '';
+  `,
+  `
+    -- Version 10 was used by a reverted experimental feature in some local
+    -- databases. Keep the slot reserved so later migrations stay monotonic.
+    SELECT 1;
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS assistant_journals (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      journal_type TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      mood TEXT NOT NULL DEFAULT '',
+      source_from INTEGER NOT NULL,
+      source_to INTEGER NOT NULL,
+      source_message_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(user_id, journal_type, period_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_assistant_journals_user_period
+      ON assistant_journals(user_id, journal_type, period_key DESC);
   `
 ];
 

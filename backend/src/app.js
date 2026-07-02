@@ -78,6 +78,9 @@ const {
 const {
   registerTimeAwarenessRoutes
 } = require("./modules/time-awareness/time-awareness-routes");
+const { JournalRepository } = require("./modules/journals/journal-repository");
+const { JournalService } = require("./modules/journals/journal-service");
+const { registerJournalRoutes } = require("./modules/journals/journal-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -115,6 +118,7 @@ function createApp(config) {
   const timeAwarenessService = new TimeAwarenessService(
     new TimeAwarenessRepository(database)
   );
+  const journalService = new JournalService(new JournalRepository(database));
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -146,6 +150,7 @@ function createApp(config) {
     memoryConsolidationService
   );
   registerAssistantMemoryRoutes(router, assistantMemoryService);
+  registerJournalRoutes(router, journalService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);

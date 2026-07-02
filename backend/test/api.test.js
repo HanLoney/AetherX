@@ -982,6 +982,96 @@ test("assistant personality and shared memories are modular, confirmable APIs", 
   });
 });
 
+test("assistant journals preserve period entries and use original history as material", async () => {
+  await withServer(async (baseUrl) => {
+    const conversation = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/conversations",
+      { title: "原始日记素材" }
+    );
+    const conversationId = conversation.payload.data.id;
+    const sourceFrom = Date.parse("2026-07-01T00:00:00+08:00");
+    const sourceTo = Date.parse("2026-07-02T00:00:00+08:00");
+    await request(
+      baseUrl,
+      "PUT",
+      `/api/v1/conversations/${conversationId}/messages`,
+      {
+        messages: [
+          {
+            id: "journal-display-user",
+            stream: "display",
+            position: 0,
+            role: "user",
+            content: "这是必须进入日记的原始聊天",
+            createdAt: sourceFrom + 1000
+          },
+          {
+            id: "journal-display-assistant",
+            stream: "display",
+            position: 1,
+            role: "assistant",
+            content: "我会如实记住今天发生的事情",
+            createdAt: sourceFrom + 2000
+          },
+          {
+            id: "journal-model-copy",
+            stream: "model",
+            position: 0,
+            role: "user",
+            content: "模型流副本不应重复进入素材",
+            createdAt: sourceFrom + 1000
+          }
+        ]
+      }
+    );
+
+    const material = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/assistant/journals/material?from=${sourceFrom}&to=${sourceTo}`
+    );
+    assert.equal(material.payload.data.messages.length, 2);
+    assert.equal(
+      material.payload.data.messages[0].content,
+      "这是必须进入日记的原始聊天"
+    );
+
+    const saved = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/assistant/journals",
+      {
+        type: "daily",
+        periodKey: "2026-07-01",
+        title: "今天留下的话",
+        mood: "温暖",
+        content: "我把今天真实发生的交流写了下来。",
+        sourceFrom,
+        sourceTo,
+        sourceMessageCount: 2
+      }
+    );
+    assert.equal(saved.payload.data.sourceMessageCount, 2);
+
+    const listed = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/journals?type=daily"
+    );
+    assert.equal(listed.payload.data.length, 1);
+    assert.equal(listed.payload.data[0].periodKey, "2026-07-01");
+
+    const searched = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/assistant/journals?q=${encodeURIComponent("真实发生")}`
+    );
+    assert.equal(searched.payload.data.length, 1);
+  });
+});
+
 test("multi-turn extraction separates assistant growth from shared memories", async () => {
   const events = [];
   const shared = [];
