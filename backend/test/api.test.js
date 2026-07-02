@@ -269,23 +269,35 @@ test("AI API keys are encrypted and never returned", async () => {
 
 test("profile and preferences are managed through independent APIs", async () => {
   await withServer(async (baseUrl) => {
+    const avatarDataUrl = `data:image/webp;base64,${Buffer.from(
+      "cropped-avatar"
+    ).toString("base64")}`;
     const profile = await request(baseUrl, "PUT", "/api/v1/profile", {
       displayName: "洛尼",
       preferredName: "洛尼",
       birthday: "11-14",
       occupation: "产品创造者",
       bio: "希望小玄能同时照顾工作和生活。",
-      goals: ["保持健康", "持续创造"]
+      goals: ["保持健康", "持续创造"],
+      avatarDataUrl
     });
     assert.equal(profile.payload.data.preferredName, "洛尼");
     assert.equal(profile.payload.data.birthday, "11-14");
     assert.deepEqual(profile.payload.data.goals, ["保持健康", "持续创造"]);
+    assert.equal(profile.payload.data.avatarDataUrl, avatarDataUrl);
 
     const patched = await request(baseUrl, "PATCH", "/api/v1/profile", {
       occupation: "独立开发者"
     });
     assert.equal(patched.payload.data.occupation, "独立开发者");
     assert.equal(patched.payload.data.birthday, "11-14");
+    assert.equal(patched.payload.data.avatarDataUrl, avatarDataUrl);
+
+    const invalidAvatar = await request(baseUrl, "PATCH", "/api/v1/profile", {
+      avatarDataUrl: "data:image/svg+xml;base64,PHN2Zz4="
+    });
+    assert.equal(invalidAvatar.response.status, 400);
+    assert.equal(invalidAvatar.payload.error.code, "INVALID_AVATAR_FORMAT");
 
     await request(baseUrl, "PUT", "/api/v1/preferences", {
       category: "communication",
@@ -877,6 +889,9 @@ test("questions cannot become profile facts even when the model proposes them", 
 
 test("assistant personality and shared memories are modular, confirmable APIs", async () => {
   await withServer(async (baseUrl) => {
+    const avatarDataUrl = `data:image/webp;base64,${Buffer.from(
+      "assistant-avatar"
+    ).toString("base64")}`;
     const profile = await request(
       baseUrl,
       "PATCH",
@@ -885,11 +900,13 @@ test("assistant personality and shared memories are modular, confirmable APIs", 
         name: "小玄",
         gender: "女",
         selfDefinition: "会持续成长的全能助手",
-        relationshipSummary: "洛尼亲密无间的伙伴"
+        relationshipSummary: "洛尼亲密无间的伙伴",
+        avatarDataUrl
       }
     );
     assert.equal(profile.payload.data.gender, "女");
     assert.match(profile.payload.data.selfDefinition, /持续成长/);
+    assert.equal(profile.payload.data.avatarDataUrl, avatarDataUrl);
 
     const event = await request(
       baseUrl,
@@ -923,6 +940,7 @@ test("assistant personality and shared memories are modular, confirmable APIs", 
     );
     assert.equal(evolved.payload.data.traits[0].key, "细心");
     assert.equal(evolved.payload.data.traits[0].evidenceCount, 1);
+    assert.equal(evolved.payload.data.avatarDataUrl, avatarDataUrl);
 
     const shared = await request(
       baseUrl,

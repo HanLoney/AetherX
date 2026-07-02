@@ -1,4 +1,5 @@
 const { HttpError } = require("../../lib/http-error");
+const { normalizeAvatarDataUrl } = require("./avatar-data");
 
 class ProfileService {
   constructor(repository) {
@@ -10,6 +11,7 @@ class ProfileService {
   }
 
   save(userId, input) {
+    const current = this.repository.get(userId);
     const goals = input.goals ?? [];
     if (!Array.isArray(goals)) {
       throw new HttpError(400, "INVALID_GOALS", "长期目标必须是数组。");
@@ -20,7 +22,11 @@ class ProfileService {
       birthday: birthday(input.birthday),
       bio: text(input.bio, 2000),
       occupation: text(input.occupation, 200),
-      goals: goals.map((goal) => text(goal, 500)).filter(Boolean).slice(0, 30)
+      goals: goals.map((goal) => text(goal, 500)).filter(Boolean).slice(0, 30),
+      avatarDataUrl:
+        input.avatarDataUrl === undefined
+          ? current.avatarDataUrl
+          : normalizeAvatarDataUrl(input.avatarDataUrl)
     });
   }
 

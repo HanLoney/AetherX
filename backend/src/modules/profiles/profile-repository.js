@@ -6,7 +6,8 @@ class ProfileRepository {
   get(userId) {
     const row = this.database
       .prepare(
-        `SELECT display_name, preferred_name, birthday, bio, occupation, goals_json, updated_at
+        `SELECT display_name, preferred_name, birthday, bio, occupation,
+                goals_json, avatar_data_url, updated_at
          FROM user_profiles WHERE user_id = ?`
       )
       .get(userId);
@@ -18,6 +19,7 @@ class ProfileRepository {
           bio: row.bio,
           occupation: row.occupation,
           goals: JSON.parse(row.goals_json),
+          avatarDataUrl: row.avatar_data_url || "",
           updatedAt: row.updated_at
         }
       : {
@@ -27,6 +29,7 @@ class ProfileRepository {
           bio: "",
           occupation: "",
           goals: [],
+          avatarDataUrl: "",
           updatedAt: null
         };
   }
@@ -37,8 +40,8 @@ class ProfileRepository {
       .prepare(
         `INSERT INTO user_profiles(
           user_id, display_name, preferred_name, birthday, bio, occupation,
-          goals_json, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          goals_json, avatar_data_url, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
           display_name = excluded.display_name,
           preferred_name = excluded.preferred_name,
@@ -46,6 +49,7 @@ class ProfileRepository {
           bio = excluded.bio,
           occupation = excluded.occupation,
           goals_json = excluded.goals_json,
+          avatar_data_url = excluded.avatar_data_url,
           updated_at = excluded.updated_at`
       )
       .run(
@@ -56,6 +60,7 @@ class ProfileRepository {
         profile.bio,
         profile.occupation,
         JSON.stringify(profile.goals),
+        profile.avatarDataUrl,
         updatedAt
       );
     return this.get(userId);

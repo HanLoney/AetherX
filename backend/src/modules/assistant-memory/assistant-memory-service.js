@@ -3,6 +3,9 @@ const {
   isInvalidMemorySource,
   isSystemFeedback
 } = require("../memories/memory-content-policy");
+const {
+  normalizeAvatarDataUrl
+} = require("../profiles/avatar-data");
 
 class AssistantMemoryService {
   constructor(repository) {
@@ -27,7 +30,11 @@ class AssistantMemoryService {
         1000
       ),
       traits: normalizeList(input.traits ?? current.traits, 30),
-      values: normalizeList(input.values ?? current.values, 30)
+      values: normalizeList(input.values ?? current.values, 30),
+      avatarDataUrl:
+        input.avatarDataUrl === undefined
+          ? current.avatarDataUrl
+          : normalizeAvatarDataUrl(input.avatarDataUrl)
     });
   }
 

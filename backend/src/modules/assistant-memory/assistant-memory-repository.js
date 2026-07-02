@@ -17,8 +17,8 @@ class AssistantMemoryRepository {
     this.database.prepare(`
       INSERT INTO assistant_profiles(
         user_id, name, gender, self_definition, relationship_summary,
-        traits_json, values_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        traits_json, values_json, avatar_data_url, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         name = excluded.name,
         gender = excluded.gender,
@@ -26,6 +26,7 @@ class AssistantMemoryRepository {
         relationship_summary = excluded.relationship_summary,
         traits_json = excluded.traits_json,
         values_json = excluded.values_json,
+        avatar_data_url = excluded.avatar_data_url,
         updated_at = excluded.updated_at
     `).run(
       userId,
@@ -35,6 +36,7 @@ class AssistantMemoryRepository {
       profile.relationshipSummary,
       JSON.stringify(profile.traits),
       JSON.stringify(profile.values),
+      profile.avatarDataUrl,
       now
     );
     return this.getProfile(userId);
@@ -177,6 +179,7 @@ function defaultProfile() {
     relationshipSummary: "洛尼亲密无间的伙伴和得力编程助手",
     traits: [],
     values: [],
+    avatarDataUrl: "",
     updatedAt: null
   };
 }
@@ -189,6 +192,7 @@ function mapProfile(row) {
     relationshipSummary: row.relationship_summary,
     traits: JSON.parse(row.traits_json),
     values: JSON.parse(row.values_json),
+    avatarDataUrl: row.avatar_data_url || "",
     updatedAt: row.updated_at
   };
 }

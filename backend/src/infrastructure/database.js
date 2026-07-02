@@ -222,6 +222,12 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_memory_evidence_hash
       ON memory_evidence(user_id, evidence_hash);
+  `,
+  `
+    ALTER TABLE user_profiles
+      ADD COLUMN avatar_data_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE assistant_profiles
+      ADD COLUMN avatar_data_url TEXT NOT NULL DEFAULT '';
   `
 ];
 
