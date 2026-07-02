@@ -16,7 +16,6 @@ const state = {
   messages: [],
   modelMessages: [],
   memoryContext: "",
-  timeContext: "",
   chatGeneration: 0,
   conversations: [],
   conversationId: null,
@@ -37,23 +36,17 @@ function currentSystemPrompt() {
     .join("\n\n");
 }
 
-function modelMessagesWithRuntimeContext() {
-  const messages = [...state.modelMessages];
-  if (!state.timeContext) return messages;
-  let currentTurnIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index].role === "user") {
-      currentTurnIndex = index;
-      break;
-    }
-  }
-  const runtimeMessage = {
-    role: "system",
-    content: state.timeContext
+function modelMessagesForRequest() {
+  return [...state.modelMessages];
+}
+
+function runtimeOptions() {
+  return {
+    timeAwareness: window.XuanModules.isEnabled("time-awareness"),
+    timeZone:
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+    locale: navigator.language || "zh-CN"
   };
-  if (currentTurnIndex < 0) return [runtimeMessage, ...messages];
-  messages.splice(currentTurnIndex, 0, runtimeMessage);
-  return messages;
 }
 
 const elements = {
@@ -249,7 +242,6 @@ window.addEventListener("message", (event) => {
   }
   if (event.data?.type === "xuan:module-state-changed") {
     syncModuleState();
-    if (event.data.id === "time-awareness") refreshTimeContext();
     return;
   }
   if (event.data?.type !== "xuan:navigate") return;
@@ -280,9 +272,6 @@ function syncModuleState() {
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
-  if (!window.XuanModules.isEnabled("time-awareness")) {
-    state.timeContext = "";
-  }
 }
 
 function providerById(id) {
@@ -484,9 +473,9 @@ async function finalizeToolRun(summaries, reason) {
   const localSummary =
     summaries.slice(-4).join("\n") || "工具调用已经停止，但没有产生可用结果。";
   try {
-    await refreshTimeContext();
     const result = await window.desktop.requestAI({
       ...state.config,
+      runtime: runtimeOptions(),
       messages: [
         {
           role: "system",
@@ -494,7 +483,7 @@ async function finalizeToolRun(summaries, reason) {
             `${currentSystemPrompt()}\n工具阶段已经结束，原因：${reason}。` +
             "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
         },
-        ...modelMessagesWithRuntimeContext()
+        ...modelMessagesForRequest()
       ],
       tools: []
     });
@@ -519,15 +508,15 @@ async function runAgentLoop() {
   const summaries = [];
   let lastCallSignature = "";
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    await refreshTimeContext();
     const request = {
       ...state.config,
+      runtime: runtimeOptions(),
       messages: [
         {
           role: "system",
           content: currentSystemPrompt()
         },
-        ...modelMessagesWithRuntimeContext()
+        ...modelMessagesForRequest()
       ],
       tools: toolRegistry.modelTools()
     };
@@ -547,7 +536,7 @@ async function runAgentLoop() {
               `${currentSystemPrompt()}\n当前端点没有返回工具调用能力。请直接回答用户，` +
               "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
           },
-          ...modelMessagesWithRuntimeContext()
+          ...modelMessagesForRequest()
         ],
         tools: []
       });
@@ -1209,8 +1198,6 @@ async function sendMessage() {
     return;
   }
   await refreshSystemPrompt();
-  await refreshTimeContext();
-
   state.messages.push(createMessage("user", content));
   state.modelMessages.push({ role: "user", content });
   state.memoryContext = "";
@@ -1480,24 +1467,6 @@ async function refreshSystemPrompt() {
     systemPrompt = bundle.compiledPrompt || FALLBACK_SYSTEM_PROMPT;
   } catch {
     systemPrompt = FALLBACK_SYSTEM_PROMPT;
-  }
-}
-
-async function refreshTimeContext() {
-  if (!window.XuanModules.isEnabled("time-awareness")) {
-    state.timeContext = "";
-    return;
-  }
-  try {
-    const context = await window.desktop.getTimeAwarenessContext({
-      now: Date.now(),
-      timeZone:
-        Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
-      locale: navigator.language || "zh-CN"
-    });
-    state.timeContext = context.context || "";
-  } catch {
-    state.timeContext = "";
   }
 }
 
