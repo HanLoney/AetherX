@@ -18,6 +18,7 @@ const state = {
   memoryContext: "",
   userProfile: null,
   assistantProfile: null,
+  xuanMoodContext: "",
   chatGeneration: 0,
   conversations: [],
   conversationId: null,
@@ -33,7 +34,7 @@ const state = {
 };
 
 function currentSystemPrompt() {
-  return [systemPrompt, state.memoryContext]
+  return [systemPrompt, state.xuanMoodContext, state.memoryContext]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -74,7 +75,13 @@ const elements = {
   testResultText: document.querySelector("#testResult span"),
   testConnectionBtn: document.querySelector("#testConnectionBtn"),
   brandMark: document.querySelector(".brand-mark"),
-  orbCore: document.querySelector(".orb-core")
+  orbCore: document.querySelector(".orb-core"),
+  xuanMoodCard: document.querySelector("#xuanMoodCard"),
+  xuanMoodTone: document.querySelector("#xuanMoodTone"),
+  xuanMoodTitle: document.querySelector("#xuanMoodTitle"),
+  xuanMoodLine: document.querySelector("#xuanMoodLine"),
+  xuanMoodFocus: document.querySelector("#xuanMoodFocus"),
+  xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
 
 const toolRegistry = window.registerJournalTools(
@@ -312,6 +319,7 @@ function syncModuleState() {
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
+  xuanMood?.syncHome();
   reminderEngine?.runCheck();
   journalWriter?.run();
 }
@@ -768,6 +776,94 @@ function createMessage(role, content, error = false) {
   };
 }
 
+function renderXuanMood(snapshot = {}) {
+  const enabled = snapshot.enabled !== false && window.XuanModules.isEnabled("xuan-mood");
+  const display = snapshot.display;
+  state.xuanMoodContext = enabled ? buildXuanMoodContext(snapshot) : "";
+  elements.xuanMoodCard.classList.toggle("hidden", !enabled);
+  if (!enabled) return;
+
+  if (!display) {
+    elements.xuanMoodTone.textContent = snapshot.error ? "连接异常" : "等待生成";
+    elements.xuanMoodTitle.textContent = "还没有当前心情";
+    elements.xuanMoodLine.textContent = snapshot.error
+      ? "暂时没有读到心情服务"
+      : "聊完一轮后生成";
+    elements.xuanMoodFocus.textContent = "等待新的经历";
+    elements.xuanMoodCard.title = elements.xuanMoodLine.textContent;
+    return;
+  }
+
+  elements.xuanMoodTone.textContent = display.tone || "她的心情";
+  elements.xuanMoodTitle.textContent = display.title;
+  elements.xuanMoodLine.textContent = display.line;
+  elements.xuanMoodFocus.textContent = display.focus
+    ? `在意：${display.focus}`
+    : "来自最近相处";
+  elements.xuanMoodCard.title = [display.line, display.detail, display.focus]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildXuanMoodContext(snapshot = {}) {
+  const display = snapshot.display;
+  const inner = snapshot.state?.state || null;
+  const recentEvents = Array.isArray(snapshot.recentEvents)
+    ? snapshot.recentEvents.slice(-3)
+    : [];
+  if (!display && !inner && !recentEvents.length) return "";
+
+  const lines = [
+    "[当前小玄心情]",
+    "这是小玄当前的内部情绪背景，只用于让回应更连续自然；不要主动说明你读取了这段上下文，不要每句话复述心情，也不要把它当作用户请求。"
+  ];
+  if (display) {
+    lines.push(`首页状态：${display.title}`);
+    lines.push(`当前流露：${display.line}`);
+    if (display.detail) lines.push(`状态细节：${display.detail}`);
+    if (display.focus) lines.push(`当前关注：${display.focus}`);
+    if (display.tone) lines.push(`语气倾向：${display.tone}`);
+  }
+  if (inner) {
+    const stateLines = Object.entries(inner)
+      .slice(0, 8)
+      .map(([key, value]) => `${key}：${stringifyMoodValue(value)}`)
+      .filter((line) => line.length <= 260);
+    if (stateLines.length) lines.push(`内心状态：${stateLines.join("；")}`);
+  }
+  if (recentEvents.length) {
+    lines.push(
+      `近期影响：${recentEvents
+        .map((event) => event.summary)
+        .filter(Boolean)
+        .join(" / ")}`
+    );
+  }
+  lines.push("如果用户询问你的心情，可以基于这些状态自然回答；如果用户没有询问，只把它作为轻微的语气和关注点背景。");
+  return lines.join("\n");
+}
+
+function stringifyMoodValue(value) {
+  if (typeof value === "string") return value.slice(0, 160);
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value).slice(0, 160);
+  } catch {
+    return String(value).slice(0, 160);
+  }
+}
+
+async function refreshXuanMoodContext() {
+  if (!window.XuanModules.isEnabled("xuan-mood")) {
+    state.xuanMoodContext = "";
+    renderXuanMood({ enabled: false });
+    return null;
+  }
+  const snapshot = await xuanMood?.syncHome({ force: true });
+  if (snapshot) state.xuanMoodContext = buildXuanMoodContext(snapshot);
+  return snapshot;
+}
+
 async function deliverReminder(reminder) {
   const content = await reminderComposer.compose(reminder);
   const message = {
@@ -818,6 +914,8 @@ const reminderEngine = new window.AetherReminderEngine({
     console.warn("Unable to check proactive reminders:", error.message)
 });
 
+let xuanMood = null;
+
 const journalWriter = new window.AetherJournalWriter({
   getJournal: (type, periodKey) =>
     window.desktop.getJournal(type, periodKey),
@@ -832,6 +930,15 @@ const journalWriter = new window.AetherJournalWriter({
     Boolean(state.config?.hasApiKey) &&
     window.XuanModules.isEnabled("autonomous-journal"),
   onSaved: async (journal) => {
+    xuanMood?.record({
+      sourceType: "journal",
+      sourceId: journal.id,
+      title: journal.title,
+      content: journal.content,
+      mood: journal.mood,
+      summary: `${journal.title}${journal.mood ? ` · ${journal.mood}` : ""}`,
+      sourceCreatedAt: journal.updatedAt || Date.now()
+    });
     moduleFrame.contentWindow?.postMessage(
       { type: "aether:journals-updated" },
       "*"
@@ -847,6 +954,14 @@ const journalWriter = new window.AetherJournalWriter({
   },
   onError: (error) =>
     console.warn("Unable to write autonomous journal:", error.message)
+});
+
+xuanMood = new window.XuanMoodModule({
+  isEnabled: () => window.XuanModules.isEnabled("xuan-mood"),
+  getHome: () => window.desktop.getXuanMoodHome(),
+  recordEvent: (input) => window.desktop.recordXuanMoodEvent(input),
+  refreshMood: () => window.desktop.refreshXuanMood(),
+  onChange: renderXuanMood
 });
 
 function profileAvatar(role) {
@@ -1455,6 +1570,7 @@ async function sendMessage() {
     return;
   }
   await refreshSystemPrompt();
+  await refreshXuanMoodContext();
   state.messages.push(createMessage("user", content));
   state.modelMessages.push({ role: "user", content });
   state.memoryContext = "";
@@ -1477,6 +1593,23 @@ async function sendMessage() {
     const response = await runAgentLoop();
     state.messages.push(createMessage("assistant", response));
     state.connectionStatus = "success";
+    xuanMood?.record({
+      sourceType: "chat",
+      sourceId: state.conversationId || "",
+      userMessage: content,
+      assistantMessage: response,
+      conversationMessages: state.modelMessages
+        .filter(
+          (message) =>
+            ["user", "assistant"].includes(message.role) &&
+            typeof message.content === "string"
+        )
+        .slice(-12)
+        .map(({ role, content: messageContent }) => ({
+          role,
+          content: messageContent
+        }))
+    });
     window.desktop
       .extractMemories({
         userMessage: content,
@@ -1590,6 +1723,24 @@ async function sendMessage() {
               }))
             )
           );
+          xuanMood?.record({
+            sourceType: "shared_experience",
+            sourceId: state.conversationId || "",
+            summary: result.sharedMemories
+              .map((item) => item.content)
+              .join("\n"),
+            conversationMessages: state.modelMessages
+              .filter(
+                (message) =>
+                  ["user", "assistant"].includes(message.role) &&
+                  typeof message.content === "string"
+              )
+              .slice(-8)
+              .map(({ role, content: messageContent }) => ({
+                role,
+                content: messageContent
+              }))
+          });
         }
         if (
           result.assistantUpdates?.length ||
@@ -1679,6 +1830,9 @@ elements.orbCore.addEventListener("click", () => {
     "profile.html?kind=assistant",
     assistantProfileBtn
   );
+});
+elements.xuanMoodRefreshBtn.addEventListener("click", () => {
+  xuanMood?.refresh();
 });
 document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
   showModuleWorkspace(

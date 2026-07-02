@@ -252,6 +252,44 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_assistant_journals_user_period
       ON assistant_journals(user_id, journal_type, period_key DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS xuan_mood_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL DEFAULT '',
+      source_created_at INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      emotional_tone TEXT NOT NULL DEFAULT '',
+      effect_on_xuan TEXT NOT NULL DEFAULT '',
+      intensity TEXT NOT NULL DEFAULT 'medium',
+      raw_payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_xuan_mood_events_user_time
+      ON xuan_mood_events(user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS xuan_mood_state (
+      user_id TEXT PRIMARY KEY,
+      state_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS xuan_mood_displays (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      line TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      focus TEXT NOT NULL DEFAULT '',
+      tone TEXT NOT NULL DEFAULT 'quiet',
+      based_on_event_ids_json TEXT NOT NULL DEFAULT '[]',
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_xuan_mood_displays_user_time
+      ON xuan_mood_displays(user_id, created_at DESC);
   `
 ];
 

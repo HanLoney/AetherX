@@ -1072,6 +1072,31 @@ test("assistant journals preserve period entries and use original history as mat
   });
 });
 
+test("xuan mood records events independently from generated display", async () => {
+  await withServer(async (baseUrl) => {
+    const recorded = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/xuan-mood/events",
+      {
+        sourceType: "chat",
+        sourceId: "conversation-1",
+        userMessage: "我不想规则模板写好的东西",
+        assistantMessage: "那就让模型根据近期经历自然生成。",
+        summary: "洛尼明确希望小玄的心情不要是规则模板。"
+      }
+    );
+    assert.equal(recorded.response.status, 201);
+    assert.equal(recorded.payload.data.event.sourceType, "chat");
+    assert.match(recorded.payload.data.event.summary, /规则模板/);
+
+    const home = await request(baseUrl, "GET", "/api/v1/xuan-mood/home");
+    assert.equal(home.response.status, 200);
+    assert.equal(home.payload.data.recentEvents.length, 1);
+    assert.equal(home.payload.data.display, null);
+  });
+});
+
 test("multi-turn extraction separates assistant growth from shared memories", async () => {
   const events = [];
   const shared = [];

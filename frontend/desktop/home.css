@@ -349,6 +349,88 @@ button { color: inherit; cursor: pointer; }
   letter-spacing: -.04em;
 }
 
+.xuan-mood-chip {
+  max-width: min(560px, calc(100vw - 560px));
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid rgba(150, 134, 181, .15);
+  border-radius: 13px;
+  color: #746e80;
+  background: rgba(255, 255, 255, .58);
+  box-shadow: 0 8px 22px rgba(85, 83, 122, .05);
+  vertical-align: top;
+}
+
+.xuan-mood-chip i {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #c9799d;
+  background: rgba(235, 160, 191, .13);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.xuan-mood-chip span,
+.xuan-mood-chip small {
+  color: #9b95a6;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.xuan-mood-chip strong,
+.xuan-mood-chip em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xuan-mood-chip strong {
+  max-width: 110px;
+  color: #5d5768;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.xuan-mood-chip em {
+  max-width: 235px;
+  color: #7d7688;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.xuan-mood-chip small {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xuan-mood-chip button {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #6f8daf;
+  background: rgba(225, 237, 249, .72);
+  font-size: 10px;
+}
+
+.xuan-mood-chip button:hover {
+  background: rgba(213, 231, 248, .95);
+}
+
 .top-actions {
   display: flex;
   align-items: center;

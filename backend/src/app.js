@@ -81,6 +81,13 @@ const {
 const { JournalRepository } = require("./modules/journals/journal-repository");
 const { JournalService } = require("./modules/journals/journal-service");
 const { registerJournalRoutes } = require("./modules/journals/journal-routes");
+const {
+  XuanMoodRepository
+} = require("./modules/xuan-mood/xuan-mood-repository");
+const { XuanMoodService } = require("./modules/xuan-mood/xuan-mood-service");
+const {
+  registerXuanMoodRoutes
+} = require("./modules/xuan-mood/xuan-mood-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -119,6 +126,11 @@ function createApp(config) {
     new TimeAwarenessRepository(database)
   );
   const journalService = new JournalService(new JournalRepository(database));
+  const xuanMoodService = new XuanMoodService({
+    repository: new XuanMoodRepository(database),
+    configRepository: aiConfigRepository,
+    providerClient: aiProviderClient
+  });
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -151,6 +163,7 @@ function createApp(config) {
   );
   registerAssistantMemoryRoutes(router, assistantMemoryService);
   registerJournalRoutes(router, journalService);
+  registerXuanMoodRoutes(router, xuanMoodService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);

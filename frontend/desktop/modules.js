@@ -60,6 +60,10 @@ function renderModules() {
           ? module.enabled
             ? "后台运行 · 每日与每周写作"
             : "已关闭"
+        : module.id === "xuan-mood"
+          ? module.enabled
+            ? "主页展示 · 生成式状态"
+            : "已关闭"
         : module.tools
           ? `${module.tools} 个 AI 工具`
           : "AI 核心能力";

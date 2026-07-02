@@ -144,6 +144,11 @@ function registerIpcHandlers() {
   ipcMain.handle("time-awareness:context", (_event, input) =>
     api.getTimeAwarenessContext(input)
   );
+  ipcMain.handle("xuan-mood:home", () => api.getXuanMoodHome());
+  ipcMain.handle("xuan-mood:event", (_event, input) =>
+    api.recordXuanMoodEvent(input)
+  );
+  ipcMain.handle("xuan-mood:refresh", () => api.refreshXuanMood());
   ipcMain.handle("conversations:list", () => api.listConversations());
   ipcMain.handle("conversations:create", (_event, title) =>
     api.createConversation(title)

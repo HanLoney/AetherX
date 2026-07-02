@@ -130,6 +130,21 @@ paths:
       summary: 开启或关闭自动确认
       responses:
         "200": { description: 已保存的记忆设置 }
+  /xuan-mood/home:
+    get:
+      summary: 获取小玄心情模块的首页展示缓存
+      responses:
+        "200": { description: 当前心情状态、展示内容和近期事件 }
+  /xuan-mood/events:
+    post:
+      summary: 投递聊天、手记或共同经历对小玄心情的影响事件
+      responses:
+        "201": { description: 已记录事件并尝试生成状态 }
+  /xuan-mood/refresh:
+    post:
+      summary: 基于近期事件刷新小玄心情展示
+      responses:
+        "200": { description: 刷新后的心情快照 }
   /conversations:
     get:
       summary: 获取全部历史会话

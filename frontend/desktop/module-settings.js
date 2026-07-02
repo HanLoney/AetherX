@@ -38,6 +38,15 @@
       tools: 0
     }),
     Object.freeze({
+      id: "xuan-mood",
+      name: "她的心情",
+      description: "根据聊天、手记和共同经历生成小玄连续变化的心情、精力与关注点。",
+      icon: "♡",
+      color: "pink",
+      core: false,
+      tools: 0
+    }),
+    Object.freeze({
       id: "proactive-reminders",
       name: "主动提醒",
       description: "在待办开始前、到点或逾期时主动发送提醒。",
