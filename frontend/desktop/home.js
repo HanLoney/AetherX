@@ -305,6 +305,7 @@ function syncModuleState() {
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
+  reminderEngine?.runCheck();
 }
 
 function providerById(id) {
@@ -755,6 +756,56 @@ function createMessage(role, content, error = false) {
   };
 }
 
+async function deliverReminder(reminder) {
+  const content = await reminderComposer.compose(reminder);
+  const message = {
+    ...createMessage("assistant", content),
+    source: "proactive-reminder",
+    reminder
+  };
+  state.messages.push(message);
+  state.modelMessages.push({
+    id: `${message.id}-model`,
+    role: "assistant",
+    content,
+    source: "proactive-reminder"
+  });
+  renderMessages();
+  try {
+    await window.desktop.showNotification({
+      title: `${state.assistantProfile?.name || "AetherX"} · ${reminder.title}`,
+      body: reminder.body
+    });
+  } catch (error) {
+    console.warn("Unable to show desktop reminder notification:", error.message);
+  }
+}
+
+const reminderComposer = new window.AetherReminderComposer({
+  requestAI: (payload) => window.desktop.requestAI(payload),
+  extractText: extractResponse,
+  getSystemPrompt: () => systemPrompt,
+  getRuntime: runtimeOptions,
+  getUserName: () =>
+    state.userProfile?.preferredName ||
+    state.userProfile?.displayName ||
+    "洛尼",
+  canUseAI: () => Boolean(state.config?.hasApiKey),
+  onError: (error) =>
+    console.warn("Unable to generate a personalized reminder:", error.message)
+});
+
+const reminderEngine = new window.AetherReminderEngine({
+  listTodos: (filters) => window.desktop.listTodos(filters),
+  onReminder: deliverReminder,
+  isEnabled: () =>
+    window.XuanModules.isEnabled("todo") &&
+    window.XuanModules.isEnabled("proactive-reminders"),
+  storage: window.localStorage,
+  onError: (error) =>
+    console.warn("Unable to check proactive reminders:", error.message)
+});
+
 function profileAvatar(role) {
   const profile =
     role === "user" ? state.userProfile : state.assistantProfile;
@@ -849,9 +900,14 @@ async function ensureConversation() {
   const firstUserMessage = state.messages.find(
     (message) => message.role === "user"
   );
-  if (!firstUserMessage) return null;
+  const firstMessage = firstUserMessage || state.messages[0];
+  if (!firstMessage) return null;
   state.conversationPromise = window.desktop
-    .createConversation(firstUserMessage.content.slice(0, 60))
+    .createConversation(
+      firstUserMessage
+        ? firstUserMessage.content.slice(0, 60)
+        : "主动提醒"
+    )
     .then((conversation) => {
       state.conversationId = conversation.id;
       return conversation.id;
@@ -1568,6 +1624,7 @@ async function initialize() {
   } else {
     renderMessages();
   }
+  reminderEngine.start();
 }
 
 async function refreshSystemPrompt() {
@@ -1581,6 +1638,7 @@ async function refreshSystemPrompt() {
 
 window.addEventListener("xuan:modules-changed", syncModuleState);
 window.addEventListener("storage", syncModuleState);
+window.addEventListener("beforeunload", () => reminderEngine.stop());
 
 initialize().catch((error) => {
   console.error("Failed to initialize AI configuration:", error.message);
