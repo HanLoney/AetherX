@@ -244,29 +244,79 @@ function renderPersonalityEvents() {
   }
 }
 
+const SHARED_STATUS_GROUPS = [
+  { status: "candidate", label: "待确认共同记忆", description: "需要洛尼确认后才会生效" },
+  { status: "active", label: "已确认共同记忆", description: "我们共同的经历、决定与约定" }
+];
+
+function createSharedMemoryRow(memory) {
+  const row = document.createElement("article");
+  row.className = "memory-row";
+  const content = document.createElement("div");
+  content.className = "memory-content";
+  const text = document.createElement("p");
+  text.textContent = memory.content;
+  const meta = document.createElement("div");
+  meta.className = "memory-meta";
+  const type = document.createElement("span");
+  type.className = "memory-tag";
+  type.textContent = TYPE_LABELS[memory.type] || memory.type;
+  const status = document.createElement("span");
+  status.textContent = memory.status === "active" ? "已确认" : "待确认";
+  meta.append(type, status);
+  content.append(text, meta);
+
+  if (memory.evidence) {
+    const excerpt = document.createElement("div");
+    excerpt.className = "source-excerpt";
+    excerpt.textContent = `来源原话："${memory.evidence}"`;
+    content.append(excerpt);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  if (memory.status === "candidate") {
+    actions.append(
+      actionButton("确认", async () => {
+        await window.desktop.confirmSharedMemory(memory.id);
+        await loadAll();
+      }, "confirm")
+    );
+  }
+  actions.append(
+    actionButton("删除", async () => {
+      if (!confirm("确定忘记这段共同记忆吗？")) return;
+      await window.desktop.deleteSharedMemory(memory.id);
+      await loadAll();
+    }, "danger")
+  );
+  row.append(content, actions);
+  return row;
+}
+
 function renderSharedMemories() {
   const list = $("#sharedMemoryList");
   list.replaceChildren();
-  state.sharedMemories.forEach((memory) => {
-    list.append(
-      createTimelineRow(
-        memory.content,
-        `${memory.status === "active" ? "已确认" : "待确认"} · ${memory.type}`,
-        memory.evidence,
-        async () => {
-          if (!confirm("确定忘记这段共同记忆吗？")) return;
-          await window.desktop.deleteSharedMemory(memory.id);
-          await loadAll();
-        },
-        memory.status === "candidate"
-          ? async () => {
-              await window.desktop.confirmSharedMemory(memory.id);
-              await loadAll();
-            }
-          : null
-      )
-    );
+
+  SHARED_STATUS_GROUPS.forEach((groupInfo) => {
+    const memories = state.sharedMemories.filter((m) => m.status === groupInfo.status);
+    if (!memories.length) return;
+    const group = document.createElement("section");
+    group.className = `memory-group ${groupInfo.status}`;
+    const header = document.createElement("header");
+    header.innerHTML = `
+      <div><i class="status-dot"></i><strong></strong><span></span></div>
+      <span class="group-count"></span>`;
+    header.querySelector("strong").textContent = groupInfo.label;
+    header.querySelector("div span").textContent = groupInfo.description;
+    header.querySelector(".group-count").textContent = `${memories.length} 条`;
+    const rows = document.createElement("div");
+    rows.className = "memory-list";
+    memories.forEach((memory) => rows.append(createSharedMemoryRow(memory)));
+    group.append(header, rows);
+    list.append(group);
   });
+
   if (!state.sharedMemories.length) {
     list.innerHTML = '<div class="empty">我们还没有被记录下来的共同经历。</div>';
   }
