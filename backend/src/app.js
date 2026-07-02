@@ -130,7 +130,12 @@ function createApp(config) {
     data: { status: "ok", service: "aetherx-backend" }
   }));
   registerTodoRoutes(router, todoService);
-  registerAiRoutes(router, aiConfigRepository, aiProviderClient);
+  registerAiRoutes(
+    router,
+    aiConfigRepository,
+    aiProviderClient,
+    timeAwarenessService
+  );
   registerProfileRoutes(router, profileService);
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);

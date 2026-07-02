@@ -13,6 +13,11 @@ const {
 const {
   sanitizeMessages
 } = require("../src/modules/ai/ai-provider-client");
+const {
+  injectRuntimeTime,
+  isDirectTimeRequest,
+  normalizeCurrentTimeClaims
+} = require("../src/modules/ai/ai-routes");
 
 async function withServer(run) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "xuanai-test-"));
@@ -162,6 +167,59 @@ test("time awareness API reports first recorded interaction", async () => {
     assert.equal(result.payload.data.lastInteractionAt, null);
     assert.equal(result.payload.data.isFirstInteractionToday, true);
   });
+});
+
+test("direct time questions bypass model inference and use the runtime clock", async () => {
+  await withServer(async (baseUrl) => {
+    const result = await request(baseUrl, "POST", "/api/v1/ai/chat", {
+      messages: [
+        { role: "system", content: "普通系统提示" },
+        { role: "user", content: "现在几点" }
+      ],
+      runtime: {
+        timeAwareness: true,
+        timeZone: "Asia/Shanghai",
+        locale: "zh-CN"
+      }
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.data.ok, true);
+    assert.match(
+      result.payload.data.data.choices[0].message.content,
+      /现在是 \*\*\d{2}:\d{2}\*\*/
+    );
+  });
+});
+
+test("runtime time is placed beside the current turn and corrects model claims", () => {
+  const messages = [
+    { role: "system", content: "基础规则" },
+    { role: "user", content: "之前几点" },
+    { role: "assistant", content: "现在是 09:49" },
+    { role: "user", content: "真的49吗" }
+  ];
+  const injected = injectRuntimeTime(
+    messages,
+    "[权威运行时事实：时间感知]\n用户当地时间：10:35"
+  );
+  const latestUserIndex = injected.findIndex(
+    (message) => message.role === "user" && message.content === "真的49吗"
+  );
+  assert.equal(injected[latestUserIndex - 1].role, "system");
+  assert.match(injected[latestUserIndex - 1].content, /用户当地时间：10:35/);
+  assert.equal(isDirectTimeRequest(messages), true);
+
+  const result = {
+    data: {
+      choices: [{
+        message: {
+          content: "我刚才看错了，现在应该是 **10:34**。"
+        }
+      }]
+    }
+  };
+  normalizeCurrentTimeClaims(result, "10:35");
+  assert.match(result.data.choices[0].message.content, /现在应该是 \*\*10:35\*\*/);
 });
 
 test("todo CRUD is persisted behind the API", async () => {
