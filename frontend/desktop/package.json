@@ -34,6 +34,8 @@
       "tool-registry.js",
       "todo-tools.js",
       "module-settings.js",
+      "reminder-composer.js",
+      "reminder-engine.js",
       "memory-tools.js",
       "markdown-renderer.js",
       "modules.html",

@@ -50,6 +50,12 @@ function renderModules() {
         ? module.enabled
           ? timeAwarenessStatus.text
           : "已关闭"
+        : module.id === "proactive-reminders"
+          ? !module.enabled
+            ? "已关闭"
+            : window.XuanModules.isEnabled("todo")
+              ? "后台运行 · 提前 10 分钟提醒"
+              : "需要先启用日历待办"
         : module.tools
           ? `${module.tools} 个 AI 工具`
           : "AI 核心能力";

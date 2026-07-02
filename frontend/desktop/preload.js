@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("desktop", {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
+  showNotification: (notification) =>
+    ipcRenderer.invoke("notification:show", notification),
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),
   saveAIConfig: (config) => ipcRenderer.invoke("ai:config:save", config),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),

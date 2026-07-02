@@ -36,6 +36,15 @@
       color: "blue",
       core: false,
       tools: 0
+    }),
+    Object.freeze({
+      id: "proactive-reminders",
+      name: "主动提醒",
+      description: "在待办开始前、到点或逾期时主动发送提醒。",
+      icon: "!",
+      color: "pink",
+      core: false,
+      tools: 0
     })
   ]);
 

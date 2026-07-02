@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, Notification } = require("electron");
 const path = require("node:path");
 const { XuanApiClient } = require("./api-client");
 
@@ -24,6 +24,22 @@ function registerIpcHandlers() {
   });
   ipcMain.on("window:close", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+  ipcMain.handle("notification:show", (event, input = {}) => {
+    if (!Notification.isSupported()) return false;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const notification = new Notification({
+      title: String(input.title || "AetherX"),
+      body: String(input.body || ""),
+      icon: appIcon
+    });
+    notification.on("click", () => {
+      if (!win || win.isDestroyed()) return;
+      win.show();
+      win.focus();
+    });
+    notification.show();
+    return true;
   });
 
   ipcMain.handle("ai:config:get", () => api.getAiConfig());
@@ -143,7 +159,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   });
 
