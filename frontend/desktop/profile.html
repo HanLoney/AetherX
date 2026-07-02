@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>个人主页 · AetherX</title>
+    <link rel="stylesheet" href="profile.css" />
+  </head>
+  <body>
+    <main class="profile-page">
+      <header class="page-heading">
+        <button id="backToChat" type="button">← 返回聊天</button>
+        <div>
+          <p id="pageEyebrow">PERSONAL SPACE</p>
+          <h1 id="pageTitle">个人主页</h1>
+        </div>
+      </header>
+
+      <section class="profile-hero">
+        <button id="avatarButton" class="profile-avatar" type="button" title="更换头像">
+          <img id="avatarImage" class="hidden" alt="" />
+          <span id="avatarFallback">玄</span>
+          <i>更换</i>
+        </button>
+        <div class="hero-copy">
+          <small id="profileRole">AI PARTNER</small>
+          <h2 id="heroName">小玄</h2>
+          <p id="heroSummary">会持续成长的全能助手</p>
+          <div class="avatar-actions">
+            <button id="chooseAvatar" class="primary" type="button">选择头像</button>
+            <button id="removeAvatar" class="secondary" type="button">移除头像</button>
+          </div>
+          <input
+            id="avatarFile"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+          />
+        </div>
+      </section>
+
+      <section id="userSection" class="profile-panel hidden">
+        <header><h2>关于洛尼</h2><p>这些信息由你亲自维护。</p></header>
+        <form id="userProfileForm" class="profile-form">
+          <label>名字<input id="userDisplayName" maxlength="100" /></label>
+          <label>希望 AI 怎么称呼<input id="userPreferredName" maxlength="100" /></label>
+          <label>生日<input id="userBirthday" maxlength="10" placeholder="11-14" /></label>
+          <label>职业 / 当前身份<input id="userOccupation" maxlength="200" /></label>
+          <label class="wide">关于我<textarea id="userBio" maxlength="2000"></textarea></label>
+          <label class="wide">长期目标（每行一个）<textarea id="userGoals"></textarea></label>
+          <div class="wide form-actions"><button class="primary" type="submit">保存个人主页</button></div>
+        </form>
+      </section>
+
+      <section id="assistantSection" class="profile-panel hidden">
+        <header><h2>关于 AI 伙伴</h2><p>身份与人格可以随着相处持续成长。</p></header>
+        <form id="assistantProfileForm" class="profile-form">
+          <label>名字<input id="assistantName" maxlength="100" /></label>
+          <label>性别认同<input id="assistantGender" maxlength="50" /></label>
+          <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
+          <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+          <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
+          <div class="wide form-actions"><button class="primary" type="submit">保存 AI 主页</button></div>
+        </form>
+      </section>
+
+      <section id="growthSection" class="profile-panel hidden">
+        <header><h2>成长中的性格</h2><p>来自长期相处形成的特征与证据。</p></header>
+        <div id="traitList" class="trait-grid"></div>
+      </section>
+
+      <section id="personalityTimelineSection" class="profile-panel hidden">
+        <header><h2>人格成长记录</h2><p>留下每一次承诺、纠正和成长的来处。</p></header>
+        <div id="personalityTimeline" class="timeline-list"></div>
+      </section>
+    </main>
+
+    <div id="avatarCropModal" class="crop-modal hidden">
+      <section class="crop-dialog">
+        <header>
+          <div><h2>调整头像</h2><p>拖动图片定位，使用滑块缩放。</p></div>
+          <button data-crop-cancel type="button" aria-label="关闭">×</button>
+        </header>
+        <canvas
+          class="crop-canvas"
+          data-crop-canvas
+          width="420"
+          height="420"
+        ></canvas>
+        <label class="zoom-control">
+          <span>缩放</span>
+          <input data-crop-zoom type="range" min="100" max="300" value="100" />
+        </label>
+        <footer>
+          <button data-crop-cancel class="secondary" type="button">取消</button>
+          <button data-crop-confirm class="primary" type="button">使用这个头像</button>
+        </footer>
+      </section>
+    </div>
+
+    <div id="notice" class="notice hidden"></div>
+    <script src="avatar-cropper.js"></script>
+    <script src="profile.js"></script>
+  </body>
+</html>
