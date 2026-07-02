@@ -1,13 +1,19 @@
+const {
+  isInvalidMemorySource,
+  isSystemFeedback
+} = require("./memory-content-policy");
+
 class MemoryConsolidationService {
   constructor(
     memoryService,
     evidenceRepository,
-    { preferenceService, profileService } = {}
+    { preferenceService, profileService, assistantMemoryService } = {}
   ) {
     this.memoryService = memoryService;
     this.evidenceRepository = evidenceRepository;
     this.preferenceService = preferenceService;
     this.profileService = profileService;
+    this.assistantMemoryService = assistantMemoryService;
   }
 
   consolidateCandidate(userId, candidate, source = {}) {
@@ -79,9 +85,14 @@ class MemoryConsolidationService {
     let removedInvalid = 0;
     let migratedPreferences = 0;
     let migratedGoals = 0;
+    let removedInvalidShared = 0;
+    let removedInvalidPersonalityEvents = 0;
 
     for (const memory of [...memories]) {
-      if (isInvalidSource(memory.sourceExcerpt)) {
+      if (
+        isInvalidMemorySource(memory.sourceExcerpt) ||
+        isSystemFeedback(memory.content)
+      ) {
         this.memoryService.delete(userId, memory.id);
         const index = memories.findIndex((item) => item.id === memory.id);
         if (index >= 0) memories.splice(index, 1);
@@ -167,9 +178,30 @@ class MemoryConsolidationService {
       }
     }
 
+    if (this.assistantMemoryService) {
+      for (const memory of this.assistantMemoryService.listSharedMemories(userId)) {
+        if (
+          !isSystemFeedback(memory.content) &&
+          !isInvalidMemorySource(memory.evidence)
+        ) continue;
+        this.assistantMemoryService.deleteSharedMemory(userId, memory.id);
+        removedInvalidShared += 1;
+      }
+      for (const event of this.assistantMemoryService.listEvents(userId)) {
+        if (
+          !isSystemFeedback(event.content) &&
+          !isInvalidMemorySource(event.evidence)
+        ) continue;
+        this.assistantMemoryService.deleteEvent(userId, event.id);
+        removedInvalidPersonalityEvents += 1;
+      }
+    }
+
     return {
       merged,
       removedInvalid,
+      removedInvalidShared,
+      removedInvalidPersonalityEvents,
       migratedPreferences,
       migratedGoals,
       remaining: this.memoryService.list(userId, {}).length
@@ -262,16 +294,6 @@ function bigrams(value) {
     result.add(value.slice(index, index + 2));
   }
   return result;
-}
-
-function isInvalidSource(source) {
-  const text = String(source || "").trim();
-  return (
-    /[?？]/.test(text) ||
-    /(为什么|怎么知道|是否|难道|请问)/.test(text) ||
-    (/(系统|功能|工具|界面|页面|UI|待办|记忆中心|自动提取)/i.test(text) &&
-      /(应该|不应该|需要|不要|希望|为什么|改成|修复|问题)/.test(text))
-  );
 }
 
 function derivePreference(memory) {

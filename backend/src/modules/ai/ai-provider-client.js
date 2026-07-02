@@ -54,32 +54,93 @@ class AiProviderClient {
 
 function sanitizeMessages(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(-60).map((message) => {
-    const role = ["system", "user", "assistant", "tool"].includes(message?.role)
-      ? message.role
-      : "user";
-    const sanitized = {
-      role,
-      content:
-        message?.content === null
-          ? null
-          : String(message?.content || "").slice(0, 30_000)
-    };
-    if (role === "assistant" && Array.isArray(message?.tool_calls)) {
-      sanitized.tool_calls = message.tool_calls.slice(0, 10).map((call) => ({
-        id: String(call?.id || "").slice(0, 200),
-        type: "function",
-        function: {
-          name: String(call?.function?.name || "").slice(0, 100),
-          arguments: String(call?.function?.arguments || "{}").slice(0, 20_000)
-        }
-      }));
+  const messages = value.map(sanitizeMessage);
+  const systemMessages = [];
+  let historyStart = 0;
+  while (messages[historyStart]?.role === "system") {
+    systemMessages.push(messages[historyStart]);
+    historyStart += 1;
+  }
+
+  const groups = groupValidHistory(messages.slice(historyStart));
+  const budget = Math.max(1, 60 - systemMessages.length);
+  const selected = [];
+  let used = 0;
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index];
+    if (used && used + group.length > budget) break;
+    selected.unshift(group);
+    used += group.length;
+    if (used >= budget) break;
+  }
+  return [...systemMessages.slice(0, 4), ...selected.flat()];
+}
+
+function sanitizeMessage(message) {
+  const role = ["system", "user", "assistant", "tool"].includes(message?.role)
+    ? message.role
+    : "user";
+  const sanitized = {
+    role,
+    content:
+      message?.content === null
+        ? null
+        : String(message?.content || "").slice(0, 30_000)
+  };
+  if (role === "assistant" && Array.isArray(message?.tool_calls)) {
+    sanitized.tool_calls = message.tool_calls.slice(0, 10).map((call) => ({
+      id: String(call?.id || "").slice(0, 200),
+      type: "function",
+      function: {
+        name: String(call?.function?.name || "").slice(0, 100),
+        arguments: String(call?.function?.arguments || "{}").slice(0, 20_000)
+      }
+    }));
+  }
+  if (role === "tool") {
+    sanitized.tool_call_id = String(message?.tool_call_id || "").slice(0, 200);
+  }
+  return sanitized;
+}
+
+function groupValidHistory(messages) {
+  const groups = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role === "tool") continue;
+    if (message.role === "system") {
+      groups.push([message]);
+      continue;
     }
-    if (role === "tool") {
-      sanitized.tool_call_id = String(message?.tool_call_id || "").slice(0, 200);
+    if (message.role !== "assistant" || !message.tool_calls?.length) {
+      groups.push([message]);
+      continue;
     }
-    return sanitized;
-  });
+
+    const expectedIds = new Set(
+      message.tool_calls.map((call) => call.id).filter(Boolean)
+    );
+    const tools = [];
+    let cursor = index + 1;
+    while (messages[cursor]?.role === "tool") {
+      const tool = messages[cursor];
+      if (
+        expectedIds.has(tool.tool_call_id) &&
+        !tools.some((item) => item.tool_call_id === tool.tool_call_id)
+      ) {
+        tools.push(tool);
+      }
+      cursor += 1;
+    }
+    if (expectedIds.size && tools.length === expectedIds.size) {
+      groups.push([message, ...tools]);
+    } else if (message.content) {
+      const { tool_calls: _discarded, ...plainAssistant } = message;
+      groups.push([plainAssistant]);
+    }
+    index = cursor - 1;
+  }
+  return groups;
 }
 
 function sanitizeTools(value) {
@@ -98,4 +159,4 @@ function sanitizeTools(value) {
   }));
 }
 
-module.exports = { AiProviderClient };
+module.exports = { AiProviderClient, sanitizeMessages };

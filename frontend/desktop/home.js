@@ -31,14 +31,29 @@ const state = {
   testing: false
 };
 
-function memoryContextMessages() {
-  return state.memoryContext
-    ? [{ role: "system", content: state.memoryContext }]
-    : [];
+function currentSystemPrompt() {
+  return [systemPrompt, state.memoryContext]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
-function currentSystemPrompt() {
-  return [systemPrompt, state.timeContext].filter(Boolean).join("\n\n");
+function modelMessagesWithRuntimeContext() {
+  const messages = [...state.modelMessages];
+  if (!state.timeContext) return messages;
+  let currentTurnIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      currentTurnIndex = index;
+      break;
+    }
+  }
+  const runtimeMessage = {
+    role: "system",
+    content: state.timeContext
+  };
+  if (currentTurnIndex < 0) return [runtimeMessage, ...messages];
+  messages.splice(currentTurnIndex, 0, runtimeMessage);
+  return messages;
 }
 
 const elements = {
@@ -230,6 +245,11 @@ window.addEventListener("message", (event) => {
   if (event.source !== moduleFrame.contentWindow) return;
   if (event.data?.type === "xuan:prompt-updated") {
     refreshSystemPrompt();
+    return;
+  }
+  if (event.data?.type === "xuan:module-state-changed") {
+    syncModuleState();
+    if (event.data.id === "time-awareness") refreshTimeContext();
     return;
   }
   if (event.data?.type !== "xuan:navigate") return;
@@ -464,6 +484,7 @@ async function finalizeToolRun(summaries, reason) {
   const localSummary =
     summaries.slice(-4).join("\n") || "工具调用已经停止，但没有产生可用结果。";
   try {
+    await refreshTimeContext();
     const result = await window.desktop.requestAI({
       ...state.config,
       messages: [
@@ -473,8 +494,7 @@ async function finalizeToolRun(summaries, reason) {
             `${currentSystemPrompt()}\n工具阶段已经结束，原因：${reason}。` +
             "请严格基于已有工具结果直接给出最终答复，不要再请求任何工具。"
         },
-        ...memoryContextMessages(),
-        ...state.modelMessages
+        ...modelMessagesWithRuntimeContext()
       ],
       tools: []
     });
@@ -499,6 +519,7 @@ async function runAgentLoop() {
   const summaries = [];
   let lastCallSignature = "";
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    await refreshTimeContext();
     const request = {
       ...state.config,
       messages: [
@@ -506,8 +527,7 @@ async function runAgentLoop() {
           role: "system",
           content: currentSystemPrompt()
         },
-        ...memoryContextMessages(),
-        ...state.modelMessages
+        ...modelMessagesWithRuntimeContext()
       ],
       tools: toolRegistry.modelTools()
     };
@@ -527,8 +547,7 @@ async function runAgentLoop() {
               `${currentSystemPrompt()}\n当前端点没有返回工具调用能力。请直接回答用户，` +
               "并明确说明你现在不能读取或修改本地模块，不能假装已执行操作。"
           },
-          ...memoryContextMessages(),
-          ...state.modelMessages
+          ...modelMessagesWithRuntimeContext()
         ],
         tools: []
       });
@@ -912,6 +931,11 @@ function createToolActivity(tool, call) {
 function updateToolActivity(activity, status, statusText) {
   activity.status = status;
   activity.statusText = statusText;
+  if (status === "waiting" || status === "error") {
+    activity.expanded = true;
+  } else if (["success", "denied", "skipped"].includes(status)) {
+    activity.expanded = false;
+  }
   renderMessages();
 }
 
@@ -927,9 +951,51 @@ function resolveToolApproval(id, approved) {
   pending.resolve(approved);
 }
 
+function createActivityDisclosure(card, message, defaultExpanded = false) {
+  const expanded =
+    typeof message.expanded === "boolean"
+      ? message.expanded
+      : defaultExpanded;
+  message.expanded = expanded;
+  card.classList.toggle("expanded", expanded);
+  card.classList.toggle("collapsed", !expanded);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "activity-disclosure";
+  toggle.setAttribute("aria-expanded", String(expanded));
+
+  const hint = document.createElement("span");
+  hint.className = "activity-disclosure-hint";
+  hint.textContent = expanded ? "收起" : "展开";
+  const chevron = document.createElement("i");
+  chevron.className = "activity-chevron";
+  chevron.textContent = expanded ? "▴" : "▾";
+  toggle.append(hint, chevron);
+
+  const details = document.createElement("div");
+  details.className = "activity-details";
+
+  toggle.addEventListener("click", () => {
+    message.expanded = !message.expanded;
+    card.classList.toggle("expanded", message.expanded);
+    card.classList.toggle("collapsed", !message.expanded);
+    toggle.setAttribute("aria-expanded", String(message.expanded));
+    hint.textContent = message.expanded ? "收起" : "展开";
+    chevron.textContent = message.expanded ? "▴" : "▾";
+  });
+
+  return { toggle, details };
+}
+
 function renderToolActivity(row, message) {
   const card = document.createElement("div");
   card.className = `tool-activity ${message.status}`;
+  const { toggle, details } = createActivityDisclosure(
+    card,
+    message,
+    message.status === "waiting"
+  );
 
   const head = document.createElement("div");
   head.className = "tool-activity-head";
@@ -945,11 +1011,12 @@ function renderToolActivity(row, message) {
   const status = document.createElement("span");
   status.className = "tool-status";
   status.textContent = message.statusText;
-  head.append(icon, title, status);
+  head.append(icon, title, status, toggle);
 
   const detail = document.createElement("pre");
   detail.textContent = message.detail;
-  card.append(head, detail);
+  details.append(detail);
+  card.append(head, details);
 
   if (message.status === "waiting") {
     const actions = document.createElement("div");
@@ -965,7 +1032,7 @@ function renderToolActivity(row, message) {
     approve.textContent = "允许";
     approve.addEventListener("click", () => resolveToolApproval(message.id, true));
     actions.append(deny, approve);
-    card.append(actions);
+    details.append(actions);
   }
   row.append(card);
 }
@@ -973,6 +1040,7 @@ function renderToolActivity(row, message) {
 function renderMemoryActivity(row, message) {
   const card = document.createElement("div");
   card.className = `memory-activity ${message.kind}`;
+  const { toggle, details } = createActivityDisclosure(card, message);
   const head = document.createElement("div");
   head.className = "memory-activity-head";
   const title = document.createElement("strong");
@@ -987,17 +1055,9 @@ function renderMemoryActivity(row, message) {
     growth: `🌱 记录了 ${message.items.length} 条人格成长事件`,
     shared: `🤝 新增了 ${message.items.length} 条共同记忆`
   }[message.kind];
-  const open = document.createElement("button");
-  open.type = "button";
-  open.textContent =
-    message.kind === "candidate"
-      ? "去确认"
-      : "查看记忆中心";
-  open.addEventListener("click", () => {
-    showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
-  });
-  head.append(title, open);
+  head.append(title, toggle);
   card.append(head);
+
   const list = document.createElement("ul");
   message.items.slice(0, 5).forEach((item) => {
     const entry = document.createElement("li");
@@ -1009,7 +1069,20 @@ function renderMemoryActivity(row, message) {
     }
     list.append(entry);
   });
-  card.append(list);
+  details.append(list);
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "memory-activity-open";
+  open.textContent =
+    message.kind === "candidate"
+      ? "去确认"
+      : "查看记忆中心";
+  open.addEventListener("click", () => {
+    showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  });
+  details.append(open);
+  card.append(details);
   row.append(card);
 }
 

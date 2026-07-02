@@ -1,4 +1,8 @@
 const { HttpError } = require("../../lib/http-error");
+const {
+  isInvalidMemorySource,
+  isSystemFeedback
+} = require("../memories/memory-content-policy");
 
 class AssistantMemoryService {
   constructor(repository) {
@@ -87,6 +91,16 @@ class AssistantMemoryService {
     if (!content) {
       throw new HttpError(400, "INVALID_SHARED_MEMORY", "共同记忆不能为空。");
     }
+    if (
+      isSystemFeedback(content) ||
+      isInvalidMemorySource(input.evidence)
+    ) {
+      throw new HttpError(
+        400,
+        "SYSTEM_FEEDBACK_NOT_MEMORY",
+        "系统功能反馈不能保存为共同记忆。"
+      );
+    }
     const existing = this.listSharedMemories(userId).find(
       (memory) => normalizeText(memory.content) === normalizeText(content)
     );
@@ -130,6 +144,11 @@ class AssistantMemoryService {
   context(userId) {
     const profile = this.getProfile(userId);
     const shared = this.listSharedMemories(userId, { status: "active" })
+      .filter(
+        (memory) =>
+          !isSystemFeedback(memory.content) &&
+          !isInvalidMemorySource(memory.evidence)
+      )
       .slice(0, 6);
     const lines = [
       `[当前人格画像]`,

@@ -93,19 +93,19 @@ function createApp(config) {
     new PreferenceRepository(database)
   );
   const memoryService = new MemoryService(new MemoryRepository(database));
+  const assistantMemoryService = new AssistantMemoryService(
+    new AssistantMemoryRepository(database)
+  );
   const memoryConsolidationService = new MemoryConsolidationService(
     memoryService,
     new MemoryEvidenceRepository(database),
-    { preferenceService, profileService }
+    { preferenceService, profileService, assistantMemoryService }
   );
   const memorySettingsService = new MemorySettingsService(
     new MemorySettingsRepository(database)
   );
   const conversationService = new ConversationService(
     new ConversationRepository(database)
-  );
-  const assistantMemoryService = new AssistantMemoryService(
-    new AssistantMemoryRepository(database)
   );
   const promptSettingsService = new PromptSettingsService(
     new PromptSettingsRepository(database),

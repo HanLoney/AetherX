@@ -10,6 +10,9 @@ const {
 const {
   TimeAwarenessService
 } = require("../src/modules/time-awareness/time-awareness-service");
+const {
+  sanitizeMessages
+} = require("../src/modules/ai/ai-provider-client");
 
 async function withServer(run) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "xuanai-test-"));
@@ -71,6 +74,75 @@ test("time awareness uses the user timezone and measures elapsed interaction", (
   assert.equal(result.elapsedLabel, "2 小时 15 分钟前");
   assert.equal(result.isFirstInteractionToday, false);
   assert.match(result.context, /除非用户明确询问/);
+  assert.match(result.context, /唯一权威来源/);
+  assert.match(result.context, /不属于聊天历史/);
+  assert.match(result.context, /禁止调用待办或记忆工具验证时间/);
+});
+
+test("AI message window preserves runtime system facts and complete tool pairs", () => {
+  const messages = [
+    {
+      role: "system",
+      content: "[权威运行时事实：时间感知]\n用户当地时间：09:49"
+    }
+  ];
+  for (let index = 0; index < 70; index += 1) {
+    messages.push({
+      role: index % 2 ? "assistant" : "user",
+      content: `普通历史消息 ${index}`
+    });
+  }
+  messages.push({
+    role: "system",
+    content: "[权威运行时事实：时间感知]\n用户当地时间：10:24"
+  });
+  messages.push({ role: "user", content: "现在几点" });
+  messages.push({
+    role: "assistant",
+    content: "读取中",
+    tool_calls: [{
+      id: "call-latest",
+      type: "function",
+      function: { name: "todo_list", arguments: "{}" }
+    }]
+  });
+  messages.push({
+    role: "tool",
+    tool_call_id: "call-latest",
+    content: "{\"ok\":true}"
+  });
+
+  const sanitized = sanitizeMessages(messages);
+  assert.ok(sanitized.length <= 60);
+  assert.equal(sanitized[0].role, "system");
+  assert.match(sanitized[0].content, /用户当地时间：09:49/);
+  const runtimeIndex = sanitized.findIndex(
+    (message) =>
+      message.role === "system" &&
+      message.content.includes("用户当地时间：10:24")
+  );
+  assert.ok(runtimeIndex > 0);
+  assert.equal(sanitized[runtimeIndex + 1].role, "user");
+  assert.equal(sanitized[runtimeIndex + 1].content, "现在几点");
+  const toolIndex = sanitized.findIndex((message) => message.role === "tool");
+  assert.ok(toolIndex > 0);
+  assert.equal(sanitized[toolIndex - 1].role, "assistant");
+  assert.equal(
+    sanitized[toolIndex - 1].tool_calls[0].id,
+    sanitized[toolIndex].tool_call_id
+  );
+});
+
+test("AI message window removes orphaned tool results", () => {
+  const sanitized = sanitizeMessages([
+    { role: "system", content: "系统规则" },
+    { role: "tool", tool_call_id: "orphan", content: "{}" },
+    { role: "user", content: "继续聊天" }
+  ]);
+  assert.deepEqual(
+    sanitized.map((message) => message.role),
+    ["system", "user"]
+  );
 });
 
 test("time awareness API reports first recorded interaction", async () => {
@@ -274,13 +346,32 @@ test("memory maintenance removes question and product-feedback pollution", async
       confidence: 0.7,
       sourceExcerpt: "为什么是待办，不应该是记忆吗"
     });
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "learning",
+      type: "fact",
+      content: "用户指出助手的时间感知失效",
+      source: "inferred",
+      confidence: 0.9,
+      sourceExcerpt: "时间感知失效"
+    });
+    const recalled = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/memories/recall",
+      { query: "你看看现在几点，时间感知正常吗" }
+    );
+    assert.ok(
+      recalled.payload.data.items.every(
+        (item) => !item.content.includes("时间感知失效")
+      )
+    );
     const consolidated = await request(
       baseUrl,
       "POST",
       "/api/v1/memories/consolidate",
       {}
     );
-    assert.equal(consolidated.payload.data.removedInvalid, 2);
+    assert.equal(consolidated.payload.data.removedInvalid, 3);
     assert.equal(consolidated.payload.data.remaining, 0);
   });
 });
@@ -424,6 +515,47 @@ test("automatic extraction creates deduplicated candidates only", async () => {
   assert.equal(result.candidates[0].status, "candidate");
   assert.equal(result.candidates[0].source, "inferred");
   assert.equal(result.candidates[0].sourceExcerpt, "我一般下午会喝一杯咖啡");
+});
+
+test("automatic extraction rejects system capability issues as user memories", async () => {
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: {
+      list: () => [],
+      create: () => assert.fail("system feedback must not become a memory")
+    },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([{
+                target: "memory",
+                domain: "learning",
+                type: "fact",
+                content: "用户指出助手的时间感知失效",
+                evidence: "时间感知失效",
+                confidence: 0.95,
+                importance: 0.7,
+                sensitivity: "normal"
+              }])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "时间感知失效",
+    assistantMessage: "我会检查"
+  });
+  assert.equal(result.candidates.length, 0);
+  assert.equal(result.autoConfirmed.length, 0);
 });
 
 test("automatic extraction routes explicit communication preferences out of memories", async () => {
@@ -754,6 +886,23 @@ test("assistant personality and shared memories are modular, confirmable APIs", 
       {}
     );
     assert.equal(confirmedShared.payload.data.status, "active");
+
+    const invalidShared = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/shared-memories",
+      {
+        type: "episode",
+        content: "用户指出助手的时间感知失效",
+        evidence: "时间感知失效",
+        status: "active"
+      }
+    );
+    assert.equal(invalidShared.response.status, 400);
+    assert.equal(
+      invalidShared.payload.error.code,
+      "SYSTEM_FEEDBACK_NOT_MEMORY"
+    );
   });
 });
 

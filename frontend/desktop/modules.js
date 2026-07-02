@@ -17,6 +17,10 @@ const moduleGrid = document.querySelector("#moduleGrid");
 const template = document.querySelector("#moduleTemplate");
 const todoModuleBtn = document.querySelector("#todoModuleBtn");
 const autoApproveInput = document.querySelector("#autoApproveInput");
+let timeAwarenessStatus = {
+  state: "loading",
+  text: "正在检测时间服务"
+};
 const memoryModuleBtn = document.createElement("button");
 memoryModuleBtn.id = "memoryModuleBtn";
 memoryModuleBtn.className = "nav-item";
@@ -41,9 +45,14 @@ function renderModules() {
       !module.core
     );
     card.querySelector(".module-copy p").textContent = module.description;
-    card.querySelector(".module-meta").textContent = module.tools
-      ? `${module.tools} 个 AI 工具`
-      : "AI 核心能力";
+    card.querySelector(".module-meta").textContent =
+      module.id === "time-awareness"
+        ? module.enabled
+          ? timeAwarenessStatus.text
+          : "已关闭"
+        : module.tools
+          ? `${module.tools} 个 AI 工具`
+          : "AI 核心能力";
 
     const input = card.querySelector("input");
     input.checked = module.enabled;
@@ -52,6 +61,17 @@ function renderModules() {
     input.addEventListener("change", () => {
       window.XuanModules.setEnabled(module.id, input.checked);
       renderModules();
+      window.parent?.postMessage(
+        {
+          type: "xuan:module-state-changed",
+          id: module.id,
+          enabled: input.checked
+        },
+        "*"
+      );
+      if (module.id === "time-awareness" && input.checked) {
+        refreshTimeAwarenessStatus();
+      }
     });
     moduleGrid.append(card);
   });
@@ -69,6 +89,34 @@ function renderModules() {
     !window.XuanModules.isEnabled("memory")
   );
   autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
+}
+
+async function refreshTimeAwarenessStatus() {
+  if (!window.XuanModules.isEnabled("time-awareness")) {
+    timeAwarenessStatus = { state: "disabled", text: "已关闭" };
+    renderModules();
+    return;
+  }
+  timeAwarenessStatus = { state: "loading", text: "正在检测时间服务" };
+  renderModules();
+  try {
+    const result = await window.desktop.getTimeAwarenessContext({
+      now: Date.now(),
+      timeZone:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+      locale: navigator.language || "zh-CN"
+    });
+    timeAwarenessStatus = {
+      state: "ready",
+      text: `运行正常 · ${result.localTime} · ${result.timeZone}`
+    };
+  } catch {
+    timeAwarenessStatus = {
+      state: "error",
+      text: "连接异常 · 无法读取当前时间"
+    };
+  }
+  renderModules();
 }
 
 autoApproveInput.addEventListener("change", () => {
@@ -91,3 +139,4 @@ window.addEventListener("xuan:modules-changed", renderModules);
 window.addEventListener("xuan:permissions-changed", renderModules);
 
 renderModules();
+refreshTimeAwarenessStatus();
