@@ -11,6 +11,8 @@ const $ = (selector) => document.querySelector(selector);
 const cropper = new window.AetherAvatarCropper($("#avatarCropModal"));
 let profile = null;
 let personalityEvents = [];
+let journals = [];
+let journalFilter = "all";
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -76,6 +78,7 @@ function renderAssistant() {
   $("#heroSummary").textContent =
     profile.selfDefinition || "会持续成长的全能助手";
   $("#assistantSection").classList.remove("hidden");
+  $("#journalSection").classList.remove("hidden");
   $("#growthSection").classList.remove("hidden");
   $("#assistantName").value = profile.name || "";
   $("#assistantGender").value = profile.gender || "";
@@ -84,6 +87,7 @@ function renderAssistant() {
   $("#assistantValues").value = (profile.values || [])
     .map((item) => `${item.key}：${item.value}`)
     .join("\n");
+  $("#journalHeading").textContent = `${profile.name || "AI 伙伴"}手记`;
   const list = $("#traitList");
   list.replaceChildren();
   (profile.traits || []).forEach((trait) => {
@@ -102,6 +106,42 @@ function renderAssistant() {
     list.innerHTML = '<div class="empty">AI 伙伴的人格还在成长中。</div>';
   }
   renderPersonalityTimeline();
+  renderJournals();
+}
+
+function renderJournals() {
+  const list = $("#journalList");
+  list.replaceChildren();
+  journals
+    .filter((journal) => journalFilter === "all" || journal.type === journalFilter)
+    .forEach((journal) => {
+      const card = document.createElement("article");
+      card.className = "journal-card";
+      const header = document.createElement("header");
+      const title = document.createElement("h3");
+      title.textContent = journal.title;
+      const time = document.createElement("time");
+      time.textContent = journal.periodKey;
+      header.append(title, time);
+      const content = document.createElement("p");
+      content.textContent = journal.content;
+      const meta = document.createElement("div");
+      meta.className = "journal-meta";
+      const kindLabel = document.createElement("span");
+      kindLabel.className = "journal-kind";
+      kindLabel.textContent = journal.type === "daily" ? "日记" : "周记";
+      const mood = document.createElement("span");
+      mood.textContent = journal.mood || "平静";
+      const sources = document.createElement("span");
+      sources.textContent = `${journal.sourceMessageCount || 0} 条原始消息`;
+      meta.append(kindLabel, mood, sources);
+      card.append(header, content, meta);
+      list.append(card);
+    });
+  if (!list.children.length) {
+    list.innerHTML =
+      '<div class="empty">还没有手记。完成一个自然日或完整一周后，她会自己写下来。</div>';
+  }
 }
 
 function renderPersonalityTimeline() {
@@ -147,9 +187,10 @@ async function loadProfile() {
   if (kind === "user") {
     profile = await window.desktop.getProfile();
   } else {
-    [profile, personalityEvents] = await Promise.all([
+    [profile, personalityEvents, journals] = await Promise.all([
       window.desktop.getAssistantProfile(),
-      window.desktop.listPersonalityEvents()
+      window.desktop.listPersonalityEvents(),
+      window.desktop.listJournals({ limit: 50 })
     ]);
   }
   render();
@@ -194,6 +235,24 @@ $("#backToChat").addEventListener("click", () => {
   } else {
     window.location.href = "home.html";
   }
+});
+
+document.querySelectorAll(".journal-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    journalFilter = button.dataset.journalType;
+    document.querySelectorAll(".journal-tab").forEach((item) =>
+      item.classList.toggle("active", item === button)
+    );
+    renderJournals();
+  });
+});
+
+window.addEventListener("message", async (event) => {
+  if (event.data?.type !== "aether:journals-updated" || kind !== "assistant") {
+    return;
+  }
+  journals = await window.desktop.listJournals({ limit: 50 });
+  renderJournals();
 });
 
 $("#userProfileForm").addEventListener("submit", async (event) => {

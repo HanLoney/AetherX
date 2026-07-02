@@ -332,7 +332,22 @@ button { color: inherit; cursor: pointer; }
   letter-spacing: 1.5px;
 }
 
-.topbar h1 { margin: 0; font-size: 25px; }
+.topbar .conversation-kicker {
+  margin-bottom: 7px;
+  font-weight: 600;
+  letter-spacing: .12em;
+}
+
+.topbar .conversation-title {
+  margin: 0;
+  color: transparent;
+  background: linear-gradient(120deg, #c9799d, #668fbd);
+  background-clip: text;
+  -webkit-background-clip: text;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -.04em;
+}
 
 .top-actions {
   display: flex;
@@ -902,6 +917,71 @@ button { color: inherit; cursor: pointer; }
 .tool-activity.error .tool-activity-head > i,
 .tool-activity.denied .tool-activity-head > i { color: #bc6576; background: rgba(211, 102, 123, .11); }
 .tool-activity.skipped { opacity: .72; }
+.journal-activity {
+  width: min(590px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(112, 145, 191, .25);
+  border-radius: 13px;
+  color: #5f6071;
+  background:
+    linear-gradient(135deg, rgba(126, 188, 239, .09), rgba(235, 160, 191, .06)),
+    rgba(250, 250, 253, .88);
+}
+.journal-activity.write {
+  border-color: rgba(190, 123, 158, .25);
+}
+.journal-activity-head {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+}
+.journal-activity-head > i {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #6383aa;
+  background: rgba(126, 188, 239, .14);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+.journal-activity-head strong {
+  color: #58647a;
+  font-size: 10px;
+}
+.journal-activity-status {
+  margin-left: auto;
+  padding: 4px 7px;
+  border-radius: 10px;
+  color: #7189a5;
+  background: rgba(112, 145, 191, .09);
+  font-size: 8px;
+}
+.journal-activity ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 2px 16px 8px 45px;
+  color: #69697a;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.journal-activity li small { color: #9995a4; }
+.journal-activity-open {
+  display: block;
+  width: max-content;
+  margin: 1px 12px 10px auto;
+  padding: 0;
+  border: 0;
+  color: #708eb2;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
 .tool-actions {
   display: flex;
   justify-content: flex-end;

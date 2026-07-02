@@ -56,6 +56,10 @@ function renderModules() {
             : window.XuanModules.isEnabled("todo")
               ? "后台运行 · 提前 10 分钟提醒"
               : "需要先启用日历待办"
+        : module.id === "autonomous-journal"
+          ? module.enabled
+            ? "后台运行 · 每日与每周写作"
+            : "已关闭"
         : module.tools
           ? `${module.tools} 个 AI 工具`
           : "AI 核心能力";

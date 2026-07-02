@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld("desktop", {
   getAssistantProfile: () => ipcRenderer.invoke("assistant-profile:get"),
   updateAssistantProfile: (changes) =>
     ipcRenderer.invoke("assistant-profile:update", changes),
+  listJournals: (filters) => ipcRenderer.invoke("journals:list", filters),
+  getJournal: (type, periodKey) =>
+    ipcRenderer.invoke("journals:get", type, periodKey),
+  getJournalMaterial: (from, to) =>
+    ipcRenderer.invoke("journals:material", from, to),
+  saveJournal: (journal) => ipcRenderer.invoke("journals:save", journal),
   listPersonalityEvents: (filters) =>
     ipcRenderer.invoke("personality-events:list", filters),
   createPersonalityEvent: (input) =>
