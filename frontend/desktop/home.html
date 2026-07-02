@@ -52,6 +52,14 @@
           <div>
             <p class="conversation-kicker">此刻，只聊你想聊的</p>
             <h1 id="workspaceAssistantName" class="conversation-title">小玄</h1>
+            <div id="xuanMoodCard" class="xuan-mood-chip hidden">
+              <i>♡</i>
+              <span id="xuanMoodTone">她的心情</span>
+              <strong id="xuanMoodTitle">还没有当前心情</strong>
+              <em id="xuanMoodLine">聊完一轮后生成</em>
+              <small id="xuanMoodFocus">等待聊天、手记或共同经历</small>
+              <button id="xuanMoodRefreshBtn" type="button" title="刷新心情">↻</button>
+            </div>
           </div>
           <div class="top-actions">
             <span id="statusPill" class="status-pill idle">
@@ -157,6 +165,7 @@
 
     <script src="ai-providers.js"></script>
     <script src="module-settings.js"></script>
+    <script src="xuan-mood.js"></script>
     <script src="reminder-composer.js"></script>
     <script src="reminder-engine.js"></script>
     <script src="journal-writer.js"></script>

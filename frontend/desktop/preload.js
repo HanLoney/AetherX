@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("prompt-settings:restore", version),
   getTimeAwarenessContext: (input) =>
     ipcRenderer.invoke("time-awareness:context", input),
+  getXuanMoodHome: () => ipcRenderer.invoke("xuan-mood:home"),
+  recordXuanMoodEvent: (input) => ipcRenderer.invoke("xuan-mood:event", input),
+  refreshXuanMood: () => ipcRenderer.invoke("xuan-mood:refresh"),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),

@@ -308,6 +308,18 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/time-awareness/context", input);
   }
 
+  getXuanMoodHome() {
+    return this.request("GET", "/api/v1/xuan-mood/home");
+  }
+
+  recordXuanMoodEvent(input) {
+    return this.request("POST", "/api/v1/xuan-mood/events", input);
+  }
+
+  refreshXuanMood() {
+    return this.request("POST", "/api/v1/xuan-mood/refresh", {});
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }
