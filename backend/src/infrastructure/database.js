@@ -290,6 +290,34 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_xuan_mood_displays_user_time
       ON xuan_mood_displays(user_id, created_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS assistant_journals_v2 (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      journal_type TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      mood TEXT NOT NULL DEFAULT '',
+      source_from INTEGER NOT NULL,
+      source_to INTEGER NOT NULL,
+      source_message_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO assistant_journals_v2(
+      id, user_id, journal_type, period_key, title, content, mood,
+      source_from, source_to, source_message_count, created_at, updated_at
+    )
+    SELECT
+      id, user_id, journal_type, period_key, title, content, mood,
+      source_from, source_to, source_message_count, created_at, updated_at
+    FROM assistant_journals;
+    DROP TABLE assistant_journals;
+    ALTER TABLE assistant_journals_v2 RENAME TO assistant_journals;
+    CREATE INDEX IF NOT EXISTS idx_assistant_journals_user_period
+      ON assistant_journals(user_id, journal_type, period_key DESC);
   `
 ];
 

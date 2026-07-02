@@ -22,7 +22,7 @@ class JournalRepository {
       .prepare(
         `SELECT * FROM assistant_journals
          WHERE ${conditions.join(" AND ")}
-         ORDER BY source_to DESC LIMIT ?`
+         ORDER BY source_to DESC, updated_at DESC LIMIT ?`
       )
       .all(...values)
       .map(mapJournal);
@@ -33,30 +33,61 @@ class JournalRepository {
       this.database
         .prepare(
           `SELECT * FROM assistant_journals
-           WHERE user_id = ? AND journal_type = ? AND period_key = ?`
+           WHERE user_id = ? AND journal_type = ? AND period_key = ?
+           ORDER BY source_to DESC, updated_at DESC LIMIT 1`
         )
         .get(userId, type, periodKey)
     );
   }
 
+  findById(userId, id) {
+    return mapJournal(
+      this.database
+        .prepare(`SELECT * FROM assistant_journals WHERE user_id = ? AND id = ?`)
+        .get(userId, id)
+    );
+  }
+
   save(userId, journal) {
-    const existing = this.find(userId, journal.type, journal.periodKey);
-    const id = existing?.id || randomUUID();
+    const existing = journal.id ? this.findById(userId, journal.id) : null;
+    const id = existing?.id || journal.id || randomUUID();
     const now = Date.now();
+    if (existing) {
+      this.database
+        .prepare(
+          `UPDATE assistant_journals SET
+          journal_type = ?,
+          period_key = ?,
+          title = ?,
+          content = ?,
+          mood = ?,
+          source_from = ?,
+          source_to = ?,
+          source_message_count = ?,
+          updated_at = ?
+          WHERE user_id = ? AND id = ?`
+        )
+        .run(
+          journal.type,
+          journal.periodKey,
+          journal.title,
+          journal.content,
+          journal.mood,
+          journal.sourceFrom,
+          journal.sourceTo,
+          journal.sourceMessageCount,
+          now,
+          userId,
+          id
+        );
+      return this.findById(userId, id);
+    }
     this.database
       .prepare(
         `INSERT INTO assistant_journals(
           id, user_id, journal_type, period_key, title, content, mood,
           source_from, source_to, source_message_count, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, journal_type, period_key) DO UPDATE SET
-          title = excluded.title,
-          content = excluded.content,
-          mood = excluded.mood,
-          source_from = excluded.source_from,
-          source_to = excluded.source_to,
-          source_message_count = excluded.source_message_count,
-          updated_at = excluded.updated_at`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -69,10 +100,10 @@ class JournalRepository {
         journal.sourceFrom,
         journal.sourceTo,
         journal.sourceMessageCount,
-        existing?.createdAt || now,
+        now,
         now
       );
-    return this.find(userId, journal.type, journal.periodKey);
+    return this.findById(userId, id);
   }
 
   sourceMaterial(userId, from, to) {

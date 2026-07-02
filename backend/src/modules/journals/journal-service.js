@@ -32,6 +32,7 @@ class JournalService {
       throw new HttpError(400, "INVALID_JOURNAL_RANGE", "手记素材周期不正确。");
     }
     return this.repository.save(userId, {
+      id: text(input.id, 120),
       type: journalType(input.type),
       periodKey: period(input.periodKey),
       title: text(input.title, 200) || "小玄手记",

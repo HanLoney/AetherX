@@ -1063,6 +1063,34 @@ test("assistant journals preserve period entries and use original history as mat
     assert.equal(listed.payload.data.length, 1);
     assert.equal(listed.payload.data[0].periodKey, "2026-07-01");
 
+    const second = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/assistant/journals",
+      {
+        type: "daily",
+        periodKey: "2026-07-01",
+        title: "今天又想起一件事",
+        mood: "认真",
+        content: "同一天的第二篇手记应该被保留下来。",
+        sourceFrom,
+        sourceTo: sourceTo + 1000,
+        sourceMessageCount: 2
+      }
+    );
+    assert.notEqual(second.payload.data.id, saved.payload.data.id);
+
+    const listedAgain = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/journals?type=daily"
+    );
+    assert.equal(listedAgain.payload.data.length, 2);
+    assert.deepEqual(
+      new Set(listedAgain.payload.data.map((journal) => journal.title)),
+      new Set(["今天留下的话", "今天又想起一件事"])
+    );
+
     const searched = await request(
       baseUrl,
       "GET",
