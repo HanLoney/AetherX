@@ -16,6 +16,8 @@ const state = {
   messages: [],
   modelMessages: [],
   memoryContext: "",
+  userProfile: null,
+  assistantProfile: null,
   chatGeneration: 0,
   conversations: [],
   conversationId: null,
@@ -70,7 +72,9 @@ const elements = {
   keyHelp: document.querySelector("#keyHelp"),
   testResult: document.querySelector("#testResult"),
   testResultText: document.querySelector("#testResult span"),
-  testConnectionBtn: document.querySelector("#testConnectionBtn")
+  testConnectionBtn: document.querySelector("#testConnectionBtn"),
+  brandMark: document.querySelector(".brand-mark"),
+  orbCore: document.querySelector(".orb-core")
 };
 
 const toolRegistry = window.registerMemoryTools(
@@ -95,8 +99,18 @@ const toolRegistry = window.registerMemoryTools(
 const memoryModuleBtn = document.createElement("button");
 memoryModuleBtn.id = "memoryModuleBtn";
 memoryModuleBtn.className = "nav-item";
-memoryModuleBtn.innerHTML = "<i>🧠</i>记忆中心";
-document.querySelector("#moduleSettingsBtn").before(memoryModuleBtn);
+memoryModuleBtn.innerHTML = "<i>◈</i>记忆中心";
+const userProfileBtn = document.createElement("button");
+userProfileBtn.id = "userProfileBtn";
+userProfileBtn.className = "nav-item";
+userProfileBtn.innerHTML = "<i>洛</i>个人主页";
+const assistantProfileBtn = document.createElement("button");
+assistantProfileBtn.id = "assistantProfileBtn";
+assistantProfileBtn.className = "nav-item";
+assistantProfileBtn.innerHTML = "<i>玄</i>AI 主页";
+document
+  .querySelector("#moduleSettingsBtn")
+  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn);
 
 const historyPanel = document.createElement("section");
 historyPanel.className = "history-panel";
@@ -122,7 +136,8 @@ let viewTransitionId = 0;
 const VIEW_TRANSITION_MS = 220;
 
 function setActiveNavigation(activeButton) {
-  [aiNavBtn, document.querySelector("#todoModuleBtn"), memoryModuleBtn,
+  [aiNavBtn, document.querySelector("#todoModuleBtn"), userProfileBtn,
+    assistantProfileBtn, memoryModuleBtn,
     document.querySelector("#moduleSettingsBtn")].forEach((button) => {
     button.classList.toggle("active", button === activeButton);
   });
@@ -184,7 +199,7 @@ async function loadModuleFrame(moduleId, source, activeButton, transitionId) {
     moduleFrame.addEventListener("load", finish, { once: true });
     window.setTimeout(finish, 6000);
     moduleFrame.title = activeButton.textContent.trim();
-    moduleFrame.src = `${source}?embedded=1`;
+    moduleFrame.src = `${source}${source.includes("?") ? "&" : "?"}embedded=1`;
   });
   if (transitionId !== viewTransitionId) return;
   activeModuleId = moduleId;
@@ -240,6 +255,10 @@ window.addEventListener("message", (event) => {
     refreshSystemPrompt();
     return;
   }
+  if (event.data?.type === "aether:profile-updated") {
+    refreshProfiles();
+    return;
+  }
   if (event.data?.type === "xuan:module-state-changed") {
     syncModuleState();
     return;
@@ -256,6 +275,20 @@ window.addEventListener("message", (event) => {
   }
   if (target === "memory" && window.XuanModules.isEnabled("memory")) {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  }
+  if (target === "user-profile") {
+    showModuleWorkspace(
+      "user-profile",
+      "profile.html?kind=user",
+      userProfileBtn
+    );
+  }
+  if (target === "assistant-profile") {
+    showModuleWorkspace(
+      "assistant-profile",
+      "profile.html?kind=assistant",
+      assistantProfileBtn
+    );
   }
   if (target === "modules") {
     showModuleWorkspace(
@@ -545,7 +578,7 @@ async function runAgentLoop() {
         throw new Error("当前模型无法完成普通对话，请更换支持 Chat Completions 的模型");
       }
       state.modelMessages.push(fallback.assistantMessage);
-      return `⚠ 当前模型未返回工具调用，本次已降级为普通对话。\n\n${fallback.content}`;
+      return `注意：当前模型未返回工具调用，本次已降级为普通对话。\n\n${fallback.content}`;
     }
     state.modelMessages.push(completion.assistantMessage);
     if (!completion.toolCalls.length) return completion.content;
@@ -720,6 +753,59 @@ function createMessage(role, content, error = false) {
     content,
     error
   };
+}
+
+function profileAvatar(role) {
+  const profile =
+    role === "user" ? state.userProfile : state.assistantProfile;
+  const name =
+    role === "user"
+      ? profile?.displayName || profile?.preferredName || "洛尼"
+      : profile?.name || "小玄";
+  return {
+    dataUrl: profile?.avatarDataUrl || "",
+    fallback: name.slice(0, 1),
+    label: `${name}的主页`
+  };
+}
+
+function applyAvatarSurface(element, role) {
+  const avatar = profileAvatar(role);
+  element.textContent = avatar.dataUrl ? "" : avatar.fallback;
+  element.style.backgroundImage = avatar.dataUrl
+    ? `url("${avatar.dataUrl}")`
+    : "";
+  element.classList.toggle("has-avatar-image", Boolean(avatar.dataUrl));
+}
+
+function createChatAvatar(role) {
+  const avatar = document.createElement("button");
+  avatar.type = "button";
+  avatar.className = `avatar ${role}-avatar`;
+  avatar.title = profileAvatar(role).label;
+  applyAvatarSurface(avatar, role);
+  avatar.addEventListener("click", () => {
+    showModuleWorkspace(
+      `${role}-profile`,
+      `profile.html?kind=${role}`,
+      role === "user" ? userProfileBtn : assistantProfileBtn
+    );
+  });
+  return avatar;
+}
+
+async function refreshProfiles() {
+  const [userProfile, assistantProfile] = await Promise.all([
+    window.desktop.getProfile(),
+    window.desktop.getAssistantProfile()
+  ]);
+  state.userProfile = userProfile;
+  state.assistantProfile = assistantProfile;
+  applyAvatarSurface(elements.brandMark, "assistant");
+  applyAvatarSurface(elements.orbCore, "assistant");
+  applyAvatarSurface(userProfileBtn.querySelector("i"), "user");
+  applyAvatarSurface(assistantProfileBtn.querySelector("i"), "assistant");
+  renderMessages();
 }
 
 function historyRecord(message, stream, position) {
@@ -1034,15 +1120,15 @@ function renderMemoryActivity(row, message) {
   head.className = "memory-activity-head";
   const title = document.createElement("strong");
   title.textContent = {
-    recall: `🧠 本轮参考了 ${message.items.length} 条个人信息`,
-    candidate: `✨ 新发现 ${message.items.length} 条候选记忆`,
+    recall: `◈ 本轮参考了 ${message.items.length} 条个人信息`,
+    candidate: `＋ 新发现 ${message.items.length} 条候选记忆`,
     confirmed: `✓ 已自动确认 ${message.items.length} 条新记忆`,
     profile: `✓ 已自动更新 ${message.items.length} 项用户画像`,
     preference: `✓ 已自动更新 ${message.items.length} 项偏好`,
     merged: `✓ 已合并 ${message.items.length} 条相似记忆`,
     assistant: `✓ 人格画像发生了 ${message.items.length} 项变化`,
-    growth: `🌱 记录了 ${message.items.length} 条人格成长事件`,
-    shared: `🤝 新增了 ${message.items.length} 条共同记忆`
+    growth: `↗ 记录了 ${message.items.length} 条人格成长事件`,
+    shared: `∞ 新增了 ${message.items.length} 条共同记忆`
   }[message.kind];
   head.append(title, toggle);
   card.append(head);
@@ -1092,12 +1178,7 @@ function renderMessages() {
       elements.messageList.append(row);
       return;
     }
-    if (message.role === "assistant") {
-      const avatar = document.createElement("i");
-      avatar.className = "avatar";
-      avatar.textContent = "玄";
-      row.append(avatar);
-    }
+    if (message.role === "assistant") row.append(createChatAvatar("assistant"));
     const bubble = document.createElement("div");
     bubble.className = `message-bubble${message.error ? " error" : ""}`;
     if (message.role === "assistant" && !message.error) {
@@ -1106,15 +1187,14 @@ function renderMessages() {
       bubble.textContent = message.content;
     }
     row.append(bubble);
+    if (message.role === "user") row.append(createChatAvatar("user"));
     elements.messageList.append(row);
   });
 
   if (state.sending && !state.pendingApprovals.size) {
     const row = document.createElement("div");
     row.className = "message-row assistant";
-    const avatar = document.createElement("i");
-    avatar.className = "avatar";
-    avatar.textContent = "玄";
+    const avatar = createChatAvatar("assistant");
     const typing = document.createElement("div");
     typing.className = "message-bubble typing";
     typing.append(
@@ -1395,6 +1475,34 @@ memoryModuleBtn.addEventListener("click", () => {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
   }
 });
+userProfileBtn.addEventListener("click", () => {
+  showModuleWorkspace(
+    "user-profile",
+    "profile.html?kind=user",
+    userProfileBtn
+  );
+});
+assistantProfileBtn.addEventListener("click", () => {
+  showModuleWorkspace(
+    "assistant-profile",
+    "profile.html?kind=assistant",
+    assistantProfileBtn
+  );
+});
+elements.brandMark.addEventListener("click", () => {
+  showModuleWorkspace(
+    "assistant-profile",
+    "profile.html?kind=assistant",
+    assistantProfileBtn
+  );
+});
+elements.orbCore.addEventListener("click", () => {
+  showModuleWorkspace(
+    "assistant-profile",
+    "profile.html?kind=assistant",
+    assistantProfileBtn
+  );
+});
 document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
   showModuleWorkspace(
     "modules",
@@ -1450,6 +1558,7 @@ elements.settingsMask.addEventListener("click", (event) => {
 async function initialize() {
   state.config = await window.desktop.getAIConfig();
   await refreshSystemPrompt();
+  await refreshProfiles();
   state.draft = { ...state.config, apiKey: "" };
   syncModuleState();
   renderHeader();

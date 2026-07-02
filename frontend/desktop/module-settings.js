@@ -3,7 +3,7 @@
   const manifest = Object.freeze([
     Object.freeze({
       id: "ai",
-      name: "AI 伙伴",
+      name: "聊天",
       description: "负责对话、理解意图并调度其他模块。",
       icon: "✦",
       color: "pink",
@@ -14,7 +14,7 @@
       id: "memory",
       name: "记忆中心",
       description: "管理用户画像、生活偏好、长期记忆与信息来源。",
-      icon: "🧠",
+      icon: "◈",
       color: "pink",
       core: false,
       tools: 12

@@ -24,7 +24,7 @@ let timeAwarenessStatus = {
 const memoryModuleBtn = document.createElement("button");
 memoryModuleBtn.id = "memoryModuleBtn";
 memoryModuleBtn.className = "nav-item";
-memoryModuleBtn.innerHTML = "<i>🧠</i>记忆中心";
+memoryModuleBtn.innerHTML = "<i>◈</i>记忆中心";
 todoModuleBtn.after(memoryModuleBtn);
 
 function renderModules() {

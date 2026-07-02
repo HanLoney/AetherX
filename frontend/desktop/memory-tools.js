@@ -138,7 +138,8 @@
       async execute() {
         try {
           const profile = await global.desktop.getProfile();
-          return { ok: true, content: "已读取用户画像。", data: profile };
+          const { avatarDataUrl: _avatar, ...data } = profile;
+          return { ok: true, content: "已读取用户画像。", data };
         } catch (error) {
           return failure(error);
         }
@@ -160,7 +161,8 @@
       async execute(input) {
         try {
           const profile = await global.desktop.updateProfile(input);
-          return { ok: true, content: "用户画像已经更新。", data: profile };
+          const { avatarDataUrl: _avatar, ...data } = profile;
+          return { ok: true, content: "用户画像已经更新。", data };
         } catch (error) {
           return failure(error);
         }
@@ -176,7 +178,8 @@
       async execute() {
         try {
           const profile = await global.desktop.getAssistantProfile();
-          return { ok: true, content: "已读取当前人格画像。", data: profile };
+          const { avatarDataUrl: _avatar, ...data } = profile;
+          return { ok: true, content: "已读取当前人格画像。", data };
         } catch (error) {
           return failure(error);
         }
@@ -197,7 +200,8 @@
       async execute(input) {
         try {
           const profile = await global.desktop.updateAssistantProfile(input);
-          return { ok: true, content: "人格画像已经更新。", data: profile };
+          const { avatarDataUrl: _avatar, ...data } = profile;
+          return { ok: true, content: "人格画像已经更新。", data };
         } catch (error) {
           return failure(error);
         }
