@@ -12,6 +12,22 @@
     return { ok: false, content: message, error: { code: error?.code || "MEMORY_API_ERROR", message } };
   }
 
+  async function resolveCandidateId(id, listCandidates, label) {
+    const value = String(id || "").trim();
+    if (!value) throw new Error(`${label} ID 不能为空。`);
+
+    const candidates = await listCandidates();
+    const exact = candidates.find((item) => item.id === value);
+    if (exact) return exact.id;
+
+    const matches = candidates.filter((item) => String(item.id || "").startsWith(value));
+    if (matches.length === 1) return matches[0].id;
+    if (!matches.length) {
+      throw new Error(`未找到待确认${label}：${value}。请先重新读取待确认记忆。`);
+    }
+    throw new Error(`${label}短 ID 不唯一，请使用完整 ID。`);
+  }
+
   function registerMemoryTools(registry) {
     registry.register({
       name: "memory.list",
@@ -83,6 +99,34 @@
     });
 
     registry.register({
+      name: "memory.review_pending",
+      title: "读取待确认记忆",
+      description:
+        "一次读取待确认的长期记忆、人格成长记录和共同记忆。用于 AI 伙伴自主整理候选内容，判断哪些证据充分、长期稳定、值得确认。",
+      risk: "read",
+      inputSchema: objectSchema({}),
+      async execute() {
+        try {
+          const [memories, personalityEvents, sharedMemories] =
+            await Promise.all([
+              global.desktop.listMemories({ status: "candidate" }),
+              global.desktop.listPersonalityEvents({ status: "candidate" }),
+              global.desktop.listSharedMemories({ status: "candidate" })
+            ]);
+          const total =
+            memories.length + personalityEvents.length + sharedMemories.length;
+          return {
+            ok: true,
+            content: `找到 ${total} 条待确认内容。`,
+            data: { memories, personalityEvents, sharedMemories }
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
       name: "memory.update",
       title: "修改长期记忆",
       description: "修正已有长期记忆的内容或分类。",
@@ -107,6 +151,38 @@
           const { id, ...changes } = input;
           const memory = await global.desktop.updateMemory(id, changes);
           return { ok: true, content: `已经更新记忆：${memory.content}`, data: memory };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "memory.confirm",
+      title: "确认长期记忆",
+      description:
+        "将一条待确认的长期记忆确认为生效。使用前应先调用 memory.review_pending 或 memory.list 且 status=candidate 读取候选，只确认来自用户事实、证据充分、未来有帮助的记录。",
+      risk: "write",
+      inputSchema: objectSchema(
+        {
+          id: stringField("待确认长期记忆 ID"),
+          reason: stringField("确认理由，说明为什么它是稳定且有帮助的长期记忆")
+        },
+        ["id"]
+      ),
+      async execute(input) {
+        try {
+          const id = await resolveCandidateId(
+            input.id,
+            () => global.desktop.listMemories({ status: "candidate" }),
+            "长期记忆"
+          );
+          const memory = await global.desktop.confirmMemory(id);
+          return {
+            ok: true,
+            content: `已确认长期记忆：${memory.content}`,
+            data: memory
+          };
         } catch (error) {
           return failure(error);
         }
@@ -261,6 +337,38 @@
     });
 
     registry.register({
+      name: "personality_event.confirm",
+      title: "确认人格成长",
+      description:
+        "将一条待确认的人格成长记录确认为生效。使用前应先调用 personality_event.list 并传入 status=candidate 读取候选，只确认长期稳定、证据充分、不是普通纠错或系统反馈的记录。",
+      risk: "write",
+      inputSchema: objectSchema(
+        {
+          id: stringField("待确认人格成长记录 ID"),
+          reason: stringField("确认理由，说明为什么它是长期稳定的人格变化")
+        },
+        ["id"]
+      ),
+      async execute(input) {
+        try {
+          const id = await resolveCandidateId(
+            input.id,
+            () => global.desktop.listPersonalityEvents({ status: "candidate" }),
+            "人格成长记录"
+          );
+          const event = await global.desktop.confirmPersonalityEvent(id);
+          return {
+            ok: true,
+            content: `已确认人格成长记录：${event.content}`,
+            data: event
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
       name: "shared_memory.list",
       title: "查看共同记忆",
       description: "查询用户和 AI 伙伴共同完成、决定或约定的经历。",
@@ -276,6 +384,38 @@
         try {
           const memories = await global.desktop.listSharedMemories(input);
           return { ok: true, content: `找到 ${memories.length} 条共同记忆。`, data: memories };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "shared_memory.confirm",
+      title: "确认共同记忆",
+      description:
+        "将一条待确认的共同记忆确认为生效。使用前应先调用 shared_memory.list 并传入 status=candidate 读取候选，只确认双方共同完成、决定或明确约定且证据充分的记录。",
+      risk: "write",
+      inputSchema: objectSchema(
+        {
+          id: stringField("待确认共同记忆 ID"),
+          reason: stringField("确认理由，说明为什么它是真实共同经历或约定")
+        },
+        ["id"]
+      ),
+      async execute(input) {
+        try {
+          const id = await resolveCandidateId(
+            input.id,
+            () => global.desktop.listSharedMemories({ status: "candidate" }),
+            "共同记忆"
+          );
+          const memory = await global.desktop.confirmSharedMemory(id);
+          return {
+            ok: true,
+            content: `已确认共同记忆：${memory.content}`,
+            data: memory
+          };
         } catch (error) {
           return failure(error);
         }
