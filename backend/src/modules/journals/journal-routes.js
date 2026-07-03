@@ -17,6 +17,10 @@ function registerJournalRoutes(router, service) {
   router.add("PUT", "/api/v1/assistant/journals", ({ userId, body }) => ({
     data: service.save(userId, body)
   }));
+  router.add("DELETE", "/api/v1/assistant/journals/:id", ({ userId, params }) => {
+    service.delete(userId, params.id);
+    return { status: 204 };
+  });
 }
 
 module.exports = { registerJournalRoutes };

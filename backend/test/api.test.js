@@ -1182,6 +1182,29 @@ test("assistant journals preserve period entries and use original history as mat
       `/api/v1/assistant/journals?q=${encodeURIComponent("真实发生")}`
     );
     assert.equal(searched.payload.data.length, 1);
+
+    const deleted = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/assistant/journals/${second.payload.data.id}`
+    );
+    assert.equal(deleted.response.status, 204);
+
+    const afterDelete = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/journals?type=daily"
+    );
+    assert.equal(afterDelete.payload.data.length, 1);
+    assert.equal(afterDelete.payload.data[0].id, saved.payload.data.id);
+
+    const missingDelete = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/assistant/journals/${second.payload.data.id}`
+    );
+    assert.equal(missingDelete.response.status, 404);
+    assert.equal(missingDelete.payload.error.code, "JOURNAL_NOT_FOUND");
   });
 });
 

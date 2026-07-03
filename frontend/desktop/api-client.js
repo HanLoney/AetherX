@@ -147,6 +147,13 @@ class XuanApiClient {
     return this.request("PUT", "/api/v1/assistant/journals", journal);
   }
 
+  deleteJournal(id) {
+    return this.request(
+      "DELETE",
+      `/api/v1/assistant/journals/${encodeURIComponent(id)}`
+    );
+  }
+
   listPersonalityEvents(filters = {}) {
     const query = new URLSearchParams(
       Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("desktop", {
   getJournalMaterial: (from, to) =>
     ipcRenderer.invoke("journals:material", from, to),
   saveJournal: (journal) => ipcRenderer.invoke("journals:save", journal),
+  deleteJournal: (id) => ipcRenderer.invoke("journals:delete", id),
   listPersonalityEvents: (filters) =>
     ipcRenderer.invoke("personality-events:list", filters),
   createPersonalityEvent: (input) =>

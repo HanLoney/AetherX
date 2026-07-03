@@ -120,9 +120,18 @@ function renderJournals() {
       const header = document.createElement("header");
       const title = document.createElement("h3");
       title.textContent = journal.title;
+      const controls = document.createElement("div");
+      controls.className = "journal-card-controls";
       const time = document.createElement("time");
       time.textContent = journal.periodKey;
-      header.append(title, time);
+      const remove = document.createElement("button");
+      remove.className = "journal-delete";
+      remove.type = "button";
+      remove.textContent = "删除";
+      remove.title = "删除这篇手记";
+      remove.addEventListener("click", () => deleteJournal(journal));
+      controls.append(time, remove);
+      header.append(title, controls);
       const content = document.createElement("p");
       content.textContent = journal.content;
       const meta = document.createElement("div");
@@ -194,6 +203,18 @@ async function loadProfile() {
     ]);
   }
   render();
+}
+
+async function deleteJournal(journal) {
+  if (!window.confirm(`确定删除《${journal.title}》吗？`)) return;
+  try {
+    await window.desktop.deleteJournal(journal.id);
+    journals = journals.filter((item) => item.id !== journal.id);
+    renderJournals();
+    showNotice("手记已经删除。");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
 }
 
 async function saveAvatar(dataUrl) {

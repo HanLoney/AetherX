@@ -106,6 +106,12 @@ class JournalRepository {
     return this.findById(userId, id);
   }
 
+  delete(userId, id) {
+    return this.database
+      .prepare("DELETE FROM assistant_journals WHERE user_id = ? AND id = ?")
+      .run(userId, id).changes;
+  }
+
   sourceMaterial(userId, from, to) {
     const messages = this.database
       .prepare(

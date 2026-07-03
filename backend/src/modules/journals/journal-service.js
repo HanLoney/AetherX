@@ -44,6 +44,12 @@ class JournalService {
     });
   }
 
+  delete(userId, id) {
+    if (!this.repository.delete(userId, text(id, 120))) {
+      throw new HttpError(404, "JOURNAL_NOT_FOUND", "未找到指定手记。");
+    }
+  }
+
   sourceMaterial(userId, query) {
     const from = timestamp(query.from);
     const to = timestamp(query.to);

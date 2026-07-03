@@ -62,7 +62,7 @@
       icon: "≋",
       color: "blue",
       core: false,
-      tools: 2
+      tools: 3
     }),
     Object.freeze({
       id: "anniversary-album",
