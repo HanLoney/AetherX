@@ -1390,6 +1390,134 @@ test("multi-turn extraction separates assistant growth from shared memories", as
   assert.equal(result.sharedMemories[0].status, "active");
 });
 
+test("unconditional auto-confirm applies to assistant growth and shared memories", async () => {
+  const events = [];
+  const shared = [];
+  const assistantMemoryService = {
+    recordEvent: (_userId, input) => {
+      const item = { id: `event-${events.length + 1}`, ...input };
+      events.push(item);
+      return item;
+    },
+    createSharedMemory: (_userId, input) => {
+      const item = { id: `shared-${shared.length + 1}`, ...input };
+      shared.push(item);
+      return item;
+    }
+  };
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: { list: () => [], create: () => assert.fail("unexpected user memory") },
+    memorySettingsService: {
+      get: () => ({ autoConfirm: true, autoConfirmAll: true })
+    },
+    assistantMemoryService,
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  target: "personality_event",
+                  traitKey: "记录判断",
+                  traitValue: "先确认是不是长期稳定变化",
+                  domain: "work",
+                  type: "decision",
+                  content: "小玄承诺以后记录人格前先确认是不是长期稳定变化",
+                  entities: ["小玄"],
+                  evidence: "以后我会在记录人格前先确认是不是长期稳定变化",
+                  confidence: 0.7,
+                  importance: 0.7,
+                  sensitivity: "normal"
+                },
+                {
+                  target: "shared_memory",
+                  domain: "work",
+                  type: "episode",
+                  content: "洛尼和小玄一起调整了人格成长自动确认策略",
+                  entities: ["洛尼", "小玄"],
+                  evidence: "我们一起调整了人格成长自动确认策略",
+                  confidence: 0.6,
+                  importance: 0.7,
+                  sensitivity: "normal"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    conversationMessages: [
+      { role: "user", content: "可以开始" },
+      {
+        role: "assistant",
+        content: "以后我会在记录人格前先确认是不是长期稳定变化。我们一起调整了人格成长自动确认策略"
+      }
+    ]
+  });
+  assert.equal(result.personalityEvents.length, 1);
+  assert.equal(result.personalityEvents[0].status, "active");
+  assert.equal(result.sharedMemories.length, 1);
+  assert.equal(result.sharedMemories[0].status, "active");
+});
+
+test("transient assistant corrections are not stored as personality growth", async () => {
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: { list: () => [], create: () => assert.fail("unexpected user memory") },
+    memorySettingsService: {
+      get: () => ({ autoConfirm: true, autoConfirmAll: true })
+    },
+    assistantMemoryService: {
+      recordEvent: () => assert.fail("transient correction must not be recorded"),
+      createSharedMemory: () => assert.fail("unexpected shared memory")
+    },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  target: "personality_event",
+                  traitKey: "",
+                  traitValue: "",
+                  domain: "work",
+                  type: "decision",
+                  content: "小玄知道自己要改一下",
+                  entities: ["小玄"],
+                  evidence: "我会改",
+                  confidence: 0.95,
+                  importance: 0.3,
+                  sensitivity: "normal"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    conversationMessages: [
+      { role: "user", content: "这里不对" },
+      { role: "assistant", content: "我会改" }
+    ]
+  });
+  assert.equal(result.personalityEvents.length, 0);
+});
+
 test("prompt settings compose editable sections with locked system rules and versions", async () => {
   await withServer(async (baseUrl) => {
     const defaults = await request(

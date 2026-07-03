@@ -203,6 +203,8 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
         settings.autoConfirm &&
         (settings.autoConfirmAll ||
           (sensitivity !== "sensitive" && confidence >= 0.9));
+      const shouldUnconditionallyConfirm =
+        settings.autoConfirm && settings.autoConfirmAll;
 
       if (candidate.target === "preference") {
         const category = PREFERENCE_CATEGORIES.includes(candidate.category)
@@ -263,6 +265,7 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
 
       if (candidate.target === "personality_event") {
         if (!this.assistantMemoryService) continue;
+        if (isLowValuePersonalityEvent(candidate, source)) continue;
         const event = this.assistantMemoryService.recordEvent(userId, {
           category: candidate.type || "growth",
           traitKey: candidate.traitKey,
@@ -273,9 +276,10 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
           confidence,
           weight: candidate.importance,
           status:
-            shouldAutoConfirm &&
-            source.role === "user" &&
-            !isSystemFeedback(source.content)
+            shouldUnconditionallyConfirm ||
+            (shouldAutoConfirm &&
+              source.role === "user" &&
+              !isSystemFeedback(source.content))
             ? "active"
             : "candidate"
         });
@@ -293,7 +297,8 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
           source: source.role === "user" ? "explicit" : "inferred",
           confidence,
           importance: candidate.importance,
-          status: shouldAutoConfirm && source.role === "user"
+          status: shouldUnconditionallyConfirm ||
+            (shouldAutoConfirm && source.role === "user")
             ? "active"
             : "candidate"
         });
@@ -436,6 +441,39 @@ function findEvidenceSource(messages, evidence) {
 function clampConfidence(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+}
+
+const TRANSIENT_PERSONALITY_EVENT_PATTERN =
+  /(我知道了|我明白了|我懂了|我会改|我会注意|下次注意|抱歉|对不起|我错了|收到|好的|记住了)/;
+const DURABLE_PERSONALITY_EVENT_PATTERN =
+  /(以后|今后|长期|始终|一直|每次|从现在起|接下来都会|承诺|原则|习惯|边界|人格|特征|价值观|稳定|持续)/;
+
+function isLowValuePersonalityEvent(candidate, source) {
+  const text = [
+    candidate.content,
+    candidate.evidence,
+    source?.content
+  ].map((item) => String(item || "")).join("\n");
+  if (isSystemFeedback(text)) return true;
+
+  const traitKey = String(candidate.traitKey || "").trim();
+  const traitValue = String(candidate.traitValue || "").trim();
+  const fromAssistant = source?.role === "assistant";
+  if (fromAssistant && (!traitKey || !traitValue)) return true;
+  if (
+    TRANSIENT_PERSONALITY_EVENT_PATTERN.test(text) &&
+    !DURABLE_PERSONALITY_EVENT_PATTERN.test(text)
+  ) {
+    return true;
+  }
+  if (
+    fromAssistant &&
+    !DURABLE_PERSONALITY_EVENT_PATTERN.test(text) &&
+    clampConfidence(candidate.confidence) < 0.9
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function normalizeProfileValue(field, value) {
