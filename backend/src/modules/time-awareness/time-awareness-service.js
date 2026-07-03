@@ -7,6 +7,7 @@ const PERIODS = [
   { start: 18, end: 22, id: "evening", label: "晚上" },
   { start: 22, end: 24, id: "late-evening", label: "夜里" }
 ];
+const CURRENT_MESSAGE_PERSIST_WINDOW_MS = 2 * 60 * 1000;
 
 class TimeAwarenessService {
   constructor(repository) {
@@ -19,10 +20,11 @@ class TimeAwarenessService {
     const locale = String(input.locale || "zh-CN").slice(0, 30);
     const current = localParts(now, timeZone, locale);
     const cutoff = now - 1000;
-    const lastInteractionAt = this.repository.getLastUserInteraction(
-      userId,
-      cutoff
-    );
+    const lastInteractionAt = resolveLastInteractionAt(this.repository, userId, {
+      cutoff,
+      now,
+      currentUserMessage: input.currentUserMessage
+    });
     const last = lastInteractionAt
       ? localParts(lastInteractionAt, timeZone, locale)
       : null;
@@ -77,13 +79,35 @@ function buildContext({
       ? `上次互动：${localDateKey(last)} ${pad(last.hour)}:${pad(last.minute)}（${elapsedLabel(elapsedMs)}）`
       : "上次互动：这是已记录对话中的首次互动",
     `今天首次互动：${isFirstInteractionToday ? "是" : "否"}`,
-    "以上时间由系统在本轮请求开始时实时读取，是当前时间的唯一权威来源。它高于历史对话、长期记忆、待办时间戳和模型推测；发生冲突时必须以此处为准。",
-    "本消息是临近当前用户轮次注入的瞬时上下文，不属于聊天历史。此前对话中所有“现在是几点”“今天是哪天”等说法都只代表当时或当时的错误判断，不得用于推断本轮时间。",
+    "以上时间由系统在本次请求开始时实时读取，是当前时间的唯一权威来源。它高于历史对话、长期记忆、待办时间戳和模型推测；发生冲突时必须以此处为准。",
+    "本消息是临近当前用户输入注入的瞬时上下文，不属于聊天历史。此前对话中所有“现在是几点”“今天是哪天”等说法都只代表当时或当时的错误判断，不得用于推断当前时间。",
     "用户询问当前日期、星期、时段或时间时，直接根据以上事实回答。禁止调用待办或记忆工具验证时间，也禁止创建临时数据反推时间。",
     "这些信息只用于理解当下情境和时间流逝。除非用户明确询问，否则不要主动报日期、星期或具体时间。",
-    "可以根据分别时长和当前时段自然调整语气，但不要每次都提到时间，也不要编造等待期间发生的经历。"
+    "可以根据分别时长和当前时段自然调整语气，但不要每次都提到时间，也不要编造等待期间发生的经历。",
+    "理解生活语境时必须服从当前时间和上次互动间隔；不要把历史对话里的地点、状态、作息或情绪自动延续成当前事实，除非用户在当前输入里明确说明。"
   ];
   return lines.join("\n");
+}
+
+function resolveLastInteractionAt(repository, userId, input) {
+  if (typeof repository.getRecentUserInteractions === "function") {
+    const interactions = repository.getRecentUserInteractions(
+      userId,
+      input.cutoff,
+      5
+    );
+    const currentText = normalizeMessageText(input.currentUserMessage);
+    const candidate = interactions.find((interaction) => {
+      if (!currentText) return true;
+      const isJustPersistedCurrentMessage =
+        input.now - Number(interaction.createdAt || 0) <=
+          CURRENT_MESSAGE_PERSIST_WINDOW_MS &&
+        normalizeMessageText(interaction.content) === currentText;
+      return !isJustPersistedCurrentMessage;
+    });
+    return candidate?.createdAt || null;
+  }
+  return repository.getLastUserInteraction(userId, input.cutoff);
 }
 
 function localParts(timestamp, timeZone, locale) {
@@ -144,6 +168,10 @@ function pad(value) {
 function validTimestamp(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function normalizeMessageText(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
 }
 
 function validTimeZone(value) {

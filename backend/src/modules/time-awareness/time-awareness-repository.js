@@ -4,9 +4,14 @@ class TimeAwarenessRepository {
   }
 
   getLastUserInteraction(userId, before) {
-    const row = this.database
+    const row = this.getRecentUserInteractions(userId, before, 1)[0];
+    return row?.createdAt || null;
+  }
+
+  getRecentUserInteractions(userId, before, limit = 5) {
+    return this.database
       .prepare(`
-        SELECT m.created_at
+        SELECT m.content, m.created_at
         FROM messages m
         INNER JOIN conversations c ON c.id = m.conversation_id
         WHERE c.user_id = ?
@@ -14,10 +19,13 @@ class TimeAwarenessRepository {
           AND m.role = 'user'
           AND m.created_at < ?
         ORDER BY m.created_at DESC
-        LIMIT 1
+        LIMIT ?
       `)
-      .get(userId, before);
-    return row?.created_at || null;
+      .all(userId, before, Math.max(1, Math.min(20, Number(limit) || 5)))
+      .map((row) => ({
+        content: row.content || "",
+        createdAt: row.created_at
+      }));
   }
 }
 

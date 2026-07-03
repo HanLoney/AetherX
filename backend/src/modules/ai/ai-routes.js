@@ -20,7 +20,12 @@ function registerAiRoutes(
       ...(body.model ? { model: String(body.model) } : {}),
       ...(body.apiKey ? { apiKey: String(body.apiKey) } : {})
     };
-    const runtime = runtimeTimeContext(userId, body.runtime, timeAwarenessService);
+    const runtime = runtimeTimeContext(
+      userId,
+      body.runtime,
+      timeAwarenessService,
+      body.messages
+    );
     const payload = runtime
       ? {
           ...body,
@@ -35,7 +40,8 @@ function registerAiRoutes(
       const latest = runtimeTimeContext(
         userId,
         body.runtime,
-        timeAwarenessService
+        timeAwarenessService,
+        body.messages
       );
       normalizeCurrentTimeClaims(result, latest.localTime);
     }
@@ -43,12 +49,23 @@ function registerAiRoutes(
   });
 }
 
-function runtimeTimeContext(userId, input, service) {
+function runtimeTimeContext(userId, input, service, messages) {
   if (!service || input?.timeAwareness !== true) return null;
   return service.getContext(userId, {
     timeZone: input.timeZone,
-    locale: input.locale
+    locale: input.locale,
+    currentUserMessage: latestUserMessage(messages)
   });
+}
+
+function latestUserMessage(messages) {
+  if (!Array.isArray(messages)) return "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return String(messages[index].content || "");
+    }
+  }
+  return "";
 }
 
 function injectRuntimeTime(messages, context) {
@@ -61,16 +78,18 @@ function injectRuntimeTime(messages, context) {
           )
       )
     : [];
-  let userIndex = -1;
-  for (let index = result.length - 1; index >= 0; index -= 1) {
-    if (result[index]?.role === "user") {
-      userIndex = index;
-      break;
-    }
-  }
   const runtimeMessage = { role: "system", content: context };
-  if (userIndex < 0) return [runtimeMessage, ...result];
-  result.splice(userIndex, 0, runtimeMessage);
+  const firstSystemIndex = result.findIndex(
+    (message) => message?.role === "system"
+  );
+  if (firstSystemIndex >= 0) {
+    result[firstSystemIndex] = {
+      ...result[firstSystemIndex],
+      content: `${context}\n\n${String(result[firstSystemIndex].content || "")}`
+    };
+    return result;
+  }
+  result.unshift(runtimeMessage);
   return result;
 }
 

@@ -84,6 +84,34 @@ test("time awareness uses the user timezone and measures elapsed interaction", (
   assert.match(result.context, /禁止调用待办或记忆工具验证时间/);
 });
 
+test("time awareness skips the just-persisted current user message", () => {
+  const now = Date.parse("2026-07-03T09:40:00+08:00");
+  const currentMessage = now - 2000;
+  const previousConversation = Date.parse("2026-07-02T21:40:00+08:00");
+  const service = new TimeAwarenessService({
+    getRecentUserInteractions: (_userId, before, limit) => {
+      assert.ok(before < now);
+      assert.equal(limit, 5);
+      return [
+        { content: "来咯", createdAt: currentMessage },
+        { content: "准备下班！", createdAt: previousConversation }
+      ];
+    }
+  });
+
+  const result = service.getContext("user", {
+    now,
+    timeZone: "Asia/Shanghai",
+    locale: "zh-CN",
+    currentUserMessage: "来咯"
+  });
+
+  assert.equal(result.lastInteractionAt, previousConversation);
+  assert.equal(result.elapsedMs, 12 * 3600000);
+  assert.equal(result.elapsedLabel, "12 小时前");
+  assert.equal(result.isFirstInteractionToday, true);
+});
+
 test("AI message window preserves runtime system facts and complete tool pairs", () => {
   const messages = [
     {
@@ -191,7 +219,7 @@ test("direct time questions bypass model inference and use the runtime clock", a
   });
 });
 
-test("runtime time is placed beside the current turn and corrects model claims", () => {
+test("runtime time is merged into leading system facts and corrects model claims", () => {
   const messages = [
     { role: "system", content: "基础规则" },
     { role: "user", content: "之前几点" },
@@ -202,11 +230,9 @@ test("runtime time is placed beside the current turn and corrects model claims",
     messages,
     "[权威运行时事实：时间感知]\n用户当地时间：10:35"
   );
-  const latestUserIndex = injected.findIndex(
-    (message) => message.role === "user" && message.content === "真的49吗"
-  );
-  assert.equal(injected[latestUserIndex - 1].role, "system");
-  assert.match(injected[latestUserIndex - 1].content, /用户当地时间：10:35/);
+  assert.equal(injected[0].role, "system");
+  assert.match(injected[0].content, /用户当地时间：10:35/);
+  assert.match(injected[0].content, /基础规则/);
   assert.equal(isDirectTimeRequest(messages), true);
 
   const result = {
