@@ -149,6 +149,24 @@ function registerIpcHandlers() {
     api.recordXuanMoodEvent(input)
   );
   ipcMain.handle("xuan-mood:refresh", () => api.refreshXuanMood());
+  ipcMain.handle("album:moments:list", (_event, filters) =>
+    api.listAlbumMoments(filters)
+  );
+  ipcMain.handle("album:moments:create", (_event, input) =>
+    api.createAlbumMoment(input)
+  );
+  ipcMain.handle("album:moments:update", (_event, id, changes) =>
+    api.updateAlbumMoment(id, changes)
+  );
+  ipcMain.handle("album:moments:hide", (_event, id) =>
+    api.hideAlbumMoment(id)
+  );
+  ipcMain.handle("album:sources:add", (_event, id, source) =>
+    api.addAlbumMomentSource(id, source)
+  );
+  ipcMain.handle("album:sources:candidates", (_event, filters) =>
+    api.listAlbumSourceCandidates(filters)
+  );
   ipcMain.handle("conversations:list", () => api.listConversations());
   ipcMain.handle("conversations:create", (_event, title) =>
     api.createConversation(title)

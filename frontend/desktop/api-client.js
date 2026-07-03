@@ -320,6 +320,54 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/xuan-mood/refresh", {});
   }
 
+  listAlbumMoments(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/album/moments${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  createAlbumMoment(moment) {
+    return this.request("POST", "/api/v1/album/moments", moment);
+  }
+
+  updateAlbumMoment(id, changes) {
+    return this.request(
+      "PATCH",
+      `/api/v1/album/moments/${encodeURIComponent(id)}`,
+      changes
+    );
+  }
+
+  hideAlbumMoment(id) {
+    return this.request(
+      "POST",
+      `/api/v1/album/moments/${encodeURIComponent(id)}/hide`,
+      {}
+    );
+  }
+
+  addAlbumMomentSource(id, source) {
+    return this.request(
+      "POST",
+      `/api/v1/album/moments/${encodeURIComponent(id)}/sources`,
+      source
+    );
+  }
+
+  listAlbumSourceCandidates(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/album/source-candidates${query.size ? `?${query}` : ""}`
+    );
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }
