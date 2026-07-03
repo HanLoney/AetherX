@@ -22,7 +22,7 @@ const state = {
   promptVersions: [],
   preferences: [],
   memories: [],
-  settings: { autoConfirm: false }
+  settings: { autoConfirm: false, autoConfirmAll: false }
 };
 const $ = (selector) => document.querySelector(selector);
 const DOMAIN_LABELS = {
@@ -104,8 +104,15 @@ async function loadAll() {
 }
 
 function renderMemorySettings() {
-  $("#autoConfirmMemory").checked = Boolean(state.settings.autoConfirm);
-  $("#autoConfirmStatus").textContent = state.settings.autoConfirm
+  const autoConfirm = Boolean(state.settings.autoConfirm);
+  const autoConfirmAll = Boolean(state.settings.autoConfirmAll);
+  $("#autoConfirmMemory").checked = autoConfirm;
+  $("#autoConfirmAllMemory").checked = autoConfirmAll;
+  $("#autoConfirmAllMemory").disabled = !autoConfirm;
+  $("#autoConfirmStatus").textContent = autoConfirm
+    ? "已开启"
+    : "已关闭";
+  $("#autoConfirmAllStatus").textContent = autoConfirmAll
     ? "已开启"
     : "已关闭";
 }
@@ -532,6 +539,15 @@ async function confirmMemory(id) {
   await refreshMemories();
 }
 
+async function saveMemorySettings(changes) {
+  state.settings = await window.desktop.saveMemorySettings({
+    autoConfirm: Boolean(state.settings.autoConfirm),
+    autoConfirmAll: Boolean(state.settings.autoConfirmAll),
+    ...changes
+  });
+  renderMemorySettings();
+}
+
 function openMemoryEditor(editing = false) {
   $("#memoryEditorTitle").textContent = editing ? "编辑记忆" : "新增记忆";
   $("#memoryEditor").classList.remove("hidden");
@@ -579,14 +595,18 @@ $("#statusFilter").addEventListener("change", renderMemories);
 $("#autoConfirmMemory").addEventListener("change", async (event) => {
   const input = event.currentTarget;
   input.disabled = true;
+  const allInput = $("#autoConfirmAllMemory");
+  allInput.disabled = true;
   try {
-    state.settings = await window.desktop.saveMemorySettings({
-      autoConfirm: input.checked
+    await saveMemorySettings({
+      autoConfirm: input.checked,
+      autoConfirmAll: input.checked
+        ? Boolean(state.settings.autoConfirmAll)
+        : false
     });
-    renderMemorySettings();
     showNotice(
       state.settings.autoConfirm
-        ? "自动确认已开启；敏感记忆仍会等待确认。"
+        ? "自动确认已开启。"
         : "自动确认已关闭。"
     );
   } catch (error) {
@@ -594,6 +614,31 @@ $("#autoConfirmMemory").addEventListener("change", async (event) => {
     showNotice(error.message, true);
   } finally {
     input.disabled = false;
+    renderMemorySettings();
+  }
+});
+
+$("#autoConfirmAllMemory").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const autoInput = $("#autoConfirmMemory");
+  input.disabled = true;
+  autoInput.disabled = true;
+  try {
+    await saveMemorySettings({
+      autoConfirm: input.checked || Boolean(state.settings.autoConfirm),
+      autoConfirmAll: input.checked
+    });
+    showNotice(
+      state.settings.autoConfirmAll
+        ? "无条件自动确认已开启；所有新记忆候选都会直接生效。"
+        : "无条件自动确认已关闭。"
+    );
+  } catch (error) {
+    input.checked = !input.checked;
+    showNotice(error.message, true);
+  } finally {
+    autoInput.disabled = false;
+    renderMemorySettings();
   }
 });
 
