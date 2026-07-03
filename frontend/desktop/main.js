@@ -78,6 +78,7 @@ function registerIpcHandlers() {
   ipcMain.handle("journals:save", (_event, journal) =>
     api.saveJournal(journal)
   );
+  ipcMain.handle("journals:delete", (_event, id) => api.deleteJournal(id));
   ipcMain.handle("personality-events:list", (_event, filters) =>
     api.listPersonalityEvents(filters)
   );

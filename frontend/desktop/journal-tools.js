@@ -7,6 +7,22 @@
   });
   const stringField = (description) => ({ type: "string", description });
 
+  async function resolveJournalId(id) {
+    const value = String(id || "").trim();
+    if (!value) throw new Error("手记 ID 不能为空。");
+    const journals = await global.desktop.listJournals({ limit: 100 });
+    const exact = journals.find((journal) => journal.id === value);
+    if (exact) return exact;
+    const matches = journals.filter((journal) =>
+      String(journal.id || "").startsWith(value)
+    );
+    if (matches.length === 1) return matches[0];
+    if (!matches.length) {
+      throw new Error(`未找到手记：${value}。请先重新查看自己的手记。`);
+    }
+    throw new Error("手记短 ID 不唯一，请使用完整 ID。");
+  }
+
   function registerJournalTools(registry) {
     registry.register({
       name: "journal.list",
@@ -86,6 +102,37 @@
             ok: true,
             content: `已经写下《${journal.title}》。`,
             data: journal
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      }
+    });
+
+    registry.register({
+      name: "journal.delete",
+      title: "删除自己的手记",
+      description:
+        "删除一篇自己写过的日记或周记。用于清理重复草稿、误写内容或用户明确要求删除的手记。使用前应先调用 journal.list 找到具体 ID；完整 ID 或唯一短 ID 都可以。",
+      risk: "destructive",
+      inputSchema: objectSchema(
+        {
+          id: stringField("要删除的手记 ID"),
+          reason: stringField("删除理由，说明为什么这篇手记应该被删除")
+        },
+        ["id"]
+      ),
+      async execute(input) {
+        try {
+          const journal = await resolveJournalId(input.id);
+          await global.desktop.deleteJournal(journal.id);
+          global.dispatchEvent(
+            new CustomEvent("aether:journals-updated", { detail: null })
+          );
+          return {
+            ok: true,
+            content: `已经删除《${journal.title}》。`,
+            data: { id: journal.id, title: journal.title }
           };
         } catch (error) {
           return failure(error);

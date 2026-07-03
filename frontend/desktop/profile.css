@@ -193,6 +193,21 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
 }
 .journal-card h3 { margin: 0; font-size: 13px; }
 .journal-card time { color: #a19aa8; font-size: 9px; white-space: nowrap; }
+.journal-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.journal-delete {
+  border: 0;
+  background: transparent;
+  color: #b65f76;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0;
+}
+.journal-delete:hover { color: #93475d; }
 .journal-card p {
   margin: 12px 0 0;
   color: #686272;
