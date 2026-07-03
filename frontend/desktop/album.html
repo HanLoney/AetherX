@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我们的纪念册 · AetherX</title>
+    <link rel="stylesheet" href="app-shell.css" />
+    <link rel="stylesheet" href="album.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">AetherX · 我们的纪念册</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">玄</div>
+          <div><strong>AetherX</strong><span>你的智能生活中枢</span></div>
+        </div>
+        <nav class="nav-list">
+          <button id="homeBtn" class="nav-item"><i>✦</i>聊天</button>
+          <button id="todoBtn" class="nav-item"><i>✓</i>日历待办</button>
+          <button id="memoryBtn" class="nav-item"><i>◈</i>记忆中心</button>
+          <button class="nav-item active"><i>◇</i>我们的纪念册</button>
+          <button id="modulesBtn" class="nav-item"><i>◫</i>模块中心</button>
+        </nav>
+        <div class="privacy-note">
+          <i>◇</i>
+          <span>纪念卡由小玄基于真实来源书写，来源可展开查看。</span>
+        </div>
+      </aside>
+
+      <main class="album-main">
+        <section class="album-topbar">
+          <div>
+            <p>OUR ALBUM</p>
+            <h1>我们的纪念册</h1>
+            <span>共同记忆、手记和心情，会在这里被写成可以翻阅的时刻。</span>
+          </div>
+          <div class="album-actions">
+            <input id="albumSearch" placeholder="搜索标题、心情或内容" />
+            <button id="refreshAlbumBtn" type="button">刷新</button>
+          </div>
+        </section>
+
+        <section class="album-board">
+          <div class="album-stats">
+            <span class="album-stats-kicker">ALBUM INDEX</span>
+            <div><strong id="momentCount">0</strong><span>纪念卡</span></div>
+            <div><strong id="sourceCount">0</strong><span>真实来源</span></div>
+            <div><strong id="latestMoment">还没有</strong><span>最近时刻</span></div>
+          </div>
+          <div id="albumTimeline" class="album-timeline"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="notice" class="notice hidden"></div>
+
+    <script src="api-client.js"></script>
+    <script src="module-settings.js"></script>
+    <script src="album.js"></script>
+  </body>
+</html>

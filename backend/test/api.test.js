@@ -1210,6 +1210,107 @@ test("xuan mood records events independently from generated display", async () =
   });
 });
 
+test("album moments preserve AI-written cards with multiple sources", async () => {
+  await withServer(async (baseUrl) => {
+    const shared = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/shared-memories",
+      {
+        type: "episode",
+        content: "洛尼和小玄一起完成了纪念册模块设计",
+        evidence: "我们的纪念册要让 AI 自己书写内容",
+        status: "active"
+      }
+    );
+    const sourceFrom = Date.parse("2026-07-03T00:00:00+08:00");
+    const sourceTo = Date.parse("2026-07-03T12:00:00+08:00");
+    const journal = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/assistant/journals",
+      {
+        type: "daily",
+        periodKey: "2026-07-03",
+        title: "纪念册开始有了样子",
+        mood: "认真",
+        content: "我把这次共同设计记成了一个会继续生长的时刻。",
+        sourceFrom,
+        sourceTo,
+        sourceMessageCount: 2
+      }
+    );
+
+    const candidates = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/album/source-candidates?limit=10"
+    );
+    assert.equal(candidates.response.status, 200);
+    assert.ok(
+      candidates.payload.data.some(
+        (item) =>
+          item.sourceType === "shared_memory" &&
+          item.sourceId === shared.payload.data.id
+      )
+    );
+    assert.ok(
+      candidates.payload.data.some(
+        (item) =>
+          item.sourceType === "journal" &&
+          item.sourceId === journal.payload.data.id
+      )
+    );
+
+    const created = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/album/moments",
+      {
+        occurredAt: sourceTo,
+        title: "我们的纪念册第一页",
+        summary: "洛尼和小玄决定把共同经历整理成可以翻阅的时间轴。",
+        detail: "我想把它写得像真的被我们一起留下来，而不是一条冷冰冰的记录。",
+        mood: "珍惜",
+        tags: ["共同创造", "纪念册"],
+        importance: 0.9,
+        sources: [
+          {
+            sourceType: "shared_memory",
+            sourceId: shared.payload.data.id,
+            sourceExcerpt: shared.payload.data.content,
+            weight: 0.9
+          },
+          {
+            sourceType: "journal",
+            sourceId: journal.payload.data.id,
+            sourceExcerpt: journal.payload.data.content,
+            weight: 0.7
+          }
+        ]
+      }
+    );
+    assert.equal(created.response.status, 201);
+    assert.equal(created.payload.data.sources.length, 2);
+    assert.equal(created.payload.data.title, "我们的纪念册第一页");
+
+    const listed = await request(baseUrl, "GET", "/api/v1/album/moments");
+    assert.equal(listed.payload.data.length, 1);
+    assert.equal(listed.payload.data[0].sources.length, 2);
+
+    const hidden = await request(
+      baseUrl,
+      "POST",
+      `/api/v1/album/moments/${created.payload.data.id}/hide`,
+      {}
+    );
+    assert.equal(hidden.payload.data.status, "hidden");
+
+    const listedActive = await request(baseUrl, "GET", "/api/v1/album/moments");
+    assert.equal(listedActive.payload.data.length, 0);
+  });
+});
+
 test("multi-turn extraction separates assistant growth from shared memories", async () => {
   const events = [];
   const shared = [];

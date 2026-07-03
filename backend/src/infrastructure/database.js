@@ -322,6 +322,40 @@ const MIGRATIONS = [
   `
     ALTER TABLE memory_settings
       ADD COLUMN auto_confirm_all INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS album_moments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      mood TEXT NOT NULL DEFAULT '',
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      importance REAL NOT NULL DEFAULT 0.5,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_album_moments_user_time
+      ON album_moments(user_id, status, occurred_at DESC);
+
+    CREATE TABLE IF NOT EXISTS album_moment_sources (
+      id TEXT PRIMARY KEY,
+      moment_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      source_excerpt TEXT NOT NULL DEFAULT '',
+      weight REAL NOT NULL DEFAULT 0.5,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(moment_id) REFERENCES album_moments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_album_sources_moment
+      ON album_moment_sources(moment_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_album_sources_unique
+      ON album_moment_sources(moment_id, source_type, source_id);
   `
 ];
 

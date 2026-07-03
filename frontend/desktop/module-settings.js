@@ -63,6 +63,15 @@
       color: "blue",
       core: false,
       tools: 2
+    }),
+    Object.freeze({
+      id: "anniversary-album",
+      name: "我们的纪念册",
+      description: "自动整理共同经历、手记和重要时刻，形成可翻阅的时间轴。",
+      icon: "◇",
+      color: "pink",
+      core: false,
+      tools: 5
     })
   ]);
 

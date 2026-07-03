@@ -70,6 +70,17 @@ contextBridge.exposeInMainWorld("desktop", {
   getXuanMoodHome: () => ipcRenderer.invoke("xuan-mood:home"),
   recordXuanMoodEvent: (input) => ipcRenderer.invoke("xuan-mood:event", input),
   refreshXuanMood: () => ipcRenderer.invoke("xuan-mood:refresh"),
+  listAlbumMoments: (filters) =>
+    ipcRenderer.invoke("album:moments:list", filters),
+  createAlbumMoment: (input) =>
+    ipcRenderer.invoke("album:moments:create", input),
+  updateAlbumMoment: (id, changes) =>
+    ipcRenderer.invoke("album:moments:update", id, changes),
+  hideAlbumMoment: (id) => ipcRenderer.invoke("album:moments:hide", id),
+  addAlbumMomentSource: (id, source) =>
+    ipcRenderer.invoke("album:sources:add", id, source),
+  listAlbumSourceCandidates: (filters) =>
+    ipcRenderer.invoke("album:sources:candidates", filters),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),

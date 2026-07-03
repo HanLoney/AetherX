@@ -88,6 +88,9 @@ const { XuanMoodService } = require("./modules/xuan-mood/xuan-mood-service");
 const {
   registerXuanMoodRoutes
 } = require("./modules/xuan-mood/xuan-mood-routes");
+const { AlbumRepository } = require("./modules/album/album-repository");
+const { AlbumService } = require("./modules/album/album-service");
+const { registerAlbumRoutes } = require("./modules/album/album-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -131,6 +134,7 @@ function createApp(config) {
     configRepository: aiConfigRepository,
     providerClient: aiProviderClient
   });
+  const albumService = new AlbumService(new AlbumRepository(database));
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -164,6 +168,7 @@ function createApp(config) {
   registerAssistantMemoryRoutes(router, assistantMemoryService);
   registerJournalRoutes(router, journalService);
   registerXuanMoodRoutes(router, xuanMoodService);
+  registerAlbumRoutes(router, albumService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);

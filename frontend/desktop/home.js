@@ -89,28 +89,33 @@ const elements = {
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
 
-const toolRegistry = window.registerJournalTools(
-  window.registerMemoryTools(
-    window.registerTodoTools(
-      new window.XuanToolRegistry({
-        isEnabled: (toolName) => {
-          const moduleId = toolName.split(".")[0];
-          if (moduleId === "journal") {
-            return window.XuanModules.isEnabled("autonomous-journal");
+const toolRegistry = window.registerAlbumTools(
+  window.registerJournalTools(
+    window.registerMemoryTools(
+      window.registerTodoTools(
+        new window.XuanToolRegistry({
+          isEnabled: (toolName) => {
+            const moduleId = toolName.split(".")[0];
+            if (moduleId === "journal") {
+              return window.XuanModules.isEnabled("autonomous-journal");
+            }
+            if (moduleId === "album") {
+              return window.XuanModules.isEnabled("anniversary-album");
+            }
+            return window.XuanModules.isEnabled(
+              [
+                "memory",
+                "profile",
+                "assistant_profile",
+                "personality_event",
+                "shared_memory"
+              ].includes(moduleId)
+                ? "memory"
+                : moduleId
+            );
           }
-          return window.XuanModules.isEnabled(
-            [
-              "memory",
-              "profile",
-              "assistant_profile",
-              "personality_event",
-              "shared_memory"
-            ].includes(moduleId)
-              ? "memory"
-              : moduleId
-          );
-        }
-      })
+        })
+      )
     )
   )
 );
@@ -119,6 +124,10 @@ const memoryModuleBtn = document.createElement("button");
 memoryModuleBtn.id = "memoryModuleBtn";
 memoryModuleBtn.className = "nav-item";
 memoryModuleBtn.innerHTML = "<i>◈</i>记忆中心";
+const albumModuleBtn = document.createElement("button");
+albumModuleBtn.id = "albumModuleBtn";
+albumModuleBtn.className = "nav-item";
+albumModuleBtn.innerHTML = "<i>◇</i>我们的纪念册";
 const userProfileBtn = document.createElement("button");
 userProfileBtn.id = "userProfileBtn";
 userProfileBtn.className = "nav-item";
@@ -129,7 +138,7 @@ assistantProfileBtn.className = "nav-item";
 assistantProfileBtn.innerHTML = "<i>玄</i>AI 主页";
 document
   .querySelector("#moduleSettingsBtn")
-  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn);
+  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn, albumModuleBtn);
 
 const historyPanel = document.createElement("section");
 historyPanel.className = "history-panel";
@@ -156,7 +165,7 @@ const VIEW_TRANSITION_MS = 220;
 
 function setActiveNavigation(activeButton) {
   [aiNavBtn, document.querySelector("#todoModuleBtn"), userProfileBtn,
-    assistantProfileBtn, memoryModuleBtn,
+    assistantProfileBtn, memoryModuleBtn, albumModuleBtn,
     document.querySelector("#moduleSettingsBtn")].forEach((button) => {
     button.classList.toggle("active", button === activeButton);
   });
@@ -295,6 +304,9 @@ window.addEventListener("message", (event) => {
   if (target === "memory" && window.XuanModules.isEnabled("memory")) {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
   }
+  if (target === "album" && window.XuanModules.isEnabled("anniversary-album")) {
+    showModuleWorkspace("album", "album.html", albumModuleBtn);
+  }
   if (target === "user-profile") {
     showModuleWorkspace(
       "user-profile",
@@ -321,9 +333,11 @@ window.addEventListener("message", (event) => {
 function syncModuleState() {
   const todoEnabled = window.XuanModules.isEnabled("todo");
   const memoryEnabled = window.XuanModules.isEnabled("memory");
+  const albumEnabled = window.XuanModules.isEnabled("anniversary-album");
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
+  albumModuleBtn.classList.toggle("hidden", !albumEnabled);
   xuanMood?.syncHome();
   reminderEngine?.runCheck();
   journalWriter?.run();
@@ -957,6 +971,12 @@ const reminderEngine = new window.AetherReminderEngine({
 });
 
 let xuanMood = null;
+const albumWriter = new window.XuanAlbumWriter({
+  isEnabled: () => window.XuanModules.isEnabled("anniversary-album"),
+  getConfig: () => state.config,
+  requestAI: (payload) => window.desktop.requestAI(payload),
+  createMoment: (moment) => window.desktop.createAlbumMoment(moment)
+});
 
 const journalWriter = new window.AetherJournalWriter({
   getJournal: (type, periodKey) =>
@@ -1783,6 +1803,21 @@ async function sendMessage() {
                 content: messageContent
               }))
           });
+          albumWriter
+            .writeFromSharedMemories(result.sharedMemories)
+            .then((moment) => {
+              if (!moment || chatGeneration !== state.chatGeneration) return;
+              state.messages.push(
+                createMemoryActivity("shared", [{
+                  content: `已写入纪念册：《${moment.title}》`,
+                  reason: "我们的纪念册"
+                }])
+              );
+              renderMessages();
+            })
+            .catch((error) => {
+              console.warn("Unable to write album moment:", error.message);
+            });
         }
         if (
           result.assistantUpdates?.length ||
@@ -1843,6 +1878,11 @@ document.querySelector("#todoModuleBtn").addEventListener("click", () => {
 memoryModuleBtn.addEventListener("click", () => {
   if (window.XuanModules.isEnabled("memory")) {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  }
+});
+albumModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("anniversary-album")) {
+    showModuleWorkspace("album", "album.html", albumModuleBtn);
   }
 });
 userProfileBtn.addEventListener("click", () => {
