@@ -201,8 +201,8 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
         : "normal";
       const shouldAutoConfirm =
         settings.autoConfirm &&
-        sensitivity !== "sensitive" &&
-        confidence >= 0.9;
+        (settings.autoConfirmAll ||
+          (sensitivity !== "sensitive" && confidence >= 0.9));
 
       if (candidate.target === "preference") {
         const category = PREFERENCE_CATEGORIES.includes(candidate.category)

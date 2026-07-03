@@ -711,7 +711,7 @@ test("automatic extraction routes explicit communication preferences out of memo
   assert.equal(result.candidates.length, 0);
 });
 
-test("memory auto-confirm setting persists and never confirms sensitive memories", async () => {
+test("memory auto-confirm settings support conservative and unconditional modes", async () => {
   await withServer(async (baseUrl) => {
     const defaults = await request(
       baseUrl,
@@ -719,6 +719,7 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
       "/api/v1/memories/settings"
     );
     assert.equal(defaults.payload.data.autoConfirm, false);
+    assert.equal(defaults.payload.data.autoConfirmAll, false);
     const saved = await request(
       baseUrl,
       "PUT",
@@ -726,6 +727,15 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
       { autoConfirm: true }
     );
     assert.equal(saved.payload.data.autoConfirm, true);
+    assert.equal(saved.payload.data.autoConfirmAll, false);
+    const unconditional = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/memories/settings",
+      { autoConfirm: false, autoConfirmAll: true }
+    );
+    assert.equal(unconditional.payload.data.autoConfirm, true);
+    assert.equal(unconditional.payload.data.autoConfirmAll, true);
   });
 
   const stored = [];
@@ -786,6 +796,55 @@ test("memory auto-confirm setting persists and never confirms sensitive memories
   assert.equal(result.candidates.length, 1);
   assert.equal(result.candidates[0].status, "candidate");
   assert.equal(result.candidates[0].sensitivity, "sensitive");
+
+  stored.length = 0;
+  service.memorySettingsService = {
+    get: () => ({ autoConfirm: true, autoConfirmAll: true })
+  };
+  service.providerClient = {
+    chat: async () => ({
+      ok: true,
+      data: {
+        choices: [{
+          message: {
+            content: JSON.stringify([
+              {
+                domain: "life",
+                type: "routine",
+                content: "洛尼喜欢晚上散步",
+                entities: ["洛尼"],
+                evidence: "我喜欢晚上散步",
+                confidence: 0.6,
+                importance: 0.5,
+                sensitivity: "normal"
+              },
+              {
+                domain: "health",
+                type: "fact",
+                content: "洛尼最近需要关注一项健康问题",
+                entities: ["洛尼"],
+                evidence: "最近还有一项健康问题需要关注",
+                confidence: 0.4,
+                importance: 0.8,
+                sensitivity: "sensitive"
+              }
+            ])
+          }
+        }]
+      }
+    })
+  };
+
+  const unconditionalResult = await service.extract("user", {
+    userMessage: "我喜欢晚上散步，最近还有一项健康问题需要关注",
+    assistantMessage: "我记下了"
+  });
+  assert.equal(unconditionalResult.autoConfirmed.length, 2);
+  assert.deepEqual(
+    unconditionalResult.autoConfirmed.map((memory) => memory.status),
+    ["active", "active"]
+  );
+  assert.equal(unconditionalResult.candidates.length, 0);
 });
 
 test("multi-turn extraction routes explicit birthday to profile and ignores product feedback", async () => {

@@ -8,8 +8,10 @@ class MemorySettingsService {
   }
 
   save(userId, input) {
+    const autoConfirmAll = Boolean(input.autoConfirmAll);
     return this.repository.save(userId, {
-      autoConfirm: Boolean(input.autoConfirm)
+      autoConfirm: autoConfirmAll || Boolean(input.autoConfirm),
+      autoConfirmAll
     });
   }
 }

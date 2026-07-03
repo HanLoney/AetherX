@@ -318,6 +318,10 @@ const MIGRATIONS = [
     ALTER TABLE assistant_journals_v2 RENAME TO assistant_journals;
     CREATE INDEX IF NOT EXISTS idx_assistant_journals_user_period
       ON assistant_journals(user_id, journal_type, period_key DESC);
+  `,
+  `
+    ALTER TABLE memory_settings
+      ADD COLUMN auto_confirm_all INTEGER NOT NULL DEFAULT 0;
   `
 ];
 
