@@ -316,11 +316,25 @@ button { color: inherit; cursor: pointer; }
   padding: 64px 34px 18px;
 }
 
+.workspace-head {
+  position: relative;
+  z-index: 5;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
 .topbar {
-  min-height: 64px;
+  min-height: 58px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar > div:first-child {
+  min-width: 0;
 }
 
 .topbar p,
@@ -350,19 +364,41 @@ button { color: inherit; cursor: pointer; }
 }
 
 .xuan-mood-chip {
-  max-width: min(560px, calc(100vw - 560px));
+  position: relative;
+  z-index: 6;
+  width: fit-content;
+  max-width: min(720px, 100%);
   min-height: 29px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 9px;
-  padding: 5px 6px 5px 9px;
-  border: 1px solid rgba(150, 134, 181, .15);
-  border-radius: 13px;
+  display: inline-block;
+  padding: 10px 12px;
+  border: 1px solid rgba(150, 134, 181, .14);
+  border-radius: 16px;
   color: #746e80;
-  background: rgba(255, 255, 255, .58);
-  box-shadow: 0 8px 22px rgba(85, 83, 122, .05);
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 14px 34px rgba(85, 83, 122, .06);
   vertical-align: top;
+  transition:
+    width .24s cubic-bezier(.22, .8, .28, 1),
+    box-shadow .24s ease,
+    border-color .24s ease,
+    background .24s ease;
+}
+
+.xuan-mood-chip.is-expanded {
+  width: min(720px, 100%);
+  border-color: rgba(150, 134, 181, .2);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 18px 44px rgba(85, 83, 122, .08);
+}
+
+.xuan-mood-summary {
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 19px max-content fit-content(118px) fit-content(220px) fit-content(132px) 21px 21px;
+  align-items: center;
+  gap: 6px;
 }
 
 .xuan-mood-chip i {
@@ -394,21 +430,18 @@ button { color: inherit; cursor: pointer; }
 }
 
 .xuan-mood-chip strong {
-  max-width: 110px;
   color: #5d5768;
   font-size: 10px;
   font-weight: 700;
 }
 
 .xuan-mood-chip em {
-  max-width: 235px;
   color: #7d7688;
   font-size: 9px;
   font-style: normal;
 }
 
 .xuan-mood-chip small {
-  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -431,7 +464,84 @@ button { color: inherit; cursor: pointer; }
   background: rgba(213, 231, 248, .95);
 }
 
+.xuan-mood-chip .mood-toggle {
+  position: relative;
+  color: #b57a98;
+  background: rgba(238, 221, 231, .72);
+  transition: background .18s ease;
+}
+
+.xuan-mood-chip .mood-toggle::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: translate(-50%, -62%) rotate(45deg);
+  transform-origin: center;
+  transition: transform .18s ease;
+}
+
+.xuan-mood-chip.is-expanded .mood-toggle::before {
+  transform: translate(-50%, -38%) rotate(225deg);
+}
+
+.xuan-mood-details {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: min(720px, calc(100vw - 96px));
+  max-height: 0;
+  margin-top: 0;
+  padding: 0 18px 0 38px;
+  overflow: hidden;
+  border: 1px solid rgba(150, 134, 181, 0);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 20px 50px rgba(85, 83, 122, 0);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-8px) scale(.985);
+  transition:
+    max-height .28s cubic-bezier(.22, .8, .28, 1),
+    padding-top .22s ease,
+    padding-bottom .22s ease,
+    border-color .22s ease,
+    box-shadow .24s ease,
+    opacity .2s ease,
+    transform .24s ease;
+}
+
+.xuan-mood-chip.is-expanded .xuan-mood-details {
+  max-height: 180px;
+  padding-top: 13px;
+  padding-bottom: 13px;
+  border-color: rgba(150, 134, 181, .16);
+  box-shadow: 0 20px 50px rgba(85, 83, 122, .12);
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.xuan-mood-details p {
+  margin: 0;
+  color: #696174;
+  font-size: 9px;
+  line-height: 1.65;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.xuan-mood-details p + p {
+  margin-top: 5px;
+}
+
 .top-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -448,6 +558,7 @@ button { color: inherit; cursor: pointer; }
   color: #9d96a8;
   background: rgba(255, 255, 255, .54);
   font-size: 9px;
+  white-space: nowrap;
 }
 
 .status-pill i,
@@ -469,6 +580,7 @@ button { color: inherit; cursor: pointer; }
 
 .icon-button,
 .settings-button {
+  flex: 0 0 auto;
   height: 32px;
   border: 0;
   border-radius: 10px;

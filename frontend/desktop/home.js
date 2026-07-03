@@ -81,6 +81,11 @@ const elements = {
   xuanMoodTitle: document.querySelector("#xuanMoodTitle"),
   xuanMoodLine: document.querySelector("#xuanMoodLine"),
   xuanMoodFocus: document.querySelector("#xuanMoodFocus"),
+  xuanMoodToggleBtn: document.querySelector("#xuanMoodToggleBtn"),
+  xuanMoodDetails: document.querySelector("#xuanMoodDetails"),
+  xuanMoodFullLine: document.querySelector("#xuanMoodFullLine"),
+  xuanMoodFullDetail: document.querySelector("#xuanMoodFullDetail"),
+  xuanMoodFullFocus: document.querySelector("#xuanMoodFullFocus"),
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
 
@@ -790,6 +795,11 @@ function renderXuanMood(snapshot = {}) {
       ? "暂时没有读到心情服务"
       : "聊完一轮后生成";
     elements.xuanMoodFocus.textContent = "等待新的经历";
+    updateXuanMoodDetails({
+      line: elements.xuanMoodLine.textContent,
+      detail: "",
+      focus: ""
+    });
     elements.xuanMoodCard.title = elements.xuanMoodLine.textContent;
     return;
   }
@@ -800,9 +810,41 @@ function renderXuanMood(snapshot = {}) {
   elements.xuanMoodFocus.textContent = display.focus
     ? `在意：${display.focus}`
     : "来自最近相处";
+  updateXuanMoodDetails(display);
   elements.xuanMoodCard.title = [display.line, display.detail, display.focus]
     .filter(Boolean)
     .join("\n");
+}
+
+function updateXuanMoodDetails(display = {}) {
+  const line = String(display.line || "").trim();
+  const detail = String(display.detail || "").trim();
+  const focus = String(display.focus || "").trim();
+  setMoodDetailLine(elements.xuanMoodFullLine, line);
+  setMoodDetailLine(
+    elements.xuanMoodFullDetail,
+    detail && detail !== line ? detail : ""
+  );
+  setMoodDetailLine(
+    elements.xuanMoodFullFocus,
+    focus ? `在意：${focus}` : ""
+  );
+}
+
+function setMoodDetailLine(element, text) {
+  element.textContent = text;
+  element.classList.toggle("hidden", !text);
+}
+
+function setXuanMoodExpanded(expanded) {
+  elements.xuanMoodCard.classList.toggle("is-expanded", expanded);
+  elements.xuanMoodDetails.setAttribute("aria-hidden", String(!expanded));
+  elements.xuanMoodToggleBtn.setAttribute("aria-expanded", String(expanded));
+  elements.xuanMoodToggleBtn.title = expanded ? "收起心情" : "展开心情";
+  elements.xuanMoodToggleBtn.setAttribute(
+    "aria-label",
+    expanded ? "收起心情" : "展开心情"
+  );
 }
 
 function buildXuanMoodContext(snapshot = {}) {
@@ -1833,6 +1875,9 @@ elements.orbCore.addEventListener("click", () => {
 });
 elements.xuanMoodRefreshBtn.addEventListener("click", () => {
   xuanMood?.refresh();
+});
+elements.xuanMoodToggleBtn.addEventListener("click", () => {
+  setXuanMoodExpanded(!elements.xuanMoodCard.classList.contains("is-expanded"));
 });
 document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
   showModuleWorkspace(
