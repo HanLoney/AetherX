@@ -48,25 +48,36 @@
       </aside>
 
       <main class="main">
-        <section class="topbar">
-          <div>
-            <p class="conversation-kicker">此刻，只聊你想聊的</p>
-            <h1 id="workspaceAssistantName" class="conversation-title">小玄</h1>
-            <div id="xuanMoodCard" class="xuan-mood-chip hidden">
+        <section class="workspace-head">
+          <section class="topbar">
+            <div>
+              <p class="conversation-kicker">此刻，只聊你想聊的</p>
+              <h1 id="workspaceAssistantName" class="conversation-title">小玄</h1>
+            </div>
+            <div class="top-actions">
+              <span id="statusPill" class="status-pill idle">
+                <i></i><span id="statusLabel">尚未配置</span>
+              </span>
+              <button id="clearChatBtn" class="icon-button" title="清空对话">↺</button>
+              <button id="settingsBtn" class="settings-button">⌘ 接入设置</button>
+            </div>
+          </section>
+
+          <div id="xuanMoodCard" class="xuan-mood-chip hidden">
+            <div class="xuan-mood-summary">
               <i>♡</i>
               <span id="xuanMoodTone">她的心情</span>
               <strong id="xuanMoodTitle">还没有当前心情</strong>
               <em id="xuanMoodLine">聊完一轮后生成</em>
               <small id="xuanMoodFocus">等待聊天、手记或共同经历</small>
+              <button id="xuanMoodToggleBtn" type="button" class="mood-toggle" title="展开心情" aria-label="展开心情" aria-expanded="false"></button>
               <button id="xuanMoodRefreshBtn" type="button" title="刷新心情">↻</button>
             </div>
-          </div>
-          <div class="top-actions">
-            <span id="statusPill" class="status-pill idle">
-              <i></i><span id="statusLabel">尚未配置</span>
-            </span>
-            <button id="clearChatBtn" class="icon-button" title="清空对话">↺</button>
-            <button id="settingsBtn" class="settings-button">⌘ 接入设置</button>
+            <div id="xuanMoodDetails" class="xuan-mood-details" aria-hidden="true">
+              <p id="xuanMoodFullLine"></p>
+              <p id="xuanMoodFullDetail"></p>
+              <p id="xuanMoodFullFocus"></p>
+            </div>
           </div>
         </section>
 
