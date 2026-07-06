@@ -1,0 +1,374 @@
+.dream-main {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  overflow-y: auto;
+  padding: 64px 34px 40px;
+}
+
+.dream-main::-webkit-scrollbar,
+.dream-list::-webkit-scrollbar { width: 4px; }
+.dream-main::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(129, 137, 172, .18);
+}
+
+.dream-topbar,
+.dream-board {
+  width: min(1040px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.dream-topbar {
+  min-height: 78px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+.dream-topbar > div:first-child {
+  min-width: 0;
+}
+
+.dream-topbar p {
+  margin: 0 0 5px;
+  color: #a19aaa;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+.dream-topbar h1 {
+  margin: 0;
+  color: #343246;
+  font-size: 25px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.dream-topbar span {
+  display: block;
+  max-width: 560px;
+  margin-top: 7px;
+  color: #a09aaa;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.dream-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dream-actions input {
+  width: 286px;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid rgba(119, 113, 144, .15);
+  border-radius: 10px;
+  outline: 0;
+  color: #403a4b;
+  background: rgba(255, 255, 255, .72);
+  font-size: 10px;
+}
+
+.dream-actions input:focus {
+  border-color: rgba(116, 157, 204, .5);
+  box-shadow: 0 0 0 3px rgba(116, 157, 204, .08);
+}
+
+.dream-actions button,
+.dream-source-toggle {
+  border: 0;
+  border-radius: 10px;
+  color: #657da3;
+  background: rgba(220, 235, 250, .68);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.dream-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.dream-actions button:hover,
+.dream-source-toggle:hover {
+  background: rgba(213, 231, 248, .95);
+}
+
+.privacy-note {
+  display: flex;
+  gap: 9px;
+  margin-top: auto;
+  padding: 13px 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(119, 113, 144, .1);
+  border-radius: 13px;
+  color: #9d96a8;
+  background: rgba(255, 255, 255, .42);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.privacy-note i {
+  flex: 0 0 auto;
+  font-style: normal;
+}
+
+.dream-board {
+  display: grid;
+  gap: 12px;
+}
+
+.dream-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  overflow: visible;
+}
+
+.dream-stats div {
+  min-width: 126px;
+  padding: 10px 16px;
+  border: 1px solid rgba(119, 113, 144, .12);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .58);
+  box-shadow: 0 10px 24px rgba(99, 91, 127, .04);
+}
+
+.dream-stats div:nth-of-type(3) {
+  min-width: 230px;
+}
+
+.dream-stats strong,
+.dream-stats span {
+  display: block;
+}
+
+.dream-stats strong {
+  overflow: hidden;
+  color: #687fa2;
+  font-size: 16px;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dream-stats span {
+  margin-top: 4px;
+  color: #9d96a8;
+  font-size: 8px;
+}
+
+.dream-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: visible;
+}
+
+.dream-card {
+  padding: 14px 16px;
+  border: 1px solid rgba(119, 113, 144, .13);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .62);
+  box-shadow: 0 14px 38px rgba(99, 91, 127, .06);
+}
+
+.dream-card:hover {
+  border-color: rgba(112, 160, 216, .26);
+  background: rgba(255, 255, 255, .78);
+}
+
+.dream-card header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.dream-eyebrow {
+  display: block;
+  overflow: hidden;
+  margin-bottom: 5px;
+  color: #9a7190;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dream-eyebrow::before {
+  content: "梦境 · 虚构";
+  margin-right: 6px;
+  color: #a16f87;
+}
+
+.dream-card h2 {
+  margin: 0;
+  color: #514b60;
+  font-size: 14px;
+  line-height: 1.38;
+  letter-spacing: 0;
+}
+
+.dream-date {
+  margin-top: 4px;
+  color: #9992a3;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.dream-content {
+  margin: 10px 0 0;
+  color: #4f4a5c;
+  font-size: 11px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.dream-note {
+  margin: 9px 0 0;
+  color: #7d7180;
+  font-size: 9px;
+  line-height: 1.65;
+}
+
+.dream-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dream-symbols span {
+  padding: 3px 7px;
+  border-radius: 8px;
+  color: #667f9f;
+  background: rgba(218, 233, 247, .62);
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.dream-source-toggle {
+  height: 30px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.dream-sources {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(119, 113, 144, .09);
+}
+
+.dream-source {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: #777084;
+  background: rgba(244, 247, 252, .72);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.dream-source strong {
+  color: #61779b;
+  font-size: 8px;
+}
+
+.empty {
+  padding: 34px;
+  border: 1px dashed rgba(126, 151, 185, .25);
+  border-radius: 16px;
+  color: #9a94a3;
+  background: rgba(239, 245, 251, .45);
+  font-size: 10px;
+  text-align: center;
+}
+
+.notice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 50;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: #39745c;
+  background: rgba(221, 244, 234, .94);
+  box-shadow: 0 16px 36px rgba(85, 83, 122, .12);
+  font-size: 10px;
+}
+
+.notice.error {
+  color: #a34f60;
+  background: #fff0f2;
+}
+
+body.embedded {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+body.embedded .titlebar,
+body.embedded .sidebar,
+body.embedded > .ambient {
+  display: none;
+}
+
+body.embedded .shell {
+  display: block;
+}
+
+body.embedded .dream-main {
+  padding: 64px 34px 40px;
+}
+
+body.embedded .dream-topbar,
+body.embedded .dream-board {
+  width: 100%;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+@media (max-width: 980px) {
+  .dream-main,
+  body.embedded .dream-main {
+    padding: 54px 28px 34px;
+  }
+
+  .dream-topbar {
+    display: grid;
+  }
+
+  .dream-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .dream-actions input {
+    flex: 1 1 220px;
+    width: auto;
+  }
+
+  .dream-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dream-stats div {
+    min-width: 0;
+  }
+}

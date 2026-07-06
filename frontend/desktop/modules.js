@@ -29,7 +29,11 @@ const albumModuleBtn = document.createElement("button");
 albumModuleBtn.id = "albumModuleBtn";
 albumModuleBtn.className = "nav-item";
 albumModuleBtn.innerHTML = "<i>◇</i>我们的纪念册";
-todoModuleBtn.after(memoryModuleBtn, albumModuleBtn);
+const dreamModuleBtn = document.createElement("button");
+dreamModuleBtn.id = "dreamModuleBtn";
+dreamModuleBtn.className = "nav-item";
+dreamModuleBtn.innerHTML = "<i>☾</i>梦境";
+todoModuleBtn.after(memoryModuleBtn, albumModuleBtn, dreamModuleBtn);
 
 function renderModules() {
   const modules = window.XuanModules.snapshot();
@@ -72,6 +76,10 @@ function renderModules() {
           ? module.enabled
             ? "时间轴展示 · AI 可书写"
             : "已关闭"
+        : module.id === "dreams"
+          ? module.enabled
+            ? "后台运行 · 明确标记为梦"
+            : "已关闭"
         : module.tools
           ? `${module.tools} 个 AI 工具`
           : "AI 核心能力";
@@ -113,6 +121,10 @@ function renderModules() {
   albumModuleBtn.classList.toggle(
     "hidden",
     !window.XuanModules.isEnabled("anniversary-album")
+  );
+  dreamModuleBtn.classList.toggle(
+    "hidden",
+    !window.XuanModules.isEnabled("dreams")
   );
   autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
 }
@@ -161,6 +173,11 @@ memoryModuleBtn.addEventListener("click", () => {
 albumModuleBtn.addEventListener("click", () => {
   if (window.XuanModules.isEnabled("anniversary-album")) {
     navigate("album", "album.html");
+  }
+});
+dreamModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("dreams")) {
+    navigate("dreams", "dream.html");
   }
 });
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());

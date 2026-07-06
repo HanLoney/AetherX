@@ -168,6 +168,19 @@ function registerIpcHandlers() {
   ipcMain.handle("album:sources:candidates", (_event, filters) =>
     api.listAlbumSourceCandidates(filters)
   );
+  ipcMain.handle("dreams:list", (_event, filters) => api.listDreams(filters));
+  ipcMain.handle("dreams:get", (_event, id) => api.getDream(id));
+  ipcMain.handle("dreams:get-by-date", (_event, dreamDate) =>
+    api.getDreamByDate(dreamDate)
+  );
+  ipcMain.handle("dreams:material", (_event, from, to, limit) =>
+    api.getDreamMaterial(from, to, limit)
+  );
+  ipcMain.handle("dreams:create", (_event, input) => api.createDream(input));
+  ipcMain.handle("dreams:update", (_event, id, changes) =>
+    api.updateDream(id, changes)
+  );
+  ipcMain.handle("dreams:delete", (_event, id) => api.deleteDream(id));
   ipcMain.handle("conversations:list", () => api.listConversations());
   ipcMain.handle("conversations:create", (_event, title) =>
     api.createConversation(title)
