@@ -132,8 +132,14 @@ function renderJournals() {
       remove.addEventListener("click", () => deleteJournal(journal));
       controls.append(time, remove);
       header.append(title, controls);
-      const content = document.createElement("p");
-      content.textContent = journal.content;
+      const content = document.createElement("div");
+      content.className = "journal-content";
+      if (window.XuanMarkdown?.render) {
+        window.XuanMarkdown.render(content, journal.content);
+      } else {
+        content.classList.add("plain");
+        content.textContent = journal.content;
+      }
       const meta = document.createElement("div");
       meta.className = "journal-meta";
       const kindLabel = document.createElement("span");
