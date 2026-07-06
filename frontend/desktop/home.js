@@ -137,6 +137,10 @@ const dreamModuleBtn = document.createElement("button");
 dreamModuleBtn.id = "dreamModuleBtn";
 dreamModuleBtn.className = "nav-item";
 dreamModuleBtn.innerHTML = "<i>☾</i>梦境";
+const imageModuleBtn = document.createElement("button");
+imageModuleBtn.id = "imageModuleBtn";
+imageModuleBtn.className = "nav-item";
+imageModuleBtn.innerHTML = "<i>图</i>图像生成";
 const userProfileBtn = document.createElement("button");
 userProfileBtn.id = "userProfileBtn";
 userProfileBtn.className = "nav-item";
@@ -147,7 +151,14 @@ assistantProfileBtn.className = "nav-item";
 assistantProfileBtn.innerHTML = "<i>玄</i>AI 主页";
 document
   .querySelector("#moduleSettingsBtn")
-  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn);
+  .before(
+    userProfileBtn,
+    assistantProfileBtn,
+    memoryModuleBtn,
+    albumModuleBtn,
+    dreamModuleBtn,
+    imageModuleBtn
+  );
 
 const historyPanel = document.createElement("section");
 historyPanel.className = "history-panel";
@@ -175,6 +186,7 @@ const VIEW_TRANSITION_MS = 220;
 function setActiveNavigation(activeButton) {
   [aiNavBtn, document.querySelector("#todoModuleBtn"), userProfileBtn,
     assistantProfileBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn,
+    imageModuleBtn,
     document.querySelector("#moduleSettingsBtn")].forEach((button) => {
     button.classList.toggle("active", button === activeButton);
   });
@@ -319,6 +331,16 @@ window.addEventListener("message", (event) => {
   if (target === "dreams" && window.XuanModules.isEnabled("dreams")) {
     showModuleWorkspace("dreams", "dream.html", dreamModuleBtn);
   }
+  if (
+    target === "image-generation" &&
+    window.XuanModules.isEnabled("image-generation")
+  ) {
+    showModuleWorkspace(
+      "image-generation",
+      "image-generator.html",
+      imageModuleBtn
+    );
+  }
   if (target === "user-profile") {
     showModuleWorkspace(
       "user-profile",
@@ -347,11 +369,13 @@ function syncModuleState() {
   const memoryEnabled = window.XuanModules.isEnabled("memory");
   const albumEnabled = window.XuanModules.isEnabled("anniversary-album");
   const dreamsEnabled = window.XuanModules.isEnabled("dreams");
+  const imageGenerationEnabled = window.XuanModules.isEnabled("image-generation");
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
   albumModuleBtn.classList.toggle("hidden", !albumEnabled);
   dreamModuleBtn.classList.toggle("hidden", !dreamsEnabled);
+  imageModuleBtn.classList.toggle("hidden", !imageGenerationEnabled);
   xuanMood?.syncHome();
   reminderEngine?.runCheck();
   journalWriter?.run();
@@ -1931,6 +1955,15 @@ albumModuleBtn.addEventListener("click", () => {
 dreamModuleBtn.addEventListener("click", () => {
   if (window.XuanModules.isEnabled("dreams")) {
     showModuleWorkspace("dreams", "dream.html", dreamModuleBtn);
+  }
+});
+imageModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("image-generation")) {
+    showModuleWorkspace(
+      "image-generation",
+      "image-generator.html",
+      imageModuleBtn
+    );
   }
 });
 userProfileBtn.addEventListener("click", () => {
