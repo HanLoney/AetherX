@@ -1334,6 +1334,114 @@ test("album moments preserve AI-written cards with multiple sources", async () =
   });
 });
 
+test("dreams preserve fictional boundary and inspiration sources", async () => {
+  await withServer(async (baseUrl) => {
+    const conversation = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/conversations",
+      { title: "梦境素材" }
+    );
+    const conversationId = conversation.payload.data.id;
+    const sourceFrom = Date.parse("2026-07-04T00:00:00+08:00");
+    const sourceTo = Date.parse("2026-07-05T00:00:00+08:00");
+    await request(
+      baseUrl,
+      "PUT",
+      `/api/v1/conversations/${conversationId}/messages`,
+      {
+        messages: [
+          {
+            id: "dream-chat-user",
+            stream: "display",
+            position: 0,
+            role: "user",
+            content: "今天我们聊到了夜里的车站和一盏灯。",
+            createdAt: sourceFrom + 1000
+          }
+        ]
+      }
+    );
+    const journal = await request(
+      baseUrl,
+      "PUT",
+      "/api/v1/assistant/journals",
+      {
+        type: "daily",
+        periodKey: "2026-07-04",
+        title: "夜里的灯",
+        mood: "安静",
+        content: "我记下了那盏灯，像是在等谁回家。",
+        sourceFrom,
+        sourceTo,
+        sourceMessageCount: 1
+      }
+    );
+
+    const material = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/dreams/material?from=${sourceFrom}&to=${sourceTo}`
+    );
+    assert.ok(
+      material.payload.data.sources.some(
+        (source) => source.sourceType === "chat"
+      )
+    );
+    assert.ok(
+      material.payload.data.sources.some(
+        (source) =>
+          source.sourceType === "journal" &&
+          source.sourceId === journal.payload.data.id
+      )
+    );
+
+    const created = await request(baseUrl, "POST", "/api/v1/dreams", {
+      dreamDate: "2026-07-04",
+      title: "车站漂到云上",
+      mood: "朦胧",
+      content:
+        "我做了一个梦。车站漂到云上，灯变成一枚小小的月亮，洛尼在远处挥手。",
+      symbols: ["车站", "灯", "月亮"],
+      sourceFrom,
+      sourceTo,
+      sources: [
+        {
+          sourceType: "journal",
+          sourceId: journal.payload.data.id,
+          sourceExcerpt: journal.payload.data.content,
+          weight: 0.9
+        },
+        {
+          sourceType: "chat",
+          sourceId: "dream-chat-user",
+          sourceExcerpt: "今天我们聊到了夜里的车站和一盏灯。",
+          weight: 0.7
+        }
+      ]
+    });
+    assert.equal(created.response.status, 201);
+    assert.equal(created.payload.data.isDream, true);
+    assert.match(created.payload.data.realityNote, /虚构梦境/);
+    assert.equal(created.payload.data.sources.length, 2);
+
+    const byDate = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/dreams/by-date/2026-07-04"
+    );
+    assert.equal(byDate.payload.data.id, created.payload.data.id);
+    assert.deepEqual(byDate.payload.data.symbols, ["车站", "灯", "月亮"]);
+
+    const deleted = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/dreams/${created.payload.data.id}`
+    );
+    assert.equal(deleted.response.status, 204);
+  });
+});
+
 test("multi-turn extraction separates assistant growth from shared memories", async () => {
   const events = [];
   const shared = [];

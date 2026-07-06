@@ -72,6 +72,15 @@
       color: "pink",
       core: false,
       tools: 5
+    }),
+    Object.freeze({
+      id: "dreams",
+      name: "梦境",
+      description: "根据聊天、手记和记忆生成发散的虚构梦境，并明确区分梦与现实。",
+      icon: "☾",
+      color: "blue",
+      core: false,
+      tools: 3
     })
   ]);
 

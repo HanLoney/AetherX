@@ -356,6 +356,44 @@ const MIGRATIONS = [
       ON album_moment_sources(moment_id, created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_album_sources_unique
       ON album_moment_sources(moment_id, source_type, source_id);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS assistant_dreams (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      dream_date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      mood TEXT NOT NULL DEFAULT '',
+      symbols_json TEXT NOT NULL DEFAULT '[]',
+      reality_note TEXT NOT NULL DEFAULT '',
+      source_from INTEGER NOT NULL,
+      source_to INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_assistant_dreams_user_date
+      ON assistant_dreams(user_id, status, dream_date DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_assistant_dreams_active_date
+      ON assistant_dreams(user_id, dream_date)
+      WHERE status = 'active';
+
+    CREATE TABLE IF NOT EXISTS assistant_dream_sources (
+      id TEXT PRIMARY KEY,
+      dream_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      source_excerpt TEXT NOT NULL DEFAULT '',
+      weight REAL NOT NULL DEFAULT 0.5,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(dream_id) REFERENCES assistant_dreams(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_dream_sources_dream
+      ON assistant_dream_sources(dream_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_dream_sources_unique
+      ON assistant_dream_sources(dream_id, source_type, source_id);
   `
 ];
 

@@ -375,6 +375,45 @@ class XuanApiClient {
     );
   }
 
+  listDreams(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request("GET", `/api/v1/dreams${query.size ? `?${query}` : ""}`);
+  }
+
+  getDream(id) {
+    return this.request("GET", `/api/v1/dreams/${encodeURIComponent(id)}`);
+  }
+
+  getDreamByDate(dreamDate) {
+    return this.request(
+      "GET",
+      `/api/v1/dreams/by-date/${encodeURIComponent(dreamDate)}`
+    );
+  }
+
+  getDreamMaterial(from, to, limit = 60) {
+    const query = new URLSearchParams({
+      from: String(from),
+      to: String(to),
+      limit: String(limit)
+    });
+    return this.request("GET", `/api/v1/dreams/material?${query}`);
+  }
+
+  createDream(input) {
+    return this.request("POST", "/api/v1/dreams", input);
+  }
+
+  updateDream(id, changes) {
+    return this.request("PATCH", `/api/v1/dreams/${encodeURIComponent(id)}`, changes);
+  }
+
+  deleteDream(id) {
+    return this.request("DELETE", `/api/v1/dreams/${encodeURIComponent(id)}`);
+  }
+
   listConversations() {
     return this.request("GET", "/api/v1/conversations");
   }

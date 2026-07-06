@@ -89,32 +89,37 @@ const elements = {
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
 
-const toolRegistry = window.registerAlbumTools(
-  window.registerJournalTools(
-    window.registerMemoryTools(
-      window.registerTodoTools(
-        new window.XuanToolRegistry({
-          isEnabled: (toolName) => {
-            const moduleId = toolName.split(".")[0];
-            if (moduleId === "journal") {
-              return window.XuanModules.isEnabled("autonomous-journal");
+const toolRegistry = window.registerDreamTools(
+  window.registerAlbumTools(
+    window.registerJournalTools(
+      window.registerMemoryTools(
+        window.registerTodoTools(
+          new window.XuanToolRegistry({
+            isEnabled: (toolName) => {
+              const moduleId = toolName.split(".")[0];
+              if (moduleId === "journal") {
+                return window.XuanModules.isEnabled("autonomous-journal");
+              }
+              if (moduleId === "album") {
+                return window.XuanModules.isEnabled("anniversary-album");
+              }
+              if (moduleId === "dream") {
+                return window.XuanModules.isEnabled("dreams");
+              }
+              return window.XuanModules.isEnabled(
+                [
+                  "memory",
+                  "profile",
+                  "assistant_profile",
+                  "personality_event",
+                  "shared_memory"
+                ].includes(moduleId)
+                  ? "memory"
+                  : moduleId
+              );
             }
-            if (moduleId === "album") {
-              return window.XuanModules.isEnabled("anniversary-album");
-            }
-            return window.XuanModules.isEnabled(
-              [
-                "memory",
-                "profile",
-                "assistant_profile",
-                "personality_event",
-                "shared_memory"
-              ].includes(moduleId)
-                ? "memory"
-                : moduleId
-            );
-          }
-        })
+          })
+        )
       )
     )
   )
@@ -128,6 +133,10 @@ const albumModuleBtn = document.createElement("button");
 albumModuleBtn.id = "albumModuleBtn";
 albumModuleBtn.className = "nav-item";
 albumModuleBtn.innerHTML = "<i>◇</i>我们的纪念册";
+const dreamModuleBtn = document.createElement("button");
+dreamModuleBtn.id = "dreamModuleBtn";
+dreamModuleBtn.className = "nav-item";
+dreamModuleBtn.innerHTML = "<i>☾</i>梦境";
 const userProfileBtn = document.createElement("button");
 userProfileBtn.id = "userProfileBtn";
 userProfileBtn.className = "nav-item";
@@ -138,7 +147,7 @@ assistantProfileBtn.className = "nav-item";
 assistantProfileBtn.innerHTML = "<i>玄</i>AI 主页";
 document
   .querySelector("#moduleSettingsBtn")
-  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn, albumModuleBtn);
+  .before(userProfileBtn, assistantProfileBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn);
 
 const historyPanel = document.createElement("section");
 historyPanel.className = "history-panel";
@@ -165,7 +174,7 @@ const VIEW_TRANSITION_MS = 220;
 
 function setActiveNavigation(activeButton) {
   [aiNavBtn, document.querySelector("#todoModuleBtn"), userProfileBtn,
-    assistantProfileBtn, memoryModuleBtn, albumModuleBtn,
+    assistantProfileBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn,
     document.querySelector("#moduleSettingsBtn")].forEach((button) => {
     button.classList.toggle("active", button === activeButton);
   });
@@ -307,6 +316,9 @@ window.addEventListener("message", (event) => {
   if (target === "album" && window.XuanModules.isEnabled("anniversary-album")) {
     showModuleWorkspace("album", "album.html", albumModuleBtn);
   }
+  if (target === "dreams" && window.XuanModules.isEnabled("dreams")) {
+    showModuleWorkspace("dreams", "dream.html", dreamModuleBtn);
+  }
   if (target === "user-profile") {
     showModuleWorkspace(
       "user-profile",
@@ -334,13 +346,16 @@ function syncModuleState() {
   const todoEnabled = window.XuanModules.isEnabled("todo");
   const memoryEnabled = window.XuanModules.isEnabled("memory");
   const albumEnabled = window.XuanModules.isEnabled("anniversary-album");
+  const dreamsEnabled = window.XuanModules.isEnabled("dreams");
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
   albumModuleBtn.classList.toggle("hidden", !albumEnabled);
+  dreamModuleBtn.classList.toggle("hidden", !dreamsEnabled);
   xuanMood?.syncHome();
   reminderEngine?.runCheck();
   journalWriter?.run();
+  dreamWriter?.run();
 }
 
 function providerById(id) {
@@ -1016,6 +1031,34 @@ const journalWriter = new window.AetherJournalWriter({
   },
   onError: (error) =>
     console.warn("Unable to write autonomous journal:", error.message)
+});
+
+const dreamWriter = new window.AetherDreamWriter({
+  getDreamByDate: (dreamDate) => window.desktop.getDreamByDate(dreamDate),
+  getMaterial: (from, to, limit) =>
+    window.desktop.getDreamMaterial(from, to, limit),
+  createDream: (dream) => window.desktop.createDream(dream),
+  requestAI: (payload) => window.desktop.requestAI(payload),
+  extractText: extractResponse,
+  getSystemPrompt: () => systemPrompt,
+  getRuntime: runtimeOptions,
+  isEnabled: () =>
+    Boolean(state.config?.hasApiKey) &&
+    window.XuanModules.isEnabled("dreams"),
+  onSaved: async (dream) => {
+    moduleFrame.contentWindow?.postMessage(
+      { type: "aether:dreams-updated" },
+      "*"
+    );
+    try {
+      await window.desktop.showNotification({
+        title: "梦境写好了",
+        body: dream.title
+      });
+    } catch {}
+  },
+  onError: (error) =>
+    console.warn("Unable to write dream:", error.message)
 });
 
 xuanMood = new window.XuanMoodModule({
@@ -1885,6 +1928,11 @@ albumModuleBtn.addEventListener("click", () => {
     showModuleWorkspace("album", "album.html", albumModuleBtn);
   }
 });
+dreamModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("dreams")) {
+    showModuleWorkspace("dreams", "dream.html", dreamModuleBtn);
+  }
+});
 userProfileBtn.addEventListener("click", () => {
   showModuleWorkspace(
     "user-profile",
@@ -1986,6 +2034,7 @@ async function initialize() {
   }
   reminderEngine.start();
   journalWriter.start();
+  dreamWriter.start();
 }
 
 async function refreshSystemPrompt() {
@@ -2004,11 +2053,19 @@ window.addEventListener("aether:journals-updated", async () => {
   );
 });
 
+window.addEventListener("aether:dreams-updated", async () => {
+  moduleFrame.contentWindow?.postMessage(
+    { type: "aether:dreams-updated" },
+    "*"
+  );
+});
+
 window.addEventListener("xuan:modules-changed", syncModuleState);
 window.addEventListener("storage", syncModuleState);
 window.addEventListener("beforeunload", () => {
   reminderEngine.stop();
   journalWriter.stop();
+  dreamWriter.stop();
 });
 
 initialize().catch((error) => {

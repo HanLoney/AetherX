@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>梦境 · AetherX</title>
+    <link rel="stylesheet" href="app-shell.css" />
+    <link rel="stylesheet" href="dream.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">AetherX · 梦境</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">−</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">玄</div>
+          <div><strong>AetherX</strong><span>你的智能生活中枢</span></div>
+        </div>
+        <nav class="nav-list">
+          <button id="homeBtn" class="nav-item"><i>✦</i>聊天</button>
+          <button id="todoBtn" class="nav-item"><i>✓</i>日历待办</button>
+          <button id="memoryBtn" class="nav-item"><i>◆</i>记忆中心</button>
+          <button id="albumBtn" class="nav-item"><i>◇</i>我们的纪念册</button>
+          <button class="nav-item active"><i>☾</i>梦境</button>
+          <button id="modulesBtn" class="nav-item"><i>◆</i>模块中心</button>
+        </nav>
+        <div class="privacy-note">
+          <i>☾</i>
+          <span>虚构梦境，只保留灵感来源，不作为现实记忆。</span>
+        </div>
+      </aside>
+
+      <main class="dream-main">
+        <section class="dream-topbar">
+          <div>
+            <p>DREAM LOG</p>
+            <h1>梦境</h1>
+            <span>由真实聊天、手记和记忆激发，但可以自由发散、跳跃和象征化。</span>
+          </div>
+          <div class="dream-actions">
+            <input id="dreamSearch" placeholder="搜索标题、心情、意象或梦境内容" />
+            <button id="refreshDreamBtn" type="button">刷新</button>
+          </div>
+        </section>
+
+        <section class="dream-board">
+          <div class="dream-stats">
+            <div><strong id="dreamCount">0</strong><span>梦</span></div>
+            <div><strong id="symbolCount">0</strong><span>意象</span></div>
+            <div><strong id="latestDream">还没有</strong><span>最近一梦</span></div>
+          </div>
+          <div id="dreamList" class="dream-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="notice" class="notice hidden"></div>
+
+    <script src="api-client.js"></script>
+    <script src="module-settings.js"></script>
+    <script src="dream.js"></script>
+  </body>
+</html>

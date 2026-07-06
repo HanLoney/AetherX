@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("album:sources:add", id, source),
   listAlbumSourceCandidates: (filters) =>
     ipcRenderer.invoke("album:sources:candidates", filters),
+  listDreams: (filters) => ipcRenderer.invoke("dreams:list", filters),
+  getDream: (id) => ipcRenderer.invoke("dreams:get", id),
+  getDreamByDate: (dreamDate) =>
+    ipcRenderer.invoke("dreams:get-by-date", dreamDate),
+  getDreamMaterial: (from, to, limit) =>
+    ipcRenderer.invoke("dreams:material", from, to, limit),
+  createDream: (input) => ipcRenderer.invoke("dreams:create", input),
+  updateDream: (id, changes) => ipcRenderer.invoke("dreams:update", id, changes),
+  deleteDream: (id) => ipcRenderer.invoke("dreams:delete", id),
   listConversations: () => ipcRenderer.invoke("conversations:list"),
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),
