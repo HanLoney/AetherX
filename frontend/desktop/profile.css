@@ -208,12 +208,109 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
   padding: 0;
 }
 .journal-delete:hover { color: #93475d; }
-.journal-card p {
+.journal-card .journal-content {
   margin: 12px 0 0;
   color: #686272;
   font-size: 11px;
   line-height: 1.85;
-  white-space: pre-wrap;
+}
+.journal-card .journal-content.plain { white-space: pre-wrap; }
+.journal-content.markdown-body > :first-child { margin-top: 0; }
+.journal-content.markdown-body > :last-child { margin-bottom: 0; }
+.journal-content.markdown-body p {
+  margin: 0 0 12px;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.journal-content.markdown-body strong {
+  color: #3d3949;
+  font-weight: 750;
+}
+.journal-content.markdown-body em { color: #746c7d; }
+.journal-content.markdown-body h1,
+.journal-content.markdown-body h2,
+.journal-content.markdown-body h3,
+.journal-content.markdown-body h4,
+.journal-content.markdown-body h5,
+.journal-content.markdown-body h6 {
+  margin: 17px 0 8px;
+  color: #3f3a4c;
+  line-height: 1.38;
+}
+.journal-content.markdown-body h1 { font-size: 18px; }
+.journal-content.markdown-body h2 { font-size: 16px; }
+.journal-content.markdown-body h3 { font-size: 14px; }
+.journal-content.markdown-body h4,
+.journal-content.markdown-body h5,
+.journal-content.markdown-body h6 { font-size: 12px; }
+.journal-content.markdown-body ul,
+.journal-content.markdown-body ol {
+  margin: 8px 0 13px;
+  padding-left: 21px;
+}
+.journal-content.markdown-body li { margin: 4px 0; padding-left: 2px; }
+.journal-content.markdown-body blockquote {
+  margin: 11px 0;
+  padding: 8px 12px;
+  border-left: 3px solid rgba(117, 174, 224, .48);
+  border-radius: 0 9px 9px 0;
+  color: #756e80;
+  background: rgba(226, 239, 250, .42);
+}
+.journal-content.markdown-body code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  color: #b35f80;
+  background: rgba(235, 160, 191, .11);
+  font: 10px/1.5 Consolas, "Cascadia Code", monospace;
+}
+.journal-content.markdown-body > pre {
+  margin: 10px 0 13px;
+  overflow: auto;
+  padding: 11px 12px;
+  border: 1px solid rgba(119, 113, 144, .12);
+  border-radius: 10px;
+  background: #f5f4f8;
+}
+.journal-content.markdown-body > pre code {
+  padding: 0;
+  color: #5c5668;
+  background: transparent;
+  white-space: pre;
+}
+.journal-content .markdown-table-wrap {
+  max-width: 100%;
+  margin: 10px 0 13px;
+  overflow-x: auto;
+  border: 1px solid rgba(119, 113, 144, .13);
+  border-radius: 10px;
+}
+.journal-content table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.journal-content th,
+.journal-content td {
+  padding: 7px 9px;
+  border-right: 1px solid rgba(119, 113, 144, .1);
+  border-bottom: 1px solid rgba(119, 113, 144, .1);
+}
+.journal-content th:last-child,
+.journal-content td:last-child { border-right: 0; }
+.journal-content tbody tr:last-child td { border-bottom: 0; }
+.journal-content th {
+  color: #5b5668;
+  background: rgba(229, 238, 249, .58);
+  font-weight: 700;
+}
+.journal-content tbody tr:nth-child(even) { background: rgba(248, 247, 251, .7); }
+.journal-content .markdown-link {
+  color: #628ab4;
+  border-bottom: 1px dashed rgba(98, 138, 180, .42);
+  cursor: help;
 }
 .journal-meta {
   display: flex;
