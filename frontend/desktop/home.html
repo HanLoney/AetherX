@@ -129,13 +129,13 @@
           <div>
             <p>OPENAI COMPATIBLE</p>
             <h2>接入 AI 服务</h2>
-            <span>选择厂商预设，或填写任意兼容 OpenAI Chat Completions 的端点。</span>
+            <span>统一管理对话模型和图像生成模型，可选择厂商预设，也可填写兼容 OpenAI 协议的端点。</span>
           </div>
           <button id="closeSettingsBtn" class="close-button">×</button>
         </header>
 
         <section class="settings-section">
-          <h3>选择服务商</h3>
+          <h3>对话模型服务商</h3>
           <div id="providerGrid" class="provider-grid"></div>
         </section>
 
@@ -161,9 +161,43 @@
 
         <div id="testResult" class="test-result hidden"><i></i><span></span></div>
 
+        <section class="settings-section image-ai-section">
+          <header class="service-section-head">
+            <div>
+              <h3>图像生成模型</h3>
+              <p>用于“图像生成”模块，支持火山方舟和兼容 /images/generations 的端点。</p>
+            </div>
+            <button id="saveImageConfigBtn" type="button" class="test-button">保存生图配置</button>
+          </header>
+
+          <div id="imageProviderGrid" class="provider-grid image-provider-grid"></div>
+
+          <div class="form-grid">
+            <label class="field endpoint-field">
+              <span>API 端点</span>
+              <input id="imageBaseUrlInput" placeholder="https://ark.cn-beijing.volces.com/api/v3" />
+              <small>可填写 Base URL，也可直接填写完整的 /images/generations 地址</small>
+            </label>
+            <label class="field">
+              <span>API Key</span>
+              <div class="secret-input">
+                <input id="imageApiKeyInput" type="password" placeholder="Ark API Key" />
+                <button id="showImageKeyBtn" type="button">显示</button>
+              </div>
+              <small id="imageKeyHelp">密钥使用系统安全存储，不会写入代码仓库</small>
+            </label>
+            <label class="field">
+              <span>模型名称</span>
+              <input id="imageModelInput" placeholder="例如：doubao-seedream-5-0-260128" />
+            </label>
+          </div>
+
+          <div id="imageConfigResult" class="test-result hidden"><i></i><span></span></div>
+        </section>
+
         <div class="security-note">
           <strong>说明</strong>
-          <span>“测试连接”会向当前模型发送一条极短消息，可能产生少量 Token。桌面端请求由 Electron 主进程发出，不受浏览器跨域限制。</span>
+          <span>“测试连接”只测试对话模型，可能产生少量 Token。图像生成配置保存后会在生图模块中使用，桌面端请求由 Electron 主进程发出，不受浏览器跨域限制。</span>
         </div>
 
         <footer class="settings-actions">

@@ -54,3 +54,24 @@ window.AI_PROVIDER_PRESETS = [
     description: "任意 OpenAI 兼容端点"
   }
 ];
+
+window.AI_IMAGE_PROVIDER_PRESETS = [
+  {
+    id: "volcengine",
+    name: "火山方舟",
+    shortName: "HS",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    model: "doubao-seedream-5-0-260128",
+    color: "#8a9bdc",
+    description: "Doubao Seedream"
+  },
+  {
+    id: "custom",
+    name: "自定义",
+    shortName: "＋",
+    baseUrl: "",
+    model: "",
+    color: "#9a93aa",
+    description: "兼容 /images/generations"
+  }
+];
