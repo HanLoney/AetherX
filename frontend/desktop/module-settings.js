@@ -29,6 +29,15 @@
       tools: 6
     }),
     Object.freeze({
+      id: "image-generation",
+      name: "图像生成",
+      description: "调用独立的图像生成模型，把提示词生成可预览和保存的图片。",
+      icon: "图",
+      color: "blue",
+      core: false,
+      tools: 0
+    }),
+    Object.freeze({
       id: "time-awareness",
       name: "时间感知",
       description: "感知用户当地时区、当前时段、星期与距离上次互动的时间。",

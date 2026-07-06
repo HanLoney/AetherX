@@ -47,6 +47,13 @@ function registerIpcHandlers() {
     api.saveAiConfig(input)
   );
   ipcMain.handle("ai:chat", (_event, payload) => api.requestAi(payload));
+  ipcMain.handle("ai:image-config:get", () => api.getAiImageConfig());
+  ipcMain.handle("ai:image-config:save", (_event, input) =>
+    api.saveAiImageConfig(input)
+  );
+  ipcMain.handle("ai:image-generate", (_event, payload) =>
+    api.generateImage(payload)
+  );
 
   ipcMain.handle("todos:list", (_event, filters) => api.listTodos(filters));
   ipcMain.handle("todos:get", (_event, id) => api.getTodo(id));

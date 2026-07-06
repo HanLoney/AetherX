@@ -394,6 +394,17 @@ const MIGRATIONS = [
       ON assistant_dream_sources(dream_id, created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_dream_sources_unique
       ON assistant_dream_sources(dream_id, source_type, source_id);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS ai_image_configs (
+      user_id TEXT PRIMARY KEY,
+      provider_id TEXT NOT NULL,
+      provider_name TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      model TEXT NOT NULL,
+      encrypted_api_key TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
   `
 ];
 

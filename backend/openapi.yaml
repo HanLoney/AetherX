@@ -48,6 +48,20 @@ paths:
       summary: 保存 AI 配置
       responses:
         "200": { description: 已保存 }
+  /ai/image-config:
+    get:
+      summary: 获取公开图像生成 AI 配置
+      responses:
+        "200": { description: 图像生成 AI 配置 }
+    put:
+      summary: 保存图像生成 AI 配置
+      responses:
+        "200": { description: 已保存 }
+  /ai/image-generations:
+    post:
+      summary: 调用配置的图像生成模型
+      responses:
+        "200": { description: 图像生成 Provider 响应 }
   /ai/chat:
     post:
       summary: 调用配置的 AI Provider

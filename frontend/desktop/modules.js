@@ -29,11 +29,15 @@ const albumModuleBtn = document.createElement("button");
 albumModuleBtn.id = "albumModuleBtn";
 albumModuleBtn.className = "nav-item";
 albumModuleBtn.innerHTML = "<i>◇</i>我们的纪念册";
+const imageModuleBtn = document.createElement("button");
+imageModuleBtn.id = "imageModuleBtn";
+imageModuleBtn.className = "nav-item";
+imageModuleBtn.innerHTML = "<i>图</i>图像生成";
 const dreamModuleBtn = document.createElement("button");
 dreamModuleBtn.id = "dreamModuleBtn";
 dreamModuleBtn.className = "nav-item";
 dreamModuleBtn.innerHTML = "<i>☾</i>梦境";
-todoModuleBtn.after(memoryModuleBtn, albumModuleBtn, dreamModuleBtn);
+todoModuleBtn.after(memoryModuleBtn, albumModuleBtn, dreamModuleBtn, imageModuleBtn);
 
 function renderModules() {
   const modules = window.XuanModules.snapshot();
@@ -126,6 +130,10 @@ function renderModules() {
     "hidden",
     !window.XuanModules.isEnabled("dreams")
   );
+  imageModuleBtn.classList.toggle(
+    "hidden",
+    !window.XuanModules.isEnabled("image-generation")
+  );
   autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
 }
 
@@ -178,6 +186,11 @@ albumModuleBtn.addEventListener("click", () => {
 dreamModuleBtn.addEventListener("click", () => {
   if (window.XuanModules.isEnabled("dreams")) {
     navigate("dreams", "dream.html");
+  }
+});
+imageModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("image-generation")) {
+    navigate("image-generation", "image-generator.html");
   }
 });
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());

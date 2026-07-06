@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>图像生成 · AetherX</title>
+    <link rel="stylesheet" href="image-generator.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">AetherX · 图像生成</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="page-head">
+        <div>
+          <p>IMAGE GENERATION</p>
+          <h1>图像生成</h1>
+        </div>
+        <span id="statusPill" class="status-pill idle"><i></i><b>待配置</b></span>
+      </section>
+
+      <section class="workspace">
+        <form id="generatorForm" class="control-panel">
+          <section class="panel-block">
+            <header>
+              <strong>图像生成接入</strong>
+              <button id="saveConfigBtn" type="button" class="text-button">保存配置</button>
+            </header>
+            <div id="providerGrid" class="provider-grid"></div>
+
+            <label class="field wide">
+              <span>API 端点</span>
+              <input id="baseUrlInput" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>模型</span>
+              <input id="modelInput" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>API Key</span>
+              <input id="apiKeyInput" type="password" autocomplete="off" />
+            </label>
+          </section>
+
+          <section class="panel-block">
+            <header>
+              <strong>生成参数</strong>
+              <button id="clearBtn" type="button" class="text-button">清空</button>
+            </header>
+            <label class="field wide">
+              <span>提示词</span>
+              <textarea id="promptInput" rows="8" maxlength="8000" required></textarea>
+            </label>
+            <label class="field wide">
+              <span>负向提示词</span>
+              <textarea id="negativePromptInput" rows="3" maxlength="4000"></textarea>
+            </label>
+            <div class="param-grid">
+              <label class="field">
+                <span>尺寸</span>
+                <select id="sizeInput">
+                  <option value="1920x1920">1:1 · 1920</option>
+                  <option value="1536x2400">2:3 · 1536x2400</option>
+                  <option value="2400x1536">3:2 · 2400x1536</option>
+                  <option value="1440x2560">9:16 · 1440x2560</option>
+                  <option value="2560x1440">16:9 · 2560x1440</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>数量</span>
+                <select id="countInput">
+                  <option value="1">1 张</option>
+                  <option value="2">2 张</option>
+                  <option value="3">3 张</option>
+                  <option value="4">4 张</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>返回</span>
+                <select id="responseFormatInput">
+                  <option value="url">URL</option>
+                  <option value="b64_json">Base64</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <p id="messageLine" class="message-line" role="status"></p>
+          <button id="generateBtn" class="primary-button" type="submit">生成图片</button>
+        </form>
+
+        <section class="result-panel">
+          <header>
+            <div>
+              <p>PREVIEW</p>
+              <h2>生成结果</h2>
+            </div>
+            <button id="openConfigBtn" type="button" class="secondary-button">火山预设</button>
+          </header>
+          <div id="resultGrid" class="result-grid">
+            <div class="empty-state">
+              <i>图</i>
+              <strong>等待生成</strong>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="imageTemplate">
+      <article class="image-card">
+        <img alt="生成图片" />
+        <footer>
+          <span></span>
+          <a target="_blank" rel="noreferrer">打开</a>
+        </footer>
+      </article>
+    </template>
+
+    <script src="image-generator.js"></script>
+  </body>
+</html>

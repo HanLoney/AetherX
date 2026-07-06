@@ -11,6 +11,8 @@ const {
   TimeAwarenessService
 } = require("../src/modules/time-awareness/time-awareness-service");
 const {
+  imageUrl,
+  sanitizeImagePayload,
   sanitizeMessages
 } = require("../src/modules/ai/ai-provider-client");
 const {
@@ -291,6 +293,74 @@ test("AI API keys are encrypted and never returned", async () => {
     const databaseBytes = fs.readFileSync(path.join(dataDir, "xuanai.db"));
     assert.equal(databaseBytes.includes(Buffer.from("secret-test-key")), false);
   });
+});
+
+test("AI image config is independent and encrypted", async () => {
+  await withServer(async (baseUrl, dataDir) => {
+    const defaults = await request(baseUrl, "GET", "/api/v1/ai/image-config");
+    assert.equal(defaults.response.status, 200);
+    assert.equal(defaults.payload.data.providerId, "volcengine");
+    assert.equal(defaults.payload.data.hasApiKey, false);
+
+    const saved = await request(baseUrl, "PUT", "/api/v1/ai/image-config", {
+      providerId: "volcengine",
+      providerName: "火山方舟",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+      model: "doubao-seedream-5-0-260128",
+      apiKey: "image-secret-key"
+    });
+    assert.equal(saved.response.status, 200);
+    assert.equal(saved.payload.data.hasApiKey, true);
+    assert.equal(saved.payload.data.apiKey, undefined);
+
+    const chatConfig = await request(baseUrl, "GET", "/api/v1/ai/config");
+    assert.equal(chatConfig.payload.data.hasApiKey, false);
+
+    const databaseBytes = fs.readFileSync(path.join(dataDir, "xuanai.db"));
+    assert.equal(databaseBytes.includes(Buffer.from("image-secret-key")), false);
+  });
+});
+
+test("AI image payload targets image generations endpoints", () => {
+  assert.equal(
+    imageUrl("https://ark.cn-beijing.volces.com/api/v3"),
+    "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+  );
+  assert.equal(
+    imageUrl("https://example.test/v1/images/generations"),
+    "https://example.test/v1/images/generations"
+  );
+  const payload = sanitizeImagePayload(
+    { model: "doubao-seedream-5-0-260128" },
+    {
+      prompt: "一只玻璃质感的小玄头像",
+      size: "1440x2560",
+      n: 2,
+      responseFormat: "b64_json",
+      negativePrompt: "低清晰度",
+      watermark: false
+    }
+  );
+  assert.deepEqual(payload, {
+    model: "doubao-seedream-5-0-260128",
+    prompt: "一只玻璃质感的小玄头像",
+    n: 2,
+    size: "1440x2560",
+    response_format: "b64_json",
+    negative_prompt: "低清晰度",
+    watermark: false
+  });
+  const smallPayload = sanitizeImagePayload(
+    { model: "doubao-seedream-5-0-260128" },
+    { prompt: "small", size: "1024x1536" }
+  );
+  assert.equal(smallPayload.size, "1920x1920");
+  assert.equal(smallPayload.watermark, false);
+  const forcedPayload = sanitizeImagePayload(
+    { model: "doubao-seedream-5-0-260128" },
+    { prompt: "force", size: "1920x1920", watermark: true }
+  );
+  assert.equal(forcedPayload.watermark, false);
 });
 
 test("profile and preferences are managed through independent APIs", async () => {

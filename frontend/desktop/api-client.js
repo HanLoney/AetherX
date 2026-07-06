@@ -18,7 +18,8 @@ class XuanApiClient {
 
   async request(method, path, body) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 65_000);
+    const timeout = path.includes("/ai/image-generations") ? 245_000 : 65_000;
+    const timer = setTimeout(() => controller.abort(), timeout);
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
@@ -65,6 +66,18 @@ class XuanApiClient {
 
   requestAi(payload) {
     return this.request("POST", "/api/v1/ai/chat", payload);
+  }
+
+  getAiImageConfig() {
+    return this.request("GET", "/api/v1/ai/image-config");
+  }
+
+  saveAiImageConfig(config) {
+    return this.request("PUT", "/api/v1/ai/image-config", config);
+  }
+
+  generateImage(payload) {
+    return this.request("POST", "/api/v1/ai/image-generations", payload);
   }
 
   listTodos(filters = {}) {

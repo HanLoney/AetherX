@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld("desktop", {
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),
   saveAIConfig: (config) => ipcRenderer.invoke("ai:config:save", config),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),
+  getAIImageConfig: () => ipcRenderer.invoke("ai:image-config:get"),
+  saveAIImageConfig: (config) =>
+    ipcRenderer.invoke("ai:image-config:save", config),
+  generateImage: (payload) => ipcRenderer.invoke("ai:image-generate", payload),
   listTodos: (filters) => ipcRenderer.invoke("todos:list", filters),
   getTodo: (id) => ipcRenderer.invoke("todos:get", id),
   createTodo: (todo) => ipcRenderer.invoke("todos:create", todo),

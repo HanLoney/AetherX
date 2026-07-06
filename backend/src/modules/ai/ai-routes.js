@@ -12,6 +12,12 @@ function registerAiRoutes(
   router.add("PUT", "/api/v1/ai/config", ({ userId, body }) => ({
     data: configRepository.save(userId, body)
   }));
+  router.add("GET", "/api/v1/ai/image-config", ({ userId }) => ({
+    data: configRepository.getImagePublic(userId)
+  }));
+  router.add("PUT", "/api/v1/ai/image-config", ({ userId, body }) => ({
+    data: configRepository.saveImage(userId, body)
+  }));
   router.add("POST", "/api/v1/ai/chat", async ({ userId, body }) => {
     const stored = configRepository.getCredentials(userId);
     const config = {
@@ -45,6 +51,17 @@ function registerAiRoutes(
       );
       normalizeCurrentTimeClaims(result, latest.localTime);
     }
+    return { data: result };
+  });
+  router.add("POST", "/api/v1/ai/image-generations", async ({ userId, body }) => {
+    const stored = configRepository.getImageCredentials(userId);
+    const config = {
+      ...stored,
+      ...(body.baseUrl ? { baseUrl: String(body.baseUrl).replace(/\/+$/, "") } : {}),
+      ...(body.model ? { model: String(body.model) } : {}),
+      ...(body.apiKey ? { apiKey: String(body.apiKey) } : {})
+    };
+    const result = await providerClient.image(config, body);
     return { data: result };
   });
 }
