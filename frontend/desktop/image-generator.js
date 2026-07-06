@@ -5,23 +5,24 @@ if (new URLSearchParams(window.location.search).has("embedded")) {
   }
 }
 
-const IMAGE_PROVIDER_PRESETS = Object.freeze([
-  Object.freeze({
+const IMAGE_PROVIDER_PRESETS = Object.freeze(
+  window.AI_IMAGE_PROVIDER_PRESETS || [
+  {
     id: "volcengine",
     name: "火山方舟",
     shortName: "HS",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     model: "doubao-seedream-5-0-260128",
     description: "Doubao Seedream"
-  }),
-  Object.freeze({
+  },
+  {
     id: "custom",
     name: "自定义",
     shortName: "自",
     baseUrl: "",
     model: "",
     description: "兼容 /images/generations"
-  })
+  }
 ]);
 
 const state = {
@@ -288,6 +289,14 @@ async function initialize() {
   renderImages();
 }
 
+async function refreshConfig() {
+  state.config = await window.desktop.getAIImageConfig();
+  state.draft = { ...state.config, apiKey: "" };
+  syncDraftInputs();
+  renderProviderGrid();
+  renderStatus();
+}
+
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
@@ -306,6 +315,14 @@ elements.openConfigBtn.addEventListener("click", () => {
   state.draft.model = provider.model;
   syncDraftInputs();
   renderProviderGrid();
+});
+window.addEventListener("message", (event) => {
+  if (event.data?.type !== "xuan:image-config-updated") return;
+  refreshConfig().catch((error) => {
+    state.status = "error";
+    renderStatus();
+    setMessage("error", error.message || "图像生成配置刷新失败");
+  });
 });
 
 initialize().catch((error) => {

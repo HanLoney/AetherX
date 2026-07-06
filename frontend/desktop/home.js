@@ -13,6 +13,8 @@ class EmptyCompletionError extends Error {
 const state = {
   config: null,
   draft: null,
+  imageConfig: null,
+  imageDraft: null,
   messages: [],
   modelMessages: [],
   memoryContext: "",
@@ -30,7 +32,8 @@ const state = {
   pendingApprovals: new Map(),
   connectionStatus: "idle",
   sending: false,
-  testing: false
+  testing: false,
+  savingImageConfig: false
 };
 
 function currentSystemPrompt() {
@@ -71,6 +74,14 @@ const elements = {
   apiKeyInput: document.querySelector("#apiKeyInput"),
   modelInput: document.querySelector("#modelInput"),
   keyHelp: document.querySelector("#keyHelp"),
+  imageProviderGrid: document.querySelector("#imageProviderGrid"),
+  imageBaseUrlInput: document.querySelector("#imageBaseUrlInput"),
+  imageApiKeyInput: document.querySelector("#imageApiKeyInput"),
+  imageModelInput: document.querySelector("#imageModelInput"),
+  imageKeyHelp: document.querySelector("#imageKeyHelp"),
+  imageConfigResult: document.querySelector("#imageConfigResult"),
+  imageConfigResultText: document.querySelector("#imageConfigResult span"),
+  saveImageConfigBtn: document.querySelector("#saveImageConfigBtn"),
   testResult: document.querySelector("#testResult"),
   testResultText: document.querySelector("#testResult span"),
   testConnectionBtn: document.querySelector("#testConnectionBtn"),
@@ -389,6 +400,13 @@ function providerById(id) {
   );
 }
 
+function imageProviderById(id) {
+  return (
+    window.AI_IMAGE_PROVIDER_PRESETS.find((provider) => provider.id === id) ||
+    window.AI_IMAGE_PROVIDER_PRESETS[0]
+  );
+}
+
 function validateConfig(config) {
   if (!config.baseUrl.trim()) return "请填写 API 端点";
   if (!/^https?:\/\//i.test(config.baseUrl.trim())) {
@@ -396,6 +414,16 @@ function validateConfig(config) {
   }
   if (!config.apiKey.trim() && !config.hasApiKey) return "请填写 API Key";
   if (!config.model.trim()) return "请填写模型名称";
+  return "";
+}
+
+function validateImageConfig(config) {
+  if (!config.baseUrl.trim()) return "请填写图像生成 API 端点";
+  if (!/^https?:\/\//i.test(config.baseUrl.trim())) {
+    return "图像生成 API 端点需要以 http:// 或 https:// 开头";
+  }
+  if (!config.apiKey.trim() && !config.hasApiKey) return "请填写图像生成 API Key";
+  if (!config.model.trim()) return "请填写图像生成模型名称";
   return "";
 }
 
@@ -763,6 +791,45 @@ function renderProviderGrid() {
   });
 }
 
+function renderImageProviderGrid() {
+  elements.imageProviderGrid.replaceChildren();
+  window.AI_IMAGE_PROVIDER_PRESETS.forEach((provider) => {
+    const button = document.createElement("button");
+    button.className = `provider-option${
+      state.imageDraft.providerId === provider.id ? " active" : ""
+    }`;
+    button.type = "button";
+
+    const logo = document.createElement("i");
+    logo.textContent = provider.shortName;
+    logo.style.background = provider.color;
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = provider.name;
+    const description = document.createElement("small");
+    description.textContent = provider.description;
+    copy.append(name, description);
+    button.append(logo, copy);
+
+    button.addEventListener("click", () => {
+      const providerChanged = state.imageDraft.providerId !== provider.id;
+      state.imageDraft.providerId = provider.id;
+      state.imageDraft.providerName = provider.name;
+      if (providerChanged) {
+        state.imageDraft.apiKey = "";
+        state.imageDraft.hasApiKey = false;
+      }
+      if (provider.id !== "custom") {
+        state.imageDraft.baseUrl = provider.baseUrl;
+        state.imageDraft.model = provider.model;
+      }
+      syncImageDraftInputs();
+      renderImageProviderGrid();
+    });
+    elements.imageProviderGrid.append(button);
+  });
+}
+
 function syncDraftInputs() {
   elements.baseUrlInput.value = state.draft.baseUrl;
   elements.modelInput.value = state.draft.model;
@@ -775,12 +842,33 @@ function syncDraftInputs() {
     : "密钥使用系统安全存储，不会写入代码仓库";
 }
 
+function syncImageDraftInputs() {
+  elements.imageBaseUrlInput.value = state.imageDraft.baseUrl || "";
+  elements.imageModelInput.value = state.imageDraft.model || "";
+  elements.imageApiKeyInput.value = "";
+  elements.imageApiKeyInput.placeholder = state.imageDraft.hasApiKey
+    ? "已安全保存，留空则保持不变"
+    : "Ark API Key";
+  elements.imageKeyHelp.textContent = state.imageDraft.hasApiKey
+    ? "已有图像生成密钥保存在系统安全存储中，输入新值可替换"
+    : "密钥使用系统安全存储，不会写入代码仓库";
+}
+
 function collectDraft() {
   return {
     ...state.draft,
     baseUrl: elements.baseUrlInput.value.trim(),
     apiKey: elements.apiKeyInput.value.trim(),
     model: elements.modelInput.value.trim()
+  };
+}
+
+function collectImageDraft() {
+  return {
+    ...state.imageDraft,
+    baseUrl: elements.imageBaseUrlInput.value.trim(),
+    apiKey: elements.imageApiKeyInput.value.trim(),
+    model: elements.imageModelInput.value.trim()
   };
 }
 
@@ -813,11 +901,20 @@ function showTestResult(type, message) {
   elements.testResultText.textContent = message;
 }
 
+function showImageConfigResult(type, message) {
+  elements.imageConfigResult.className = `test-result ${type}`;
+  elements.imageConfigResultText.textContent = message;
+}
+
 function openSettings() {
   state.draft = { ...state.config, apiKey: "" };
+  state.imageDraft = { ...state.imageConfig, apiKey: "" };
   renderProviderGrid();
+  renderImageProviderGrid();
   syncDraftInputs();
+  syncImageDraftInputs();
   elements.testResult.className = "test-result hidden";
+  elements.imageConfigResult.className = "test-result hidden";
   elements.settingsMask.classList.remove("hidden");
 }
 
@@ -1689,6 +1786,38 @@ async function saveConfig() {
   }
 }
 
+async function saveImageConfig() {
+  const draft = collectImageDraft();
+  const validationError = validateImageConfig(draft);
+  if (validationError) {
+    showImageConfigResult("error", validationError);
+    return;
+  }
+  state.savingImageConfig = true;
+  elements.saveImageConfigBtn.disabled = true;
+  elements.saveImageConfigBtn.textContent = "保存中…";
+  showImageConfigResult("idle", "正在保存图像生成配置…");
+  try {
+    state.imageConfig = await window.desktop.saveAIImageConfig(draft);
+    state.imageDraft = { ...state.imageConfig, apiKey: "" };
+    syncImageDraftInputs();
+    renderImageProviderGrid();
+    showImageConfigResult("success", "图像生成配置已保存");
+    if (activeModuleId === "image-generation") {
+      moduleFrame.contentWindow?.postMessage(
+        { type: "xuan:image-config-updated" },
+        "*"
+      );
+    }
+  } catch (error) {
+    showImageConfigResult("error", error.message || "保存图像生成配置失败");
+  } finally {
+    state.savingImageConfig = false;
+    elements.saveImageConfigBtn.disabled = false;
+    elements.saveImageConfigBtn.textContent = "保存生图配置";
+  }
+}
+
 async function sendMessage() {
   const content = elements.messageInput.value.trim();
   const chatGeneration = state.chatGeneration;
@@ -2014,10 +2143,16 @@ document.querySelector("#closeSettingsBtn").addEventListener("click", closeSetti
 document.querySelector("#cancelSettingsBtn").addEventListener("click", closeSettings);
 document.querySelector("#testConnectionBtn").addEventListener("click", testConnection);
 document.querySelector("#saveConfigBtn").addEventListener("click", saveConfig);
+elements.saveImageConfigBtn.addEventListener("click", saveImageConfig);
 document.querySelector("#showKeyBtn").addEventListener("click", () => {
   const showing = elements.apiKeyInput.type === "text";
   elements.apiKeyInput.type = showing ? "password" : "text";
   document.querySelector("#showKeyBtn").textContent = showing ? "显示" : "隐藏";
+});
+document.querySelector("#showImageKeyBtn").addEventListener("click", () => {
+  const showing = elements.imageApiKeyInput.type === "text";
+  elements.imageApiKeyInput.type = showing ? "password" : "text";
+  document.querySelector("#showImageKeyBtn").textContent = showing ? "显示" : "隐藏";
 });
 elements.messageInput.addEventListener("input", () => {
   elements.sendBtn.disabled =
@@ -2053,10 +2188,14 @@ elements.settingsMask.addEventListener("click", (event) => {
 });
 
 async function initialize() {
-  state.config = await window.desktop.getAIConfig();
+  [state.config, state.imageConfig] = await Promise.all([
+    window.desktop.getAIConfig(),
+    window.desktop.getAIImageConfig()
+  ]);
   await refreshSystemPrompt();
   await refreshProfiles();
   state.draft = { ...state.config, apiKey: "" };
+  state.imageDraft = { ...state.imageConfig, apiKey: "" };
   syncModuleState();
   renderHeader();
   await refreshConversationHistory();
