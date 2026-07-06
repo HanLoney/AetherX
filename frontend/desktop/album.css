@@ -140,7 +140,7 @@
 .album-stats div {
   min-width: 126px;
   position: relative;
-  padding: 10px 13px 10px 39px;
+  padding: 10px 16px;
   border: 1px solid rgba(119, 113, 144, .12);
   border-radius: 13px;
   background: rgba(255, 255, 255, .58);
@@ -148,31 +148,8 @@
   text-align: left;
 }
 
-.album-stats div::before {
-  width: 20px;
-  height: 20px;
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: #6f8daf;
-  background: rgba(126, 188, 239, .14);
-  font-size: 10px;
-  font-weight: 700;
-  transform: translateY(-50%);
-}
-
-.album-stats div:nth-of-type(1)::before { content: "卡"; }
-.album-stats div:nth-of-type(2)::before { content: "源"; }
 .album-stats div:nth-of-type(3) {
   min-width: 230px;
-}
-.album-stats div:nth-of-type(3)::before {
-  content: "时";
-  color: #a16f87;
-  background: rgba(235, 160, 191, .14);
 }
 
 .album-stats strong,
