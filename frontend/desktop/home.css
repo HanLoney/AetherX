@@ -1176,6 +1176,65 @@ button { color: inherit; cursor: pointer; }
   font-size: 10px;
   cursor: pointer;
 }
+.image-activity {
+  width: min(590px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(190, 123, 158, .25);
+  border-radius: 13px;
+  color: #5f6071;
+  background:
+    linear-gradient(135deg, rgba(126, 188, 239, .09), rgba(235, 160, 191, .06)),
+    rgba(250, 250, 253, .88);
+}
+.image-activity-head {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+}
+.image-activity-head > i {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #a55c86;
+  background: rgba(235, 160, 191, .16);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+.image-activity-head strong {
+  color: #58647a;
+  font-size: 10px;
+}
+.image-activity-status {
+  margin-left: auto;
+  padding: 4px 7px;
+  border-radius: 10px;
+  color: #a55c86;
+  background: rgba(235, 160, 191, .12);
+  font-size: 8px;
+}
+.image-activity-figure {
+  margin: 0;
+  padding: 2px 11px 11px;
+}
+.image-activity-figure img {
+  display: block;
+  width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: rgba(119, 113, 144, .06);
+}
+.image-activity-figure figcaption {
+  margin-top: 7px;
+  color: #8a8698;
+  font-size: 10px;
+  line-height: 1.5;
+}
 .tool-actions {
   display: flex;
   justify-content: flex-end;
