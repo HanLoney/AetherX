@@ -402,15 +402,19 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("message", async (event) => {
-  if (event.data?.type !== "aether:journals-updated" || kind !== "assistant") {
-    return;
+  if (kind !== "assistant") return;
+  const type = event.data?.type;
+  if (type === "aether:journals-updated") {
+    [journals, galleryImages] = await Promise.all([
+      window.desktop.listJournals({ limit: 50 }),
+      window.desktop.listAssistantGallery({ limit: 120 })
+    ]);
+    renderJournals();
+    renderGallery();
+  } else if (type === "aether:gallery-updated") {
+    galleryImages = await window.desktop.listAssistantGallery({ limit: 120 });
+    renderGallery();
   }
-  [journals, galleryImages] = await Promise.all([
-    window.desktop.listJournals({ limit: 50 }),
-    window.desktop.listAssistantGallery({ limit: 120 })
-  ]);
-  renderJournals();
-  renderGallery();
 });
 
 $("#userProfileForm").addEventListener("submit", async (event) => {

@@ -30,6 +30,7 @@ const state = {
   conversationPromise: null,
   persistedMessageHashes: new Map(),
   pendingApprovals: new Map(),
+  pendingGalleryRefresh: false,
   connectionStatus: "idle",
   sending: false,
   testing: false,
@@ -766,6 +767,7 @@ async function runAgentLoop() {
       }
       if (toolResult?.ok && tool?.name?.startsWith("image.")) {
         decorateImageActivity(activity, toolResult);
+        state.pendingGalleryRefresh = true;
         renderMessages();
       }
       if (!shouldReuse) seenCalls.set(signature, toolResult);
@@ -1369,6 +1371,10 @@ async function syncConversation() {
       changed.forEach((record) => {
         state.persistedMessageHashes.set(record.id, recordHash(record));
       });
+      if (state.pendingGalleryRefresh) {
+        state.pendingGalleryRefresh = false;
+        window.dispatchEvent(new CustomEvent("aether:gallery-updated"));
+      }
     }
   } catch (error) {
     console.error("Failed to persist conversation:", error.message);
@@ -2316,6 +2322,13 @@ window.addEventListener("aether:journals-updated", async () => {
 window.addEventListener("aether:dreams-updated", async () => {
   moduleFrame.contentWindow?.postMessage(
     { type: "aether:dreams-updated" },
+    "*"
+  );
+});
+
+window.addEventListener("aether:gallery-updated", () => {
+  moduleFrame.contentWindow?.postMessage(
+    { type: "aether:gallery-updated" },
     "*"
   );
 });
