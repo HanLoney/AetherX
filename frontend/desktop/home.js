@@ -118,41 +118,51 @@ async function illustrateJournalContent(content) {
   return { content: result, notes };
 }
 
-const toolRegistry = window.registerDreamTools(
-  window.registerAlbumTools(
-    window.registerJournalTools(
-      window.registerMemoryTools(
-        window.registerTodoTools(
-          new window.XuanToolRegistry({
-            isEnabled: (toolName) => {
-              const moduleId = toolName.split(".")[0];
-              if (moduleId === "journal") {
-                return window.XuanModules.isEnabled("autonomous-journal");
+const toolRegistry = window.registerImageTools(
+  window.registerDreamTools(
+    window.registerAlbumTools(
+      window.registerJournalTools(
+        window.registerMemoryTools(
+          window.registerTodoTools(
+            new window.XuanToolRegistry({
+              isEnabled: (toolName) => {
+                const moduleId = toolName.split(".")[0];
+                if (moduleId === "image") {
+                  return Boolean(state.imageConfig?.hasApiKey);
+                }
+                if (moduleId === "journal") {
+                  return window.XuanModules.isEnabled("autonomous-journal");
+                }
+                if (moduleId === "album") {
+                  return window.XuanModules.isEnabled("anniversary-album");
+                }
+                if (moduleId === "dream") {
+                  return window.XuanModules.isEnabled("dreams");
+                }
+                return window.XuanModules.isEnabled(
+                  [
+                    "memory",
+                    "profile",
+                    "assistant_profile",
+                    "personality_event",
+                    "shared_memory"
+                  ].includes(moduleId)
+                    ? "memory"
+                    : moduleId
+                );
               }
-              if (moduleId === "album") {
-                return window.XuanModules.isEnabled("anniversary-album");
-              }
-              if (moduleId === "dream") {
-                return window.XuanModules.isEnabled("dreams");
-              }
-              return window.XuanModules.isEnabled(
-                [
-                  "memory",
-                  "profile",
-                  "assistant_profile",
-                  "personality_event",
-                  "shared_memory"
-                ].includes(moduleId)
-                  ? "memory"
-                  : moduleId
-              );
-            }
-          })
-        )
-      ),
-      { illustrate: (content) => illustrateJournalContent(content) }
+            })
+          )
+        ),
+        { illustrate: (content) => illustrateJournalContent(content) }
+      )
     )
-  )
+  ),
+  {
+    generateImage: (payload) => window.desktop.generateImage(payload),
+    getPersonaImage: () => state.assistantProfile?.personaImageDataUrl || "",
+    isImageEnabled: () => Boolean(state.imageConfig?.hasApiKey)
+  }
 );
 
 const memoryModuleBtn = document.createElement("button");
@@ -754,13 +764,18 @@ async function runAgentLoop() {
         decorateJournalActivity(activity, tool.name, toolResult.data);
         renderMessages();
       }
+      if (toolResult?.ok && tool?.name?.startsWith("image.")) {
+        decorateImageActivity(activity, toolResult);
+        renderMessages();
+      }
       if (!shouldReuse) seenCalls.set(signature, toolResult);
       lastCallSignature = signature;
       summaries.push(toolResult.content);
+      const { image, ...modelResult } = toolResult;
       state.modelMessages.push({
         role: "tool",
         tool_call_id: call.id,
-        content: JSON.stringify(toolResult)
+        content: JSON.stringify(modelResult)
       });
     }
     if (repeatedCall) {
@@ -1499,6 +1514,19 @@ function decorateJournalActivity(activity, toolName, data) {
   activity.statusText = writing ? "已写入手记" : "查阅完成";
 }
 
+function decorateImageActivity(activity, toolResult) {
+  const description = toolResult?.data?.description || "";
+  const selfie = Boolean(toolResult?.data?.selfie);
+  activity.image = {
+    source: toolResult.image,
+    description,
+    selfie
+  };
+  activity.title = `画了一张${selfie ? "自拍" : "配图"}`;
+  activity.statusText = "已生成";
+  activity.expanded = true;
+}
+
 function resolveToolApproval(id, approved) {
   const pending = state.pendingApprovals.get(id);
   if (!pending) return;
@@ -1551,6 +1579,10 @@ function createActivityDisclosure(card, message, defaultExpanded = false) {
 function renderToolActivity(row, message) {
   if (message.journal) {
     renderJournalActivity(row, message);
+    return;
+  }
+  if (message.image) {
+    renderImageActivity(row, message);
     return;
   }
   const card = document.createElement("div");
@@ -1648,6 +1680,40 @@ function renderJournalActivity(row, message) {
     );
   });
   details.append(open);
+  card.append(details);
+  row.append(card);
+}
+
+function renderImageActivity(row, message) {
+  const card = document.createElement("div");
+  card.className = "image-activity";
+  const { toggle, details } = createActivityDisclosure(card, message, true);
+
+  const head = document.createElement("div");
+  head.className = "image-activity-head";
+  const icon = document.createElement("i");
+  icon.textContent = message.image.selfie ? "❁" : "◨";
+  const title = document.createElement("strong");
+  title.textContent = message.title || "画了一张图";
+  const status = document.createElement("span");
+  status.className = "image-activity-status";
+  status.textContent = message.statusText || "已生成";
+  head.append(icon, title, status, toggle);
+  card.append(head);
+
+  const figure = document.createElement("figure");
+  figure.className = "image-activity-figure";
+  const img = document.createElement("img");
+  img.src = message.image.source;
+  img.alt = message.image.description || "生成的图片";
+  img.loading = "lazy";
+  figure.append(img);
+  if (message.image.description) {
+    const caption = document.createElement("figcaption");
+    caption.textContent = message.image.description;
+    figure.append(caption);
+  }
+  details.append(figure);
   card.append(details);
   row.append(card);
 }

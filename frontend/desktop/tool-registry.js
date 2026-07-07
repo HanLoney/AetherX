@@ -66,6 +66,8 @@
         return this.failure("INVALID_ARGUMENTS", `工具参数解析失败：${error.message}`);
       }
 
+      this.coerce(tool.inputSchema, input);
+
       const validationError = this.validate(tool.inputSchema, input);
       if (validationError) {
         return this.failure("INVALID_ARGUMENTS", validationError);
@@ -97,6 +99,25 @@
           (tool) => this.toModelName(tool.name) === name
         )
       );
+    }
+
+    coerce(schema, value) {
+      if (!schema || schema.type !== "object") return;
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      for (const [key, childSchema] of Object.entries(schema.properties || {})) {
+        const current = value[key];
+        if (current === undefined) continue;
+        if (childSchema.type === "boolean" && typeof current === "string") {
+          const normalized = current.trim().toLowerCase();
+          if (normalized === "true") value[key] = true;
+          else if (normalized === "false") value[key] = false;
+        } else if (childSchema.type === "number" && typeof current === "string") {
+          const numeric = Number(current.trim());
+          if (current.trim() !== "" && !Number.isNaN(numeric)) value[key] = numeric;
+        } else if (childSchema.type === "object") {
+          this.coerce(childSchema, current);
+        }
+      }
     }
 
     validate(schema, value, path = "参数") {

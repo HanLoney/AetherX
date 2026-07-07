@@ -7,7 +7,7 @@
   const STYLE_SUFFIX =
     "日系二次元动漫插画风格，柔和干净的赛璐璐上色，细腻线条与通透光影，温柔氛围，不要写实照片质感，不要文字、水印或多余边框。";
   const PERSONA_SUFFIX =
-    "这是画面主角本人的自拍/写照，请严格参考人设图中角色的外貌、发型、发色、瞳色、气质与穿衣风格，保持同一个角色的一致形象。";
+    "这是画面主角本人的自拍/写照，请严格以人设图为准还原角色的外貌、发型、发色、瞳色、气质与穿衣风格；若文字描述与人设图在外貌、发型、发色、瞳色或服装上有冲突，一律以人设图为准，保持同一个角色的一致形象。";
 
   function extractPlaceholders(content) {
     const source = String(content || "");
@@ -162,6 +162,7 @@
     extractPlaceholders,
     buildPrompt,
     imageSource,
+    firstImage,
     illustrate,
     stripAllPlaceholders,
     stripForeignImages
