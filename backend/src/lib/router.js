@@ -19,7 +19,7 @@ async function readJson(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 1024 * 1024) {
+    if (size > 16 * 1024 * 1024) {
       throw new HttpError(413, "PAYLOAD_TOO_LARGE", "请求内容过大。");
     }
     chunks.push(chunk);

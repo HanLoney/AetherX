@@ -405,6 +405,10 @@ const MIGRATIONS = [
       encrypted_api_key TEXT NOT NULL DEFAULT '',
       updated_at INTEGER NOT NULL
     );
+  `,
+  `
+    ALTER TABLE assistant_profiles
+      ADD COLUMN persona_image_data_url TEXT NOT NULL DEFAULT '';
   `
 ];
 

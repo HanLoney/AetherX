@@ -4,7 +4,8 @@ const {
   isSystemFeedback
 } = require("../memories/memory-content-policy");
 const {
-  normalizeAvatarDataUrl
+  normalizeAvatarDataUrl,
+  normalizePersonaImageDataUrl
 } = require("../profiles/avatar-data");
 
 class AssistantMemoryService {
@@ -34,7 +35,11 @@ class AssistantMemoryService {
       avatarDataUrl:
         input.avatarDataUrl === undefined
           ? current.avatarDataUrl
-          : normalizeAvatarDataUrl(input.avatarDataUrl)
+          : normalizeAvatarDataUrl(input.avatarDataUrl),
+      personaImageDataUrl:
+        input.personaImageDataUrl === undefined
+          ? current.personaImageDataUrl
+          : normalizePersonaImageDataUrl(input.personaImageDataUrl)
     });
   }
 

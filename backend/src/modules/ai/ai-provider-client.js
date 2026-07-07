@@ -2,6 +2,7 @@ const { HttpError } = require("../../lib/http-error");
 
 const MIN_IMAGE_PIXELS = 3_686_400;
 const DEFAULT_IMAGE_SIZE = "1920x1920";
+const MAX_REFERENCE_IMAGES = 10;
 
 function chatUrl(baseUrl) {
   return /\/chat\/completions$/i.test(baseUrl)
@@ -233,6 +234,10 @@ function sanitizeImagePayload(config, payload = {}) {
   if (!body.model) {
     throw new HttpError(400, "AI_IMAGE_MODEL_REQUIRED", "请填写图像生成模型名称。");
   }
+  const referenceImages = sanitizeReferenceImages(payload.image);
+  if (referenceImages.length) {
+    body.image = referenceImages;
+  }
   if (payload.negativePrompt) {
     body.negative_prompt = String(payload.negativePrompt).slice(0, 4000);
   }
@@ -254,6 +259,21 @@ function sanitizeImageSize(value) {
   const width = Number(match[1]);
   const height = Number(match[2]);
   return width * height >= MIN_IMAGE_PIXELS ? size : DEFAULT_IMAGE_SIZE;
+}
+
+function sanitizeReferenceImages(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const images = [];
+  for (const item of list) {
+    const reference = String(item || "").trim();
+    if (!reference) continue;
+    const isDataUrl = /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(reference);
+    const isHttpUrl = /^https?:\/\//i.test(reference);
+    if (!isDataUrl && !isHttpUrl) continue;
+    images.push(reference);
+    if (images.length >= MAX_REFERENCE_IMAGES) break;
+  }
+  return images;
 }
 
 function normalizeImageResults(data) {

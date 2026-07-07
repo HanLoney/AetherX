@@ -17,8 +17,9 @@ class AssistantMemoryRepository {
     this.database.prepare(`
       INSERT INTO assistant_profiles(
         user_id, name, gender, self_definition, relationship_summary,
-        traits_json, values_json, avatar_data_url, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        traits_json, values_json, avatar_data_url, persona_image_data_url,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         name = excluded.name,
         gender = excluded.gender,
@@ -27,6 +28,7 @@ class AssistantMemoryRepository {
         traits_json = excluded.traits_json,
         values_json = excluded.values_json,
         avatar_data_url = excluded.avatar_data_url,
+        persona_image_data_url = excluded.persona_image_data_url,
         updated_at = excluded.updated_at
     `).run(
       userId,
@@ -37,6 +39,7 @@ class AssistantMemoryRepository {
       JSON.stringify(profile.traits),
       JSON.stringify(profile.values),
       profile.avatarDataUrl,
+      profile.personaImageDataUrl,
       now
     );
     return this.getProfile(userId);
@@ -180,6 +183,7 @@ function defaultProfile() {
     traits: [],
     values: [],
     avatarDataUrl: "",
+    personaImageDataUrl: "",
     updatedAt: null
   };
 }
@@ -193,6 +197,7 @@ function mapProfile(row) {
     traits: JSON.parse(row.traits_json),
     values: JSON.parse(row.values_json),
     avatarDataUrl: row.avatar_data_url || "",
+    personaImageDataUrl: row.persona_image_data_url || "",
     updatedAt: row.updated_at
   };
 }

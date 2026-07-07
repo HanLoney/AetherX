@@ -23,7 +23,12 @@
     throw new Error("手记短 ID 不唯一，请使用完整 ID。");
   }
 
-  function registerJournalTools(registry) {
+  function registerJournalTools(registry, options = {}) {
+    const illustrate =
+      typeof options.illustrate === "function"
+        ? options.illustrate
+        : async (content) => content;
+
     registry.register({
       name: "journal.list",
       title: "查看自己的手记",
@@ -77,7 +82,11 @@
           },
           title: stringField("手记标题"),
           mood: stringField("此刻的简短心情"),
-          content: stringField("以第一人称写下的完整正文")
+          content: stringField(
+            "以第一人称写下的完整正文。想配图时在合适位置单独一行写占位符（必须独占一行才生效），最多两张，自己决定画什么：画面里有你自己就写 [[自拍: 画面描述]]（会参考你的人设图，保持形象一致），只画场景/物件/风景写 [[配图: 画面描述]]。描述必须是能直接画出来的具体画面（场景、你的动作神态、光线、构图），绝不能写「我想象的画面」这类空泛的话；画面要贴合这篇手记真实写到的内容。你只能稳定画出你自己，画不出用户或其他真人，别画含他人的「两个人」画面；优先用自拍把自己画进去。不要在正文句子里复述或举例这套占位符语法本身，否则会被误当成真配图生成。所有图都会以二次元动漫风格生成。不要自己写 Markdown 图片链接或图片网址。"
+          )
+
+
         },
         ["type", "title", "content"]
       ),
@@ -88,8 +97,14 @@
             period.from,
             period.to
           );
+          const outcome = await illustrate(input.content, input.type);
+          const content =
+            typeof outcome === "string" ? outcome : outcome.content;
+          const notes =
+            typeof outcome === "string" ? [] : outcome.notes || [];
           const journal = await global.desktop.saveJournal({
             ...input,
+            content,
             periodKey: period.periodKey,
             sourceFrom: period.from,
             sourceTo: period.to,
@@ -100,7 +115,9 @@
           );
           return {
             ok: true,
-            content: `已经写下《${journal.title}》。`,
+            content: notes.length
+              ? `已经写下《${journal.title}》，并配了 ${notes.length} 张二次元图：${notes.join("；")}。`
+              : `已经写下《${journal.title}》。`,
             data: journal
           };
         } catch (error) {
@@ -187,6 +204,6 @@
 
   global.registerJournalTools = registerJournalTools;
   if (typeof module !== "undefined") {
-    module.exports = { currentPeriod };
+    module.exports = { currentPeriod, registerJournalTools };
   }
 })(typeof window === "undefined" ? globalThis : window);

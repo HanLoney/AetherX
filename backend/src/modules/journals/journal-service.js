@@ -1,5 +1,7 @@
 const { HttpError } = require("../../lib/http-error");
 
+const MAX_JOURNAL_CONTENT = 12_000_000;
+
 class JournalService {
   constructor(repository) {
     this.repository = repository;
@@ -22,7 +24,7 @@ class JournalService {
   }
 
   save(userId, input) {
-    const content = text(input.content, 30_000);
+    const content = text(input.content, MAX_JOURNAL_CONTENT);
     if (!content) {
       throw new HttpError(400, "INVALID_JOURNAL", "手记正文不能为空。");
     }
