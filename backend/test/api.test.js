@@ -1887,3 +1887,77 @@ test("complete conversations persist display and model message streams", async (
     assert.equal(listed.payload.data[0].title, "完整历史测试");
   });
 });
+
+test("assistant gallery aggregates images from conversations and journals", async () => {
+  await withServer(async (baseUrl) => {
+    const chatSource =
+      "data:image/png;base64,iVBORw0KGgoCHATIMAGEabcdef123456";
+    const journalSource =
+      "data:image/png;base64,iVBORw0KGgoJOURNALIMAGEabcdef99";
+
+    const conversation = await request(baseUrl, "POST", "/api/v1/conversations", {
+      title: "画给你看"
+    });
+    const conversationId = conversation.payload.data.id;
+    await request(
+      baseUrl,
+      "PUT",
+      `/api/v1/conversations/${conversationId}/messages`,
+      {
+        messages: [
+          {
+            id: "gallery-user",
+            stream: "display",
+            position: 0,
+            role: "user",
+            content: "画一张给我看",
+            createdAt: 2000
+          },
+          {
+            id: "gallery-image",
+            stream: "display",
+            position: 1,
+            role: "tool",
+            content: "已经画好了一张自拍。",
+            createdAt: 3000,
+            payload: {
+              image: {
+                source: chatSource,
+                description: "窗边的午后",
+                selfie: true
+              }
+            }
+          }
+        ]
+      }
+    );
+
+    const sourceFrom = Date.parse("2026-07-01T00:00:00+08:00");
+    const sourceTo = Date.parse("2026-07-02T00:00:00+08:00");
+    await request(baseUrl, "PUT", "/api/v1/assistant/journals", {
+      type: "daily",
+      periodKey: "2026-07-01",
+      title: "配了图的手记",
+      mood: "安静",
+      content: `今天写下这些。\n\n![夜色](${journalSource})\n\n结束。`,
+      sourceFrom,
+      sourceTo,
+      sourceMessageCount: 1
+    });
+
+    const gallery = await request(baseUrl, "GET", "/api/v1/assistant/gallery");
+    assert.equal(gallery.response.status, 200);
+    const items = gallery.payload.data;
+    assert.equal(items.length, 2);
+    // Journal source_to is newer than the chat message timestamp, so it sorts first.
+    assert.equal(items[0].origin, "journal");
+    assert.equal(items[0].source, journalSource);
+    assert.equal(items[0].refTitle, "配了图的手记");
+    const chatItem = items.find((item) => item.origin === "chat");
+    assert.ok(chatItem);
+    assert.equal(chatItem.source, chatSource);
+    assert.equal(chatItem.selfie, true);
+    assert.equal(chatItem.refTitle, "画给你看");
+  });
+});
+

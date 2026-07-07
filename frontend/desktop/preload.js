@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld("desktop", {
   listAlbumSourceCandidates: (filters) =>
     ipcRenderer.invoke("album:sources:candidates", filters),
   listDreams: (filters) => ipcRenderer.invoke("dreams:list", filters),
+  listAssistantGallery: (filters) =>
+    ipcRenderer.invoke("assistant-gallery:list", filters),
   getDream: (id) => ipcRenderer.invoke("dreams:get", id),
   getDreamByDate: (dreamDate) =>
     ipcRenderer.invoke("dreams:get-by-date", dreamDate),

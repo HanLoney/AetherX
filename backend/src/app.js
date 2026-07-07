@@ -94,6 +94,9 @@ const { registerAlbumRoutes } = require("./modules/album/album-routes");
 const { DreamRepository } = require("./modules/dreams/dream-repository");
 const { DreamService } = require("./modules/dreams/dream-service");
 const { registerDreamRoutes } = require("./modules/dreams/dream-routes");
+const { GalleryRepository } = require("./modules/gallery/gallery-repository");
+const { GalleryService } = require("./modules/gallery/gallery-service");
+const { registerGalleryRoutes } = require("./modules/gallery/gallery-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -139,6 +142,7 @@ function createApp(config) {
   });
   const albumService = new AlbumService(new AlbumRepository(database));
   const dreamService = new DreamService(new DreamRepository(database));
+  const galleryService = new GalleryService(new GalleryRepository(database));
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -174,6 +178,7 @@ function createApp(config) {
   registerXuanMoodRoutes(router, xuanMoodService);
   registerAlbumRoutes(router, albumService);
   registerDreamRoutes(router, dreamService);
+  registerGalleryRoutes(router, galleryService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);

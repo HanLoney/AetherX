@@ -395,6 +395,16 @@ class XuanApiClient {
     return this.request("GET", `/api/v1/dreams${query.size ? `?${query}` : ""}`);
   }
 
+  listAssistantGallery(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/assistant/gallery${query.size ? `?${query}` : ""}`
+    );
+  }
+
   getDream(id) {
     return this.request("GET", `/api/v1/dreams/${encodeURIComponent(id)}`);
   }
