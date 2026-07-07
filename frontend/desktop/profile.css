@@ -115,6 +115,39 @@ button { color: inherit; cursor: pointer; }
 }
 .profile-panel > header { margin-bottom: 18px; }
 .profile-panel h2 { margin: 0 0 5px; font-size: 17px; }
+
+.persona-image { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+.persona-image-preview {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 3 / 4;
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2f0f6;
+  border: 1px dashed #d8d3e2;
+}
+.persona-image-preview.empty { color: #a29baa; font-size: 11px; }
+.persona-image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.persona-image-actions { display: flex; gap: 8px; }
+.persona-image-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 11px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #81798a;
+  background: #eeedf2;
+  cursor: pointer;
+}
+.persona-image-actions button.primary {
+  color: white;
+  background: linear-gradient(135deg, #da8ead, #74afe0);
+}
+.persona-image-actions button:disabled { opacity: 0.5; cursor: default; }
 .profile-panel header p { margin: 0; color: #a29baa; font-size: 10px; }
 .profile-form {
   display: grid;
@@ -217,6 +250,14 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
 .journal-card .journal-content.plain { white-space: pre-wrap; }
 .journal-content.markdown-body > :first-child { margin-top: 0; }
 .journal-content.markdown-body > :last-child { margin-bottom: 0; }
+.journal-content.markdown-body .markdown-image {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 14px 0;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(70, 60, 90, 0.12);
+}
 .journal-content.markdown-body p {
   margin: 0 0 12px;
   color: inherit;

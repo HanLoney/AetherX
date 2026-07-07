@@ -64,6 +64,24 @@
         </form>
       </section>
 
+      <section id="personaImageSection" class="profile-panel hidden">
+        <header>
+          <h2>人设参考图</h2>
+          <p>她写日记、周记配图时会以这张图为参考，让照片更像她。支持 PNG / JPEG / WebP，最大 4MB。</p>
+        </header>
+        <div class="persona-image">
+          <div id="personaImagePreview" class="persona-image-preview empty">
+            <img id="personaImage" class="hidden" alt="人设参考图" />
+            <span id="personaImageFallback">还没有人设参考图</span>
+          </div>
+          <div class="persona-image-actions">
+            <button id="choosePersonaImage" class="primary" type="button">上传人设图</button>
+            <button id="removePersonaImage" type="button" disabled>移除</button>
+          </div>
+          <input id="personaImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+        </div>
+      </section>
+
       <section id="journalSection" class="profile-panel hidden">
         <header class="journal-heading">
           <div><h2 id="journalHeading">AI 伙伴手记</h2><p>由她根据原始聊天与共同经历写下的日记和周记。</p></div>

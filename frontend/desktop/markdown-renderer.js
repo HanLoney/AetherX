@@ -138,6 +138,10 @@
 
     const patterns = [
       { type: "code", regex: /`([^`\n]+)`/ },
+      {
+        type: "image",
+        regex: /!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/
+      },
       { type: "strong", regex: /\*\*(.+?)\*\*/ },
       { type: "strong", regex: /__(.+?)__/ },
       { type: "strike", regex: /~~(.+?)~~/ },
@@ -173,6 +177,13 @@
       const code = document.createElement("code");
       code.textContent = match[1];
       parent.append(code);
+    } else if (type === "image") {
+      const image = document.createElement("img");
+      image.className = "markdown-image";
+      image.src = match[2];
+      image.alt = match[1] || "";
+      image.loading = "lazy";
+      parent.append(image);
     } else {
       const tag =
         type === "strong"

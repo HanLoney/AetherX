@@ -100,6 +100,24 @@ const elements = {
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
 
+async function illustrateJournalContent(content) {
+  const illustrator = window.AetherJournalIllustrator;
+  if (!illustrator) return { content, notes: [] };
+  if (!state.imageConfig?.hasApiKey) {
+    return { content: illustrator.stripAllPlaceholders(content), notes: [] };
+  }
+  const notes = [];
+  const result = await illustrator.illustrate(content, {
+    generateImage: (payload) => window.desktop.generateImage(payload),
+    personaImage: state.assistantProfile?.personaImageDataUrl || "",
+    maxImages: 2,
+    onImage: ({ description, selfie }) =>
+      notes.push(`${selfie ? "自拍" : "配图"}「${description}」`),
+    onError: (error) => console.error("手记配图失败：", error)
+  });
+  return { content: result, notes };
+}
+
 const toolRegistry = window.registerDreamTools(
   window.registerAlbumTools(
     window.registerJournalTools(
@@ -131,7 +149,8 @@ const toolRegistry = window.registerDreamTools(
             }
           })
         )
-      )
+      ),
+      { illustrate: (content) => illustrateJournalContent(content) }
     )
   )
 );
@@ -1124,6 +1143,9 @@ const journalWriter = new window.AetherJournalWriter({
   extractText: extractResponse,
   getSystemPrompt: () => systemPrompt,
   getRuntime: runtimeOptions,
+  generateImage: (payload) => window.desktop.generateImage(payload),
+  getPersonaImage: () => state.assistantProfile?.personaImageDataUrl || "",
+  isImageEnabled: () => Boolean(state.imageConfig?.hasApiKey),
   isEnabled: () =>
     Boolean(state.config?.hasApiKey) &&
     window.XuanModules.isEnabled("autonomous-journal"),

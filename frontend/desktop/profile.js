@@ -78,6 +78,7 @@ function renderAssistant() {
   $("#heroSummary").textContent =
     profile.selfDefinition || "会持续成长的全能助手";
   $("#assistantSection").classList.remove("hidden");
+  $("#personaImageSection").classList.remove("hidden");
   $("#journalSection").classList.remove("hidden");
   $("#growthSection").classList.remove("hidden");
   $("#assistantName").value = profile.name || "";
@@ -107,6 +108,18 @@ function renderAssistant() {
   }
   renderPersonalityTimeline();
   renderJournals();
+}
+
+function renderPersonaImage() {
+  const image = $("#personaImage");
+  const fallback = $("#personaImageFallback");
+  const preview = $("#personaImagePreview");
+  const dataUrl = profile?.personaImageDataUrl || "";
+  image.classList.toggle("hidden", !dataUrl);
+  fallback.classList.toggle("hidden", Boolean(dataUrl));
+  preview.classList.toggle("empty", !dataUrl);
+  image.src = dataUrl;
+  $("#removePersonaImage").disabled = !dataUrl;
 }
 
 function renderJournals() {
@@ -195,7 +208,10 @@ function renderPersonalityTimeline() {
 function render() {
   renderAvatar();
   if (kind === "user") renderUser();
-  else renderAssistant();
+  else {
+    renderAssistant();
+    renderPersonaImage();
+  }
 }
 
 async function loadProfile() {
@@ -252,6 +268,51 @@ $("#avatarFile").addEventListener("change", async (event) => {
 $("#removeAvatar").addEventListener("click", async () => {
   try {
     await saveAvatar("");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+const MAX_PERSONA_IMAGE_BYTES = 4 * 1024 * 1024;
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取图片失败，请换一张试试。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function savePersonaImage(dataUrl) {
+  profile = await window.desktop.updateAssistantProfile({
+    personaImageDataUrl: dataUrl
+  });
+  renderPersonaImage();
+  showNotice(dataUrl ? "人设参考图已经更新。" : "人设参考图已经移除。");
+}
+
+$("#choosePersonaImage").addEventListener("click", () =>
+  $("#personaImageFile").click()
+);
+$("#personaImageFile").addEventListener("change", async (event) => {
+  const file = event.currentTarget.files?.[0];
+  event.currentTarget.value = "";
+  if (!file) return;
+  if (file.size > MAX_PERSONA_IMAGE_BYTES) {
+    showNotice("人设图大小不能超过 4MB。", true);
+    return;
+  }
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    await savePersonaImage(dataUrl);
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+$("#removePersonaImage").addEventListener("click", async () => {
+  try {
+    await savePersonaImage("");
   } catch (error) {
     showNotice(error.message, true);
   }
