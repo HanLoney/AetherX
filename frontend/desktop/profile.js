@@ -13,6 +13,8 @@ let profile = null;
 let personalityEvents = [];
 let journals = [];
 let journalFilter = "all";
+let galleryImages = [];
+let galleryFilter = "all";
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -80,6 +82,7 @@ function renderAssistant() {
   $("#assistantSection").classList.remove("hidden");
   $("#personaImageSection").classList.remove("hidden");
   $("#journalSection").classList.remove("hidden");
+  $("#gallerySection").classList.remove("hidden");
   $("#growthSection").classList.remove("hidden");
   $("#assistantName").value = profile.name || "";
   $("#assistantGender").value = profile.gender || "";
@@ -108,6 +111,7 @@ function renderAssistant() {
   }
   renderPersonalityTimeline();
   renderJournals();
+  renderGallery();
 }
 
 function renderPersonaImage() {
@@ -172,6 +176,48 @@ function renderJournals() {
   }
 }
 
+function renderGallery() {
+  const grid = $("#galleryGrid");
+  grid.replaceChildren();
+  const visible = galleryImages.filter(
+    (image) => galleryFilter === "all" || image.origin === galleryFilter
+  );
+  visible.forEach((image) => {
+    const figure = document.createElement("figure");
+    figure.className = "gallery-item";
+    const img = document.createElement("img");
+    img.src = image.source;
+    img.alt = image.description || "她画的图";
+    img.loading = "lazy";
+    const badge = document.createElement("span");
+    badge.className = `gallery-badge gallery-badge-${image.origin}`;
+    badge.textContent = image.origin === "journal" ? "手记" : "对话";
+    figure.append(img, badge);
+    figure.addEventListener("click", () => openLightbox(image));
+    grid.append(figure);
+  });
+  if (!grid.children.length) {
+    grid.innerHTML =
+      '<div class="empty">相册还是空的。当她在对话或手记里画下画面时，会收进这里。</div>';
+  }
+}
+
+function openLightbox(image) {
+  const lightbox = $("#galleryLightbox");
+  const img = $("#galleryLightboxImage");
+  const caption = $("#galleryLightboxCaption");
+  img.src = image.source;
+  img.alt = image.description || "";
+  const originLabel = image.origin === "journal" ? "手记" : "对话";
+  const from = image.refTitle ? ` · 来自${originLabel}《${image.refTitle}》` : ` · 来自${originLabel}`;
+  caption.textContent = (image.description || "").concat(from);
+  lightbox.classList.remove("hidden");
+}
+
+function closeLightbox() {
+  $("#galleryLightbox").classList.add("hidden");
+}
+
 function renderPersonalityTimeline() {
   $("#personalityTimelineSection").classList.remove("hidden");
   const timeline = $("#personalityTimeline");
@@ -218,10 +264,11 @@ async function loadProfile() {
   if (kind === "user") {
     profile = await window.desktop.getProfile();
   } else {
-    [profile, personalityEvents, journals] = await Promise.all([
+    [profile, personalityEvents, journals, galleryImages] = await Promise.all([
       window.desktop.getAssistantProfile(),
       window.desktop.listPersonalityEvents(),
-      window.desktop.listJournals({ limit: 50 })
+      window.desktop.listJournals({ limit: 50 }),
+      window.desktop.listAssistantGallery({ limit: 120 })
     ]);
   }
   render();
@@ -335,12 +382,35 @@ document.querySelectorAll(".journal-tab").forEach((button) => {
   });
 });
 
+document.querySelectorAll(".gallery-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    galleryFilter = button.dataset.galleryOrigin;
+    document.querySelectorAll(".gallery-tab").forEach((item) =>
+      item.classList.toggle("active", item === button)
+    );
+    renderGallery();
+  });
+});
+
+$("#galleryLightbox").addEventListener("click", (event) => {
+  if (event.target === $("#galleryLightbox") || event.target.closest("[data-gallery-close]")) {
+    closeLightbox();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeLightbox();
+});
+
 window.addEventListener("message", async (event) => {
   if (event.data?.type !== "aether:journals-updated" || kind !== "assistant") {
     return;
   }
-  journals = await window.desktop.listJournals({ limit: 50 });
+  [journals, galleryImages] = await Promise.all([
+    window.desktop.listJournals({ limit: 50 }),
+    window.desktop.listAssistantGallery({ limit: 120 })
+  ]);
   renderJournals();
+  renderGallery();
 });
 
 $("#userProfileForm").addEventListener("submit", async (event) => {

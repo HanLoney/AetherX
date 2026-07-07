@@ -176,6 +176,9 @@ function registerIpcHandlers() {
     api.listAlbumSourceCandidates(filters)
   );
   ipcMain.handle("dreams:list", (_event, filters) => api.listDreams(filters));
+  ipcMain.handle("assistant-gallery:list", (_event, filters) =>
+    api.listAssistantGallery(filters)
+  );
   ipcMain.handle("dreams:get", (_event, id) => api.getDream(id));
   ipcMain.handle("dreams:get-by-date", (_event, dreamDate) =>
     api.getDreamByDate(dreamDate)
