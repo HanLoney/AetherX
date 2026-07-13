@@ -62,6 +62,37 @@ button { color: inherit; cursor: pointer; }
   letter-spacing: 1px;
 }
 
+.titlebar-end {
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.titlebar-clock {
+  min-width: 72px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-right: 10px;
+  color: rgba(83, 91, 119, .72);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .4px;
+  user-select: none;
+}
+
+.titlebar-clock span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.titlebar-clock small {
+  min-width: 13px;
+  color: rgba(210, 126, 166, .68);
+  font-size: 8px;
+  font-weight: 700;
+}
+
 .window-actions {
   height: 100%;
   display: flex;

@@ -14,10 +14,15 @@
 
     <header class="titlebar">
       <div class="drag-title">AetherX</div>
-      <div class="window-actions">
-        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
-        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
-        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      <div class="titlebar-end">
+        <time id="titlebarClock" class="titlebar-clock" aria-label="当前时间">
+          <span id="clockHourMinute">--:--</span><small id="clockSecond">--</small>
+        </time>
+        <div class="window-actions">
+          <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+          <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+          <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+        </div>
       </div>
     </header>
 
@@ -208,6 +213,7 @@
       </section>
     </div>
 
+    <script src="clock.js"></script>
     <script src="ai-providers.js"></script>
     <script src="module-settings.js"></script>
     <script src="xuan-mood.js"></script>
