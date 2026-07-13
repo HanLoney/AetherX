@@ -1,8 +1,14 @@
 const { HttpError } = require("../../lib/http-error");
 const {
   isInvalidMemorySource,
+  isLowValueConversation,
   isSystemFeedback
 } = require("../memories/memory-content-policy");
+const {
+  expandQueryTerms,
+  normalizeText,
+  similarity
+} = require("../memories/memory-text");
 const {
   normalizeAvatarDataUrl,
   normalizePersonaImageDataUrl
@@ -52,13 +58,22 @@ class AssistantMemoryService {
     if (!content) {
       throw new HttpError(400, "INVALID_PERSONALITY_EVENT", "人格事件不能为空。");
     }
-    const existing = this.listEvents(userId).find(
-      (event) => normalizeText(event.content) === normalizeText(content)
-    );
+    if (isLowValueConversation(`${content}\n${input.evidence || ""}`)) {
+      return { duplicate: true, filtered: true, content };
+    }
+    const traitKey = text(input.traitKey, 100);
+    const existing = this.listEvents(userId).find((event) => {
+      if (normalizeText(event.content) === normalizeText(content)) return true;
+      return Boolean(
+        traitKey &&
+        event.traitKey === traitKey &&
+        similarity(event.content, content) >= 0.45
+      );
+    });
     if (existing) return { ...existing, duplicate: true };
     const event = this.repository.createEvent(userId, {
       category: text(input.category || "growth", 60),
-      traitKey: text(input.traitKey, 100),
+      traitKey,
       traitValue: text(input.traitValue, 500),
       content,
       evidence: text(input.evidence, 1000),
@@ -113,12 +128,17 @@ class AssistantMemoryService {
         "系统功能反馈不能保存为共同记忆。"
       );
     }
-    const existing = this.listSharedMemories(userId).find(
-      (memory) => normalizeText(memory.content) === normalizeText(content)
-    );
+    if (isLowValueConversation(`${content}\n${input.evidence || ""}`)) {
+      return { duplicate: true, filtered: true, content };
+    }
+    const type = text(input.type || "episode", 60);
+    const existing = this.listSharedMemories(userId).find((memory) => {
+      if (normalizeText(memory.content) === normalizeText(content)) return true;
+      return memory.type === type && similarity(memory.content, content) >= 0.62;
+    });
     if (existing) return { ...existing, duplicate: true };
     return this.repository.createSharedMemory(userId, {
-      type: text(input.type || "episode", 60),
+      type,
       content,
       participants: normalizeStrings(
         input.participants || ["用户", this.getProfile(userId).name],
@@ -153,15 +173,42 @@ class AssistantMemoryService {
     return memory;
   }
 
-  context(userId) {
-    const profile = this.getProfile(userId);
-    const shared = this.listSharedMemories(userId, { status: "active" })
+  recallSharedMemories(userId, query, limit = 4) {
+    const terms = expandQueryTerms(query);
+    const normalizedQuery = normalizeText(query);
+    return this.listSharedMemories(userId, { status: "active" })
       .filter(
         (memory) =>
           !isSystemFeedback(memory.content) &&
           !isInvalidMemorySource(memory.evidence)
       )
-      .slice(0, 6);
+      .map((memory) => {
+        const content = normalizeText(memory.content);
+        const matches = terms.filter((term) => content.includes(term)).length;
+        const relevance = normalizedQuery.length >= 2 && content.includes(normalizedQuery)
+          ? 6
+          : matches >= 2
+            ? Math.min(matches, 10)
+            : 0;
+        return { memory, score: relevance + memory.importance * 2 };
+      })
+      .filter(({ memory, score }) => score > memory.importance * 2 || memory.importance >= 0.9)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map(({ memory }) => memory);
+  }
+
+  context(userId, sharedMemories) {
+    const profile = this.getProfile(userId);
+    const shared = Array.isArray(sharedMemories)
+      ? sharedMemories
+      : this.listSharedMemories(userId, { status: "active" })
+          .filter(
+            (memory) =>
+              !isSystemFeedback(memory.content) &&
+              !isInvalidMemorySource(memory.evidence)
+          )
+          .slice(0, 6);
     const lines = [
       `[当前人格画像]`,
       profile.name && `名字：${profile.name}`,
@@ -239,10 +286,6 @@ function normalizeStrings(value, limit, maxLength) {
     .slice(0, limit)
     .map((item) => text(item, maxLength))
     .filter(Boolean);
-}
-
-function normalizeText(value) {
-  return String(value).toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
 }
 
 module.exports = { AssistantMemoryService };

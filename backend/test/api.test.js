@@ -1961,3 +1961,157 @@ test("assistant gallery aggregates images from conversations and journals", asyn
   });
 });
 
+test("Chinese topic recall finds a plan without exact phrase matching", async () => {
+  await withServer(async (baseUrl) => {
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      memoryKey: "project.aetherx.seven_features",
+      content: "小玄功能规划包含她的心情、惊喜来信、我们的纪念册、每日小仪式、她的小愿望、心愿漂流瓶和梦境生成",
+      entities: ["AetherX"],
+      source: "explicit",
+      importance: 0.8
+    });
+
+    const recalled = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/memories/recall",
+      { query: "七大功能还差哪些" }
+    );
+
+    assert.match(recalled.payload.data.context, /惊喜来信/);
+    assert.ok(
+      recalled.payload.data.items.some(
+        (item) => item.kind === "memory" && /功能规划/.test(item.content)
+      )
+    );
+  });
+});
+
+test("production extraction only accepts evidence from the current turn", async () => {
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: {
+      list: () => [],
+      create: () => assert.fail("history must not be extracted again")
+    },
+    memorySettingsService: { get: () => ({ autoConfirm: true }) },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([{
+                target: "memory",
+                domain: "life",
+                type: "fact",
+                content: "洛尼喜欢下午喝咖啡",
+                evidence: "我喜欢下午喝咖啡",
+                confidence: 0.95,
+                importance: 0.5,
+                sensitivity: "normal"
+              }])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "七大功能还差哪些",
+    assistantMessage: "我来查一下。",
+    conversationMessages: [
+      { role: "user", content: "我喜欢下午喝咖啡" },
+      { role: "assistant", content: "记住了" },
+      { role: "user", content: "七大功能还差哪些" },
+      { role: "assistant", content: "我来查一下。" }
+    ]
+  });
+
+  assert.equal(result.candidates.length, 0);
+  assert.equal(result.autoConfirmed.length, 0);
+});
+
+test("low-value apology is not stored as personality or shared memory", async () => {
+  const service = new MemoryIntelligenceService({
+    profileService: { get: () => ({ goals: [] }) },
+    preferenceService: { list: () => [] },
+    memoryService: { list: () => [], create: () => assert.fail("unexpected memory") },
+    memorySettingsService: { get: () => ({ autoConfirm: true, autoConfirmAll: true }) },
+    assistantMemoryService: {
+      recordEvent: () => assert.fail("apology must not become personality growth"),
+      createSharedMemory: () => assert.fail("apology must not become shared memory")
+    },
+    configRepository: { getCredentials: () => ({ apiKey: "test" }) },
+    providerClient: {
+      chat: async () => ({
+        ok: true,
+        data: {
+          choices: [{
+            message: {
+              content: JSON.stringify([
+                {
+                  target: "personality_event",
+                  traitKey: "认真记录",
+                  traitValue: "不再遗漏",
+                  type: "decision",
+                  content: "小玄对记忆丢失道歉并保证记住",
+                  evidence: "对不起，我把功能弄丢了，这次一定记住",
+                  confidence: 0.95,
+                  importance: 0.5,
+                  sensitivity: "normal"
+                },
+                {
+                  target: "shared_memory",
+                  type: "episode",
+                  content: "洛尼和小玄共同经历了一次记忆丢失",
+                  evidence: "对不起，我把功能弄丢了，这次一定记住",
+                  confidence: 0.9,
+                  importance: 0.4,
+                  sensitivity: "normal"
+                }
+              ])
+            }
+          }]
+        }
+      })
+    }
+  });
+
+  const result = await service.extract("user", {
+    userMessage: "好像是你的记忆丢失了",
+    assistantMessage: "对不起，我把功能弄丢了，这次一定记住"
+  });
+
+  assert.equal(result.personalityEvents.length, 0);
+  assert.equal(result.sharedMemories.length, 0);
+});
+
+test("explicit memory with a stable key replaces stale plan state", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      memoryKey: "project.aetherx.seven_features",
+      content: "梦境生成未开始",
+      source: "explicit"
+    });
+    const second = await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "work",
+      type: "plan",
+      memoryKey: "project.aetherx.seven_features",
+      content: "梦境生成已完成",
+      source: "explicit"
+    });
+
+    assert.equal(second.payload.data.id, first.payload.data.id);
+    assert.equal(second.payload.data.content, "梦境生成已完成");
+    assert.equal(second.payload.data.mergeCount, 2);
+  });
+});
+

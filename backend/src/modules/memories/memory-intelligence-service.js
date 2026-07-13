@@ -8,9 +8,12 @@ const DOMAIN_KEYWORDS = {
 };
 const {
   isInvalidMemorySource,
+  isLowValueConversation,
   isQuestion,
+  isSharedExperience,
   isSystemFeedback
 } = require("./memory-content-policy");
+const { expandQueryTerms, normalizeText } = require("./memory-text");
 
 class MemoryIntelligenceService {
   constructor({
@@ -46,7 +49,7 @@ class MemoryIntelligenceService {
           !isSystemFeedback(memory.content)
       );
     const scenes = detectScenes(query);
-    const terms = queryTerms(query);
+    const terms = expandQueryTerms(query);
 
     const recalledMemories = memories
       .map((memory) => ({
@@ -69,6 +72,8 @@ class MemoryIntelligenceService {
           )
       )
       .slice(0, 8);
+    const recalledShared =
+      this.assistantMemoryService?.recallSharedMemories?.(userId, query, 4) || [];
 
     const items = [
       ...recalledPreferences.map((preference) => ({
@@ -87,6 +92,13 @@ class MemoryIntelligenceService {
         content: memory.content,
         reason: scenes.has(memory.domain) ? `${memory.domain} 场景相关` : "内容相关",
         source: memory.source
+      })),
+      ...recalledShared.map((memory) => ({
+        kind: "shared_memory",
+        id: memory.id,
+        content: memory.content,
+        reason: "相关共同经历",
+        source: memory.source
       }))
     ].slice(0, 12);
 
@@ -95,13 +107,14 @@ class MemoryIntelligenceService {
       items,
       context: [
         buildContext(profile, recalledPreferences, recalledMemories),
-        this.assistantMemoryService?.context(userId)
+        this.assistantMemoryService?.context(userId, recalledShared)
       ].filter(Boolean).join("\n\n")
     };
   }
 
   async extract(userId, input) {
     const conversationMessages = normalizeConversationMessages(input);
+    const evidenceMessages = extractionEvidenceMessages(input, conversationMessages);
     const userMessages = conversationMessages
       .filter((message) => message.role === "user")
       .map((message) => message.content);
@@ -134,7 +147,7 @@ class MemoryIntelligenceService {
 assistant_profile 的 field 只能是 name、gender、selfDefinition、relationshipSummary。
 profile 的 field 只能是 displayName、preferredName、birthday、occupation、bio、goals。
 偏好示例：用户说“我喜欢可爱的颜文字”，应输出 target=preference、category=communication、key=kaomoji_style，而不是普通 memory。
-同一事实即使在最近对话中反复出现，也只能输出一次，并始终使用相同 memoryKey。
+同一事实即使在最近对话中反复出现，也只能输出一次，并始终使用相同 memoryKey。历史消息只用于消歧和补充上下文；只能从“本轮可提取证据”中选择 evidence，禁止重新提取更早轮次。
 生日 value 必须规范成 MM-DD 或 YYYY-MM-DD。只有非常明确、无歧义的直接陈述才给 confidence >= 0.9。`
         },
         {
@@ -144,7 +157,12 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
               (message) =>
                 `${message.role === "user" ? "[用户]" : "[助手]"} ${message.content}`
             )
-            .join("\n")}`
+            .join("\n")}\n\n本轮可提取证据：\n${evidenceMessages
+              .map(
+                (message) =>
+                  `${message.role === "user" ? "[用户]" : "[助手]"} ${message.content}`
+              )
+              .join("\n")}`
         }
       ],
       tools: []
@@ -180,7 +198,7 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
         continue;
       }
       const evidence = String(candidate.evidence || "").trim();
-      const source = findEvidenceSource(conversationMessages, evidence);
+      const source = findEvidenceSource(evidenceMessages, evidence);
       if (
         !source ||
         (source.role === "user" && isQuestion(source.content)) ||
@@ -289,6 +307,10 @@ profile 的 field 只能是 displayName、preferredName、birthday、occupation�
 
       if (candidate.target === "shared_memory") {
         if (!this.assistantMemoryService) continue;
+        if (
+          isLowValueConversation(`${candidate.content}\n${evidence}`) ||
+          !isSharedExperience(`${candidate.content}\n${evidence}`)
+        ) continue;
         const shared = this.assistantMemoryService.createSharedMemory(userId, {
           type: candidate.type,
           content: candidate.content,
@@ -433,6 +455,20 @@ function normalizeConversationMessages(input) {
   return normalized;
 }
 
+function extractionEvidenceMessages(input, conversationMessages) {
+  const current = [];
+  const userMessage = String(input.userMessage || "").trim();
+  const assistantMessage = String(input.assistantMessage || "").trim();
+  if (userMessage) current.push({ role: "user", content: userMessage.slice(0, 8000) });
+  if (assistantMessage) {
+    current.push({ role: "assistant", content: assistantMessage.slice(0, 8000) });
+  }
+  // Older callers may only provide conversationMessages. Keep that API working,
+  // while production callers explicitly mark the current turn to avoid reprocessing
+  // the overlapping history window on every response.
+  return current.length ? current : conversationMessages;
+}
+
 function findEvidenceSource(messages, evidence) {
   if (!evidence || evidence.length < 2) return null;
   return messages.find((message) => message.content.includes(evidence)) || null;
@@ -454,7 +490,7 @@ function isLowValuePersonalityEvent(candidate, source) {
     candidate.evidence,
     source?.content
   ].map((item) => String(item || "")).join("\n");
-  if (isSystemFeedback(text)) return true;
+  if (isSystemFeedback(text) || isLowValueConversation(text)) return true;
 
   const traitKey = String(candidate.traitKey || "").trim();
   const traitValue = String(candidate.traitValue || "").trim();
@@ -499,21 +535,20 @@ function detectScenes(query) {
   return result;
 }
 
-function queryTerms(query) {
-  return query
-    .toLowerCase()
-    .split(/[\s,，。！？、;；:：/\\]+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length >= 2)
-    .slice(0, 20);
-}
-
 function scoreMemory(memory, query, terms, scenes) {
-  const content = memory.content.toLowerCase();
+  const content = normalizeText(memory.content);
+  const normalizedQuery = normalizeText(query);
   let relevance = 0;
   if (scenes.has(memory.domain)) relevance += 4;
-  if (memory.entities.some((entity) => query.includes(entity))) relevance += 5;
-  relevance += terms.filter((term) => content.includes(term)).length * 3;
+  if (memory.entities.some((entity) => normalizedQuery.includes(normalizeText(entity)))) {
+    relevance += 5;
+  }
+  const matchedTerms = terms.filter((term) => content.includes(term));
+  if (normalizedQuery.length >= 2 && content.includes(normalizedQuery)) {
+    relevance += 6;
+  } else if (matchedTerms.length >= 2) {
+    relevance += Math.min(12, matchedTerms.length) * 0.75;
+  }
   if (!relevance) return memory.importance >= 0.9 ? memory.importance : 0;
   return relevance + memory.importance * 2 + memory.confidence;
 }

@@ -48,7 +48,9 @@ class MemoryConsolidationService {
         return { action: "duplicate", memory: match, evidenceAdded: false };
       }
       const updated = this.memoryService.update(userId, match.id, {
-        ...mergeMemory(match, { ...candidate, memoryKey }),
+        ...mergeMemory(match, { ...candidate, memoryKey }, {
+          sameKey: Boolean(keyMatch && keyMatch.id === match.id)
+        }),
         mergeCount: match.mergeCount + 1
       });
       if (evidence) {
@@ -224,15 +226,16 @@ function shouldMerge(left, right) {
   return left.type === right.type && score >= 0.72;
 }
 
-function mergeMemory(current, incoming) {
+function mergeMemory(current, incoming, { sameKey = false } = {}) {
   const incomingPreferred =
-    current.source !== "explicit" &&
-    Number(incoming.confidence || 0) >= Number(current.confidence || 0) &&
-    String(incoming.content || "").length < current.content.length;
+    (sameKey && incoming.source === "explicit") ||
+    (current.source !== "explicit" &&
+      Number(incoming.confidence || 0) >= Number(current.confidence || 0) &&
+      (sameKey || String(incoming.content || "").length < current.content.length));
   return {
     content: incomingPreferred ? incoming.content : current.content,
-    domain: current.domain,
-    type: current.type,
+    domain: incomingPreferred ? incoming.domain : current.domain,
+    type: incomingPreferred ? incoming.type : current.type,
     entities: [...new Set([...(current.entities || []), ...(incoming.entities || [])])],
     source: current.source === "explicit" ? "explicit" : incoming.source || current.source,
     confidence: Math.max(current.confidence || 0, incoming.confidence || 0),
