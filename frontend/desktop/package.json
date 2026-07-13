@@ -25,7 +25,11 @@
     "files": [
       "main.js",
       "api-client.js",
+      "auth-store.js",
       "preload.js",
+      "auth.html",
+      "auth.css",
+      "auth.js",
       "home.html",
       "home.css",
       "app-shell.css",

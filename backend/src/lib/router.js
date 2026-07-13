@@ -32,11 +32,11 @@ async function readJson(request) {
   }
 }
 
-function createRouter({ corsOrigin = "*" } = {}) {
+function createRouter({ corsOrigin = "*", authenticate } = {}) {
   const routes = [];
 
-  function add(method, path, handler) {
-    routes.push({ method, ...compilePath(path), handler });
+  function add(method, path, handler, options = {}) {
+    routes.push({ method, ...compilePath(path), handler, public: options.public === true });
   }
 
   async function handle(request, response) {
@@ -46,7 +46,7 @@ function createRouter({ corsOrigin = "*" } = {}) {
     response.setHeader("Access-Control-Allow-Origin", corsOrigin);
     response.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Xuan-User-Id, X-Request-Id"
+      "Content-Type, Authorization, X-Request-Id"
     );
     response.setHeader(
       "Access-Control-Allow-Methods",
@@ -72,12 +72,19 @@ function createRouter({ corsOrigin = "*" } = {}) {
       const params = Object.fromEntries(
         route.keys.map((key, index) => [key, decodeURIComponent(match[index + 1])])
       );
+      const auth = route.public
+        ? null
+        : authenticate?.(request.headers.authorization);
+      if (!route.public && !auth) {
+        throw new HttpError(401, "AUTH_REQUIRED", "请先登录。");
+      }
       const context = {
         request,
         requestId,
         params,
         query: Object.fromEntries(url.searchParams.entries()),
-        userId: String(request.headers["x-xuan-user-id"] || "local-user"),
+        auth,
+        userId: auth?.userId || "",
         body: ["POST", "PUT", "PATCH"].includes(request.method)
           ? await readJson(request)
           : {}

@@ -10,6 +10,8 @@ function loadConfig(environment = process.env) {
       path.join(process.cwd(), ".data"),
     masterKey:
       environment.AETHERX_MASTER_KEY || environment.XUANAI_MASTER_KEY || "",
+    registrationSecret: environment.AETHERX_REGISTRATION_SECRET || "",
+    sessionTtlDays: Number(environment.AETHERX_SESSION_TTL_DAYS || 30),
     corsOrigin:
       environment.AETHERX_CORS_ORIGIN || environment.XUANAI_CORS_ORIGIN || "*"
   };

@@ -4,7 +4,37 @@ info:
   version: 1.0.0
 servers:
   - url: http://127.0.0.1:4318/api/v1
+security:
+  - bearerAuth: []
 paths:
+  /auth/config:
+    get:
+      security: []
+      summary: 查询注册入口状态
+      responses:
+        "200": { description: 注册入口配置 }
+  /auth/register:
+    post:
+      security: []
+      summary: 创建账号并登录
+      responses:
+        "200": { description: 新账号、会话令牌与旧数据迁移结果 }
+  /auth/login:
+    post:
+      security: []
+      summary: 使用账号密码登录
+      responses:
+        "200": { description: 当前账号与会话令牌 }
+  /auth/session:
+    get:
+      summary: 验证当前会话
+      responses:
+        "200": { description: 当前登录账号 }
+  /auth/logout:
+    post:
+      summary: 注销当前会话
+      responses:
+        "204": { description: 已退出登录 }
   /todos:
     get:
       summary: 查询待办
@@ -182,3 +212,9 @@ paths:
       summary: 增量写入或更新会话消息
       responses:
         "200": { description: 已保存的消息数量 }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

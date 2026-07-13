@@ -4,6 +4,13 @@ contextBridge.exposeInMainWorld("desktop", {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
+  getAuthState: () => ipcRenderer.invoke("auth:state"),
+  bootstrapAuth: () => ipcRenderer.invoke("auth:bootstrap"),
+  getAuthConfig: (serverUrl) => ipcRenderer.invoke("auth:config", serverUrl),
+  login: (input) => ipcRenderer.invoke("auth:login", input),
+  register: (input) => ipcRenderer.invoke("auth:register", input),
+  getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
+  logout: () => ipcRenderer.invoke("auth:logout"),
   showNotification: (notification) =>
     ipcRenderer.invoke("notification:show", notification),
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),

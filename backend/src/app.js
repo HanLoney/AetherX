@@ -97,11 +97,21 @@ const { registerDreamRoutes } = require("./modules/dreams/dream-routes");
 const { GalleryRepository } = require("./modules/gallery/gallery-repository");
 const { GalleryService } = require("./modules/gallery/gallery-service");
 const { registerGalleryRoutes } = require("./modules/gallery/gallery-routes");
+const { AuthRepository } = require("./modules/auth/auth-repository");
+const { AuthService } = require("./modules/auth/auth-service");
+const { registerAuthRoutes } = require("./modules/auth/auth-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
   const secretBox = createSecretBox(config.dataDir, config.masterKey);
-  const router = createRouter({ corsOrigin: config.corsOrigin });
+  const authService = new AuthService(new AuthRepository(database), {
+    registrationSecret: config.registrationSecret,
+    sessionTtlDays: config.sessionTtlDays
+  });
+  const router = createRouter({
+    corsOrigin: config.corsOrigin,
+    authenticate: (authorization) => authService.authenticate(authorization)
+  });
 
   const todoRepository = new TodoRepository(database);
   const todoService = new TodoService(todoRepository);
@@ -154,9 +164,13 @@ function createApp(config) {
     providerClient: aiProviderClient
   });
 
-  router.add("GET", "/health", () => ({
-    data: { status: "ok", service: "aetherx-backend" }
-  }));
+  router.add(
+    "GET",
+    "/health",
+    () => ({ data: { status: "ok", service: "aetherx-backend" } }),
+    { public: true }
+  );
+  registerAuthRoutes(router, authService);
   registerTodoRoutes(router, todoService);
   registerAiRoutes(
     router,

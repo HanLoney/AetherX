@@ -10,10 +10,21 @@ class ApiError extends Error {
 
 class XuanApiClient {
   constructor(options = {}) {
-    this.baseUrl = String(
-      options.baseUrl || "http://127.0.0.1:4318"
-    ).replace(/\/+$/, "");
-    this.userId = options.userId || "local-user";
+    this.setBaseUrl(options.baseUrl || "http://127.0.0.1:4318");
+    this.token = String(options.token || "");
+    this.onUnauthorized = options.onUnauthorized;
+  }
+
+  setBaseUrl(baseUrl) {
+    const value = String(baseUrl || "").trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(value)) {
+      throw new ApiError("服务器地址需要以 http:// 或 https:// 开头。", 400, "INVALID_SERVER_URL");
+    }
+    this.baseUrl = value;
+  }
+
+  setToken(token) {
+    this.token = String(token || "");
   }
 
   async request(method, path, body) {
@@ -25,7 +36,7 @@ class XuanApiClient {
         method,
         headers: {
           "Content-Type": "application/json",
-          "X-Xuan-User-Id": this.userId
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: controller.signal
@@ -33,12 +44,16 @@ class XuanApiClient {
       const payload =
         response.status === 204 ? { data: null } : await response.json();
       if (!response.ok) {
-        throw new ApiError(
+        const error = new ApiError(
           payload?.error?.message || `后端请求失败（HTTP ${response.status}）`,
           response.status,
           payload?.error?.code,
           payload?.requestId
         );
+        if (response.status === 401 && typeof this.onUnauthorized === "function") {
+          this.onUnauthorized(error);
+        }
+        throw error;
       }
       return payload.data;
     } catch (error) {
@@ -54,6 +69,26 @@ class XuanApiClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  getAuthConfig() {
+    return this.request("GET", "/api/v1/auth/config");
+  }
+
+  register(input) {
+    return this.request("POST", "/api/v1/auth/register", input);
+  }
+
+  login(input) {
+    return this.request("POST", "/api/v1/auth/login", input);
+  }
+
+  getSession() {
+    return this.request("GET", "/api/v1/auth/session");
+  }
+
+  logout() {
+    return this.request("POST", "/api/v1/auth/logout");
   }
 
   getAiConfig() {

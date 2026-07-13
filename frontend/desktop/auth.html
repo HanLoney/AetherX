@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>进入 AetherX</title>
+    <link rel="stylesheet" href="app-shell.css" />
+    <link rel="stylesheet" href="auth.css" />
+  </head>
+  <body>
+    <div class="aurora aurora-pink"></div>
+    <div class="aurora aurora-blue"></div>
+    <header class="auth-titlebar">
+      <span>AetherX</span>
+      <div class="window-actions">
+        <button id="minimizeBtn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="auth-shell">
+      <section class="auth-story" aria-label="AetherX 介绍">
+        <div class="story-mark" aria-hidden="true">
+          <span></span><i></i><b></b>
+        </div>
+        <p class="eyebrow">PRIVATE DIGITAL SPACE</p>
+        <h1>回到只属于<br />你们的空间</h1>
+        <p class="story-copy">
+          对话、记忆与共同留下的片刻，都由你的账号独立守护。
+        </p>
+        <div class="privacy-note">
+          <i aria-hidden="true"></i>
+          <span><strong>每个账号各自独立</strong><small>别人无法读取你的记忆与内容</small></span>
+        </div>
+      </section>
+
+      <section class="auth-card">
+        <div class="auth-card-inner">
+          <header>
+            <p id="formKicker">WELCOME BACK</p>
+            <h2 id="formTitle">欢迎回来</h2>
+            <span id="formHint">登录后继续刚才的故事</span>
+          </header>
+
+          <div class="mode-tabs" role="tablist" aria-label="登录方式">
+            <button id="loginTab" class="active" type="button" role="tab">登录</button>
+            <button id="registerTab" type="button" role="tab">创建账号</button>
+          </div>
+
+          <form id="authForm" novalidate>
+            <label class="field server-field">
+              <span>服务器</span>
+              <div class="field-control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4.5" width="16" height="6" rx="2"/><rect x="4" y="13.5" width="16" height="6" rx="2"/><path d="M8 7.5h.01M8 16.5h.01M12 7.5h4M12 16.5h4"/></svg>
+                <input id="serverUrl" type="url" spellcheck="false" autocomplete="url" placeholder="https://api.example.com" required />
+                <span id="serverState" class="server-state"></span>
+              </div>
+            </label>
+
+            <label id="displayNameField" class="field hidden">
+              <span>怎么称呼你</span>
+              <div class="field-control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 19c.7-3.5 3-5.3 6.5-5.3s5.8 1.8 6.5 5.3"/></svg>
+                <input id="displayName" maxlength="40" autocomplete="name" placeholder="例如：洛尼" />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>账号名</span>
+              <div class="field-control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 19c.7-3.5 3-5.3 6.5-5.3s5.8 1.8 6.5 5.3"/></svg>
+                <input id="username" maxlength="32" autocomplete="username" placeholder="输入账号名" required />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>密码</span>
+              <div class="field-control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10M12 14v2"/></svg>
+                <input id="password" type="password" minlength="10" maxlength="128" autocomplete="current-password" placeholder="输入密码" required />
+                <button id="togglePassword" class="field-action" type="button">显示</button>
+              </div>
+              <small id="passwordHelp" class="field-help hidden">至少 10 个字符，请使用不重复的密码</small>
+            </label>
+
+            <label id="registrationSecretField" class="field hidden">
+              <span>注册口令</span>
+              <div class="field-control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="3"/><path d="M11 12h9M16 12v3M19 12v2"/></svg>
+                <input id="registrationSecret" type="password" autocomplete="off" placeholder="由服务器管理员提供" />
+              </div>
+            </label>
+
+            <div id="migrationNotice" class="migration-notice hidden">
+              <i aria-hidden="true">✦</i>
+              <span><strong>现有数据会被完整保留</strong><small>首个账号创建后，原来的记忆、手记和设置会自动归到这个账号。</small></span>
+            </div>
+
+            <div id="authError" class="auth-error hidden" role="alert"></div>
+            <button id="submitBtn" class="submit-button" type="submit">
+              <span>进入 AetherX</span><i aria-hidden="true">→</i>
+            </button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+  </body>
+</html>

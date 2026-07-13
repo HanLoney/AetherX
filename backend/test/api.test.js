@@ -21,18 +21,38 @@ const {
   normalizeCurrentTimeClaims
 } = require("../src/modules/ai/ai-routes");
 
+const authTokens = new Map();
+
 async function withServer(run) {
+  await withUnregisteredServer(async (baseUrl, dataDir, app) => {
+    const registered = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "test-user",
+      displayName: "Test User",
+      password: "correct-horse-battery-staple"
+    });
+    assert.equal(registered.response.status, 200);
+    authTokens.set(baseUrl, registered.payload.data.token);
+    try {
+      await run(baseUrl, dataDir, app);
+    } finally {
+      authTokens.delete(baseUrl);
+    }
+  });
+}
+
+async function withUnregisteredServer(run, config = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "xuanai-test-"));
   const app = createApp({
     host: "127.0.0.1",
     port: 0,
     dataDir,
     masterKey: "test-master-key",
-    corsOrigin: "*"
+    corsOrigin: "*",
+    ...config
   });
   const address = await app.listen();
   try {
-    await run(`http://127.0.0.1:${address.port}`, dataDir);
+    await run(`http://127.0.0.1:${address.port}`, dataDir, app);
   } finally {
     await app.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -40,11 +60,16 @@ async function withServer(run) {
 }
 
 async function request(baseUrl, method, route, body) {
+  return rawRequest(baseUrl, method, route, body, authTokens.get(baseUrl));
+}
+
+async function rawRequest(baseUrl, method, route, body, token = "", headers = {}) {
   const response = await fetch(`${baseUrl}${route}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-Xuan-User-Id": "test-user"
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
@@ -1959,6 +1984,151 @@ test("assistant gallery aggregates images from conversations and journals", asyn
     assert.equal(chatItem.selfie, true);
     assert.equal(chatItem.refTitle, "画给你看");
   });
+});
+
+test("protected endpoints reject spoofed user headers without a session", async () => {
+  await withUnregisteredServer(async (baseUrl) => {
+    const result = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/memories",
+      undefined,
+      "",
+      { "X-Xuan-User-Id": "local-user" }
+    );
+    assert.equal(result.response.status, 401);
+    assert.equal(result.payload.error.code, "AUTH_REQUIRED");
+  });
+});
+
+test("first account atomically claims existing local-user data", async () => {
+  await withUnregisteredServer(async (baseUrl, _dataDir, app) => {
+    const now = Date.now();
+    app.database
+      .prepare(
+        `INSERT INTO todos(
+          id, user_id, text, start_at, end_at, completed, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+      )
+      .run("legacy-todo", "local-user", "保留下来的待办", now, now + 60000, now, now);
+
+    const registered = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "luoni",
+      displayName: "洛尼",
+      password: "a-strong-password-for-luoni"
+    });
+    assert.equal(registered.response.status, 200);
+    assert.equal(registered.payload.data.migratedExistingData, true);
+
+    const listed = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/todos",
+      undefined,
+      registered.payload.data.token
+    );
+    assert.equal(listed.response.status, 200);
+    assert.equal(listed.payload.data[0].text, "保留下来的待办");
+    const owner = app.database
+      .prepare("SELECT user_id FROM todos WHERE id = ?")
+      .get("legacy-todo");
+    assert.equal(owner.user_id, registered.payload.data.user.id);
+  });
+});
+
+test("authenticated users cannot read or mutate each other's data", async () => {
+  await withUnregisteredServer(
+    async (baseUrl) => {
+      const first = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+        username: "first-user",
+        password: "first-user-password",
+        registrationSecret: "invite-only"
+      });
+      const second = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+        username: "second-user",
+        password: "second-user-password",
+        registrationSecret: "invite-only"
+      });
+      assert.equal(first.response.status, 200);
+      assert.equal(second.response.status, 200);
+
+      const created = await rawRequest(
+        baseUrl,
+        "POST",
+        "/api/v1/todos",
+        { text: "只属于第一个账号", startAt: Date.now(), endAt: Date.now() + 60000 },
+        first.payload.data.token
+      );
+      assert.equal(created.response.status, 201);
+
+      const secondList = await rawRequest(
+        baseUrl,
+        "GET",
+        "/api/v1/todos",
+        undefined,
+        second.payload.data.token
+      );
+      assert.deepEqual(secondList.payload.data, []);
+
+      const stolenUpdate = await rawRequest(
+        baseUrl,
+        "PATCH",
+        `/api/v1/todos/${created.payload.data.id}`,
+        { text: "越权修改" },
+        second.payload.data.token
+      );
+      assert.equal(stolenUpdate.response.status, 404);
+
+      const privateMemory = await rawRequest(
+        baseUrl,
+        "POST",
+        "/api/v1/memories",
+        { domain: "life", type: "fact", content: "第一个账号的秘密" },
+        first.payload.data.token
+      );
+      const stolenMemory = await rawRequest(
+        baseUrl,
+        "GET",
+        `/api/v1/memories/${privateMemory.payload.data.id}`,
+        undefined,
+        second.payload.data.token
+      );
+      assert.equal(stolenMemory.response.status, 404);
+
+      await rawRequest(
+        baseUrl,
+        "PUT",
+        "/api/v1/profile",
+        { displayName: "第一个账号" },
+        first.payload.data.token
+      );
+      const secondProfile = await rawRequest(
+        baseUrl,
+        "GET",
+        "/api/v1/profile",
+        undefined,
+        second.payload.data.token
+      );
+      assert.equal(secondProfile.payload.data.displayName, "");
+
+      const privateConversation = await rawRequest(
+        baseUrl,
+        "POST",
+        "/api/v1/conversations",
+        { title: "私密对话" },
+        first.payload.data.token
+      );
+      const stolenConversation = await rawRequest(
+        baseUrl,
+        "GET",
+        `/api/v1/conversations/${privateConversation.payload.data.id}`,
+        undefined,
+        second.payload.data.token
+      );
+      assert.equal(stolenConversation.response.status, 404);
+    },
+    { registrationSecret: "invite-only" }
+  );
 });
 
 test("Chinese topic recall finds a plan without exact phrase matching", async () => {

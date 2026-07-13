@@ -34,7 +34,7 @@ npm install
 npm start
 ```
 
-如后端不在本机默认端口，通过 `AETHERX_SERVER_URL` 指定：
+桌面端启动后可在登录页填写服务器地址；也可以通过 `AETHERX_SERVER_URL` 预设：
 
 ```powershell
 $env:AETHERX_SERVER_URL = "https://api.example.com"
