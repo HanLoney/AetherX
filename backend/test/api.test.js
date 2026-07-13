@@ -2159,6 +2159,51 @@ test("Chinese topic recall finds a plan without exact phrase matching", async ()
   });
 });
 
+test("Chinese schedule queries find stored work-time memories", async () => {
+  await withServer(async (baseUrl) => {
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "life",
+      type: "routine",
+      memoryKey: "routine.work.end_time",
+      content: "用户每天六点半下班。",
+      entities: [],
+      source: "explicit",
+      importance: 0.7
+    });
+    await request(baseUrl, "POST", "/api/v1/memories", {
+      domain: "life",
+      type: "fact",
+      content: "用户喜欢番茄钟到时间后提醒休息。",
+      entities: [],
+      source: "explicit",
+      importance: 1
+    });
+
+    const searched = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/memories?q=${encodeURIComponent("下班时间")}`
+    );
+    assert.match(searched.payload.data[0].content, /六点半下班/);
+    assert.ok(
+      searched.payload.data.every((memory) => !/番茄钟/.test(memory.content))
+    );
+
+    const recalled = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/memories/recall",
+      { query: "还有多久下班呀" }
+    );
+    assert.ok(
+      recalled.payload.data.items.some(
+        (item) => item.kind === "memory" && /六点半下班/.test(item.content)
+      )
+    );
+    assert.match(recalled.payload.data.context, /六点半下班/);
+  });
+});
+
 test("production extraction only accepts evidence from the current turn", async () => {
   const service = new MemoryIntelligenceService({
     profileService: { get: () => ({ goals: [] }) },

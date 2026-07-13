@@ -1,5 +1,8 @@
 const DOMAIN_KEYWORDS = {
-  life: ["生活", "吃", "喝", "睡", "家", "旅行", "购物", "做饭", "作息"],
+  life: [
+    "生活", "吃", "喝", "睡", "家", "旅行", "购物", "做饭", "作息",
+    "上班", "下班", "通勤"
+  ],
   relationship: ["家人", "朋友", "同事", "伴侣", "父母", "关系", "生日", "纪念日"],
   health: ["健康", "身体", "医院", "医生", "药", "运动", "健身", "睡眠", "不舒服"],
   work: ["工作", "项目", "代码", "产品", "客户", "会议", "需求", "上线", "开发"],
@@ -13,7 +16,11 @@ const {
   isSharedExperience,
   isSystemFeedback
 } = require("./memory-content-policy");
-const { expandQueryTerms, normalizeText } = require("./memory-text");
+const {
+  expandQueryTerms,
+  normalizeText,
+  scoreTextMatch
+} = require("./memory-text");
 
 class MemoryIntelligenceService {
   constructor({
@@ -544,12 +551,7 @@ function scoreMemory(memory, query, terms, scenes) {
   if (memory.entities.some((entity) => normalizedQuery.includes(normalizeText(entity)))) {
     relevance += 5;
   }
-  const matchedTerms = terms.filter((term) => content.includes(term));
-  if (normalizedQuery.length >= 2 && content.includes(normalizedQuery)) {
-    relevance += 6;
-  } else if (matchedTerms.length >= 2) {
-    relevance += Math.min(12, matchedTerms.length) * 0.75;
-  }
+  relevance += scoreTextMatch(content, normalizedQuery, terms);
   if (!relevance) return memory.importance >= 0.9 ? memory.importance : 0;
   return relevance + memory.importance * 2 + memory.confidence;
 }

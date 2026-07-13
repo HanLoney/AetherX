@@ -1,4 +1,8 @@
 const { randomUUID } = require("node:crypto");
+const {
+  expandQueryTerms,
+  scoreTextMatch
+} = require("./memory-text");
 
 class MemoryRepository {
   constructor(database) {
@@ -34,7 +38,7 @@ class MemoryRepository {
       .map((term) => `"${term.replaceAll('"', '""')}"`)
       .join(" AND ");
     if (!expression) return this.list(userId, { status: "active" });
-    return this.database
+    const fullTextMatches = this.database
       .prepare(
          `SELECT m.* FROM memories_fts f
          JOIN memories m ON m.id = f.memory_id
@@ -43,6 +47,28 @@ class MemoryRepository {
       )
       .all(expression, userId)
       .map(mapMemory);
+    const terms = expandQueryTerms(query);
+    const fullTextIds = new Set(fullTextMatches.map((memory) => memory.id));
+    return this.list(userId, {})
+      .map((memory) => ({
+        memory,
+        score: scoreTextMatch(
+          `${memory.content} ${memory.entities.join(" ")}`,
+          query,
+          terms
+        ),
+        fullTextMatch: fullTextIds.has(memory.id)
+      }))
+      .filter((item) => item.score > 0)
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          Number(right.fullTextMatch) - Number(left.fullTextMatch) ||
+          right.memory.importance - left.memory.importance ||
+          right.memory.updatedAt - left.memory.updatedAt
+      )
+      .slice(0, 50)
+      .map((item) => item.memory);
   }
 
   find(userId, id) {
