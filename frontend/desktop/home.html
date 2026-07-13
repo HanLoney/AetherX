@@ -82,6 +82,24 @@
                 <i></i><span id="statusLabel">尚未配置</span>
               </span>
               <button id="clearChatBtn" class="icon-button" title="清空对话">↺</button>
+              <div id="accountControl" class="account-control">
+                <button id="accountBtn" class="account-button" type="button" aria-haspopup="menu" aria-expanded="false">
+                  <span id="accountInitial" class="account-initial">你</span>
+                  <span id="accountName">我的空间</span>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 8 3 3 3-3" /></svg>
+                </button>
+                <div id="accountMenu" class="account-menu hidden" role="menu">
+                  <div class="account-summary">
+                    <span id="accountMenuInitial">你</span>
+                    <div><strong id="accountMenuName">我的空间</strong><small id="accountUsername"></small></div>
+                  </div>
+                  <small id="accountServer" class="account-server"></small>
+                  <button id="logoutBtn" type="button" role="menuitem">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4H4.5v12H8M11.5 6.5 15 10l-3.5 3.5M6.5 10H15" /></svg>
+                    <span>退出登录</span>
+                  </button>
+                </div>
+              </div>
               <button id="settingsBtn" class="settings-button">⌘ 接入设置</button>
             </div>
           </section>

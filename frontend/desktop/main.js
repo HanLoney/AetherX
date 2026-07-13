@@ -1,15 +1,31 @@
-const { app, BrowserWindow, ipcMain, Notification } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Notification,
+  safeStorage
+} = require("electron");
 const path = require("node:path");
 const { XuanApiClient } = require("./api-client");
+const { AuthStore } = require("./auth-store");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
+const defaultServerUrl =
+  process.env.AETHERX_SERVER_URL ||
+  process.env.XUANAI_SERVER_URL ||
+  "http://127.0.0.1:4318";
+let authStore;
+let mainWindow;
+let currentUser = null;
 const api = new XuanApiClient({
-  baseUrl:
-    process.env.AETHERX_SERVER_URL ||
-    process.env.XUANAI_SERVER_URL ||
-    "http://127.0.0.1:4318",
-  userId:
-    process.env.AETHERX_USER_ID || process.env.XUANAI_USER_ID || "local-user"
+  baseUrl: defaultServerUrl,
+  onUnauthorized: () => {
+    if (!api.token || !authStore) return;
+    api.setToken("");
+    currentUser = null;
+    authStore.clearSession(api.baseUrl);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("auth.html");
+  }
 });
 
 function registerIpcHandlers() {
@@ -39,6 +55,76 @@ function registerIpcHandlers() {
       win.focus();
     });
     notification.show();
+    return true;
+  });
+
+  ipcMain.handle("auth:state", () => ({
+    serverUrl: api.baseUrl,
+    hasSession: Boolean(api.token),
+    user: currentUser
+  }));
+  ipcMain.handle("auth:bootstrap", async (event) => {
+    if (!api.token) return { authenticated: false };
+    const session = await api.getSession();
+    currentUser = session.user;
+    authStore.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+    openPage(event.sender, "home.html");
+    return { authenticated: true, user: currentUser };
+  });
+  ipcMain.handle("auth:config", async (_event, serverUrl) => {
+    const previousServerUrl = api.baseUrl;
+    api.setBaseUrl(serverUrl);
+    if (api.baseUrl !== previousServerUrl) {
+      api.setToken("");
+      currentUser = null;
+      authStore.clearSession(api.baseUrl);
+    }
+    return api.getAuthConfig();
+  });
+  ipcMain.handle("auth:login", async (event, input) => {
+    api.setBaseUrl(input.serverUrl);
+    api.setToken("");
+    const result = await api.login({
+      username: input.username,
+      password: input.password
+    });
+    api.setToken(result.token);
+    currentUser = result.user;
+    authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    openPage(event.sender, "home.html");
+    return { user: result.user };
+  });
+  ipcMain.handle("auth:register", async (event, input) => {
+    api.setBaseUrl(input.serverUrl);
+    api.setToken("");
+    const result = await api.register({
+      username: input.username,
+      displayName: input.displayName,
+      password: input.password,
+      registrationSecret: input.registrationSecret
+    });
+    api.setToken(result.token);
+    currentUser = result.user;
+    authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    openPage(event.sender, "home.html");
+    return {
+      user: result.user,
+      migratedExistingData: result.migratedExistingData
+    };
+  });
+  ipcMain.handle("auth:current", () => ({
+    user: currentUser,
+    serverUrl: api.baseUrl
+  }));
+  ipcMain.handle("auth:logout", async (event) => {
+    try {
+      if (api.token) await api.logout();
+    } finally {
+      api.setToken("");
+      currentUser = null;
+      authStore.clearSession(api.baseUrl);
+      openPage(event.sender, "auth.html");
+    }
     return true;
   });
 
@@ -223,11 +309,28 @@ function createWindow() {
     }
   });
 
-  win.loadFile("home.html");
+  mainWindow = win;
+  win.loadFile("auth.html");
   win.once("ready-to-show", () => win.show());
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+}
+
+function openPage(sender, file) {
+  const win = BrowserWindow.fromWebContents(sender);
+  if (!win || win.isDestroyed()) return;
+  setImmediate(() => {
+    if (!win.isDestroyed()) win.loadFile(file);
+  });
 }
 
 app.whenReady().then(() => {
+  authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
+  const storedAuth = authStore.load();
+  if (storedAuth.serverUrl) api.setBaseUrl(storedAuth.serverUrl);
+  api.setToken(storedAuth.token);
+  currentUser = storedAuth.user;
   registerIpcHandlers();
   createWindow();
   app.on("activate", () => {

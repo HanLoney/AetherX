@@ -32,6 +32,7 @@ const state = {
   pendingApprovals: new Map(),
   pendingGalleryRefresh: false,
   connectionStatus: "idle",
+  auth: null,
   sending: false,
   testing: false,
   savingImageConfig: false
@@ -64,6 +65,16 @@ const elements = {
   providerName: document.querySelector("#providerName"),
   providerModel: document.querySelector("#providerModel"),
   providerCard: document.querySelector("#providerCard"),
+  accountControl: document.querySelector("#accountControl"),
+  accountBtn: document.querySelector("#accountBtn"),
+  accountMenu: document.querySelector("#accountMenu"),
+  accountInitial: document.querySelector("#accountInitial"),
+  accountName: document.querySelector("#accountName"),
+  accountMenuInitial: document.querySelector("#accountMenuInitial"),
+  accountMenuName: document.querySelector("#accountMenuName"),
+  accountUsername: document.querySelector("#accountUsername"),
+  accountServer: document.querySelector("#accountServer"),
+  logoutBtn: document.querySelector("#logoutBtn"),
   statusPill: document.querySelector("#statusPill"),
   statusLabel: document.querySelector("#statusLabel"),
   welcome: document.querySelector("#welcome"),
@@ -2247,6 +2258,21 @@ document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
 });
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
+elements.accountBtn.addEventListener("click", () => {
+  const opening = elements.accountMenu.classList.contains("hidden");
+  elements.accountMenu.classList.toggle("hidden", !opening);
+  elements.accountBtn.setAttribute("aria-expanded", String(opening));
+});
+elements.logoutBtn.addEventListener("click", async () => {
+  elements.logoutBtn.disabled = true;
+  elements.logoutBtn.querySelector("span").textContent = "正在退出…";
+  await window.desktop.logout();
+});
+document.addEventListener("click", (event) => {
+  if (elements.accountControl.contains(event.target)) return;
+  elements.accountMenu.classList.add("hidden");
+  elements.accountBtn.setAttribute("aria-expanded", "false");
+});
 document.querySelector("#setupBanner").addEventListener("click", openSettings);
 document.querySelector("#closeSettingsBtn").addEventListener("click", closeSettings);
 document.querySelector("#cancelSettingsBtn").addEventListener("click", closeSettings);
@@ -2297,10 +2323,12 @@ elements.settingsMask.addEventListener("click", (event) => {
 });
 
 async function initialize() {
-  [state.config, state.imageConfig] = await Promise.all([
+  [state.config, state.imageConfig, state.auth] = await Promise.all([
     window.desktop.getAIConfig(),
-    window.desktop.getAIImageConfig()
+    window.desktop.getAIImageConfig(),
+    window.desktop.getCurrentAuth()
   ]);
+  renderAccount();
   await refreshSystemPrompt();
   await refreshProfiles();
   state.draft = { ...state.config, apiKey: "" };
@@ -2316,6 +2344,19 @@ async function initialize() {
   reminderEngine.start();
   journalWriter.start();
   dreamWriter.start();
+}
+
+function renderAccount() {
+  const user = state.auth?.user;
+  if (!user) return;
+  const name = user.displayName || user.username;
+  const initial = Array.from(name)[0] || "你";
+  elements.accountInitial.textContent = initial;
+  elements.accountMenuInitial.textContent = initial;
+  elements.accountName.textContent = name;
+  elements.accountMenuName.textContent = name;
+  elements.accountUsername.textContent = `@${user.username}`;
+  elements.accountServer.textContent = state.auth.serverUrl || "";
 }
 
 async function refreshSystemPrompt() {
