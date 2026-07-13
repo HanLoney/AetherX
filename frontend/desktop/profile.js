@@ -110,12 +110,15 @@ function renderAssistant() {
     card.style.setProperty("--trait-strength", `${strength}%`);
     const heading = document.createElement("header");
     const title = document.createElement("strong");
-    title.textContent = trait.key;
+    title.textContent = window.XuanGrowthLanguage.growthTitle({
+      traitKey: trait.key,
+      category: "growth"
+    });
     const percentage = document.createElement("span");
     percentage.textContent = `${strength}%`;
     heading.append(title, percentage);
     const value = document.createElement("p");
-    value.textContent = trait.value;
+    value.textContent = window.XuanGrowthLanguage.growthTraitDescription(trait);
     const meter = document.createElement("div");
     meter.className = "trait-meter";
     meter.setAttribute("role", "meter");
@@ -202,9 +205,13 @@ function renderAssistantOverview() {
   const latestGrowth = personalityEvents[0];
   if (latestGrowth) {
     const title = document.createElement("strong");
-    title.textContent = latestGrowth.traitKey || latestGrowth.category || "一次新的成长";
+    title.textContent = window.XuanGrowthLanguage.growthTitle(latestGrowth);
     const content = document.createElement("p");
-    content.textContent = latestGrowth.content;
+    content.textContent = window.XuanGrowthLanguage.growthNarration(
+      latestGrowth,
+      profile?.name || "小玄",
+      "洛尼"
+    );
     const meta = document.createElement("small");
     meta.textContent = latestGrowth.status === "candidate" ? "等待确认" : "已经成为她的一部分";
     growthHost.append(title, content, meta);
@@ -408,14 +415,17 @@ function renderPersonalityTimeline() {
     copy.className = "timeline-copy";
     const heading = document.createElement("header");
     const title = document.createElement("strong");
-    title.textContent =
-      event.traitKey || event.category || "一次新的成长";
+    title.textContent = window.XuanGrowthLanguage.growthTitle(event);
     const status = document.createElement("span");
     status.className = `growth-status ${event.status === "candidate" ? "pending" : "active"}`;
     status.textContent = event.status === "candidate" ? "待确认" : "已成为一部分";
     heading.append(title, status);
     const content = document.createElement("p");
-    content.textContent = event.content;
+    content.textContent = window.XuanGrowthLanguage.growthNarration(
+      event,
+      profile?.name || "小玄",
+      "洛尼"
+    );
     copy.append(heading, content);
     card.append(time, dot, copy);
     timeline.append(card);
