@@ -57,6 +57,9 @@ function runtimeOptions() {
 }
 
 const elements = {
+  titlebarClock: document.querySelector("#titlebarClock"),
+  clockHourMinute: document.querySelector("#clockHourMinute"),
+  clockSecond: document.querySelector("#clockSecond"),
   providerLogo: document.querySelector("#providerLogo"),
   providerName: document.querySelector("#providerName"),
   providerModel: document.querySelector("#providerModel"),
@@ -100,6 +103,14 @@ const elements = {
   xuanMoodFullFocus: document.querySelector("#xuanMoodFullFocus"),
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
+
+const titlebarClock = new window.AetherClock({
+  element: elements.titlebarClock,
+  hourMinuteElement: elements.clockHourMinute,
+  secondElement: elements.clockSecond,
+  locale: navigator.language || "zh-CN"
+});
+titlebarClock.start();
 
 async function illustrateJournalContent(content) {
   const illustrator = window.AetherJournalIllustrator;
@@ -2336,6 +2347,7 @@ window.addEventListener("aether:gallery-updated", () => {
 window.addEventListener("xuan:modules-changed", syncModuleState);
 window.addEventListener("storage", syncModuleState);
 window.addEventListener("beforeunload", () => {
+  titlebarClock.stop();
   reminderEngine.stop();
   journalWriter.stop();
   dreamWriter.stop();

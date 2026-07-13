@@ -29,6 +29,7 @@
       "home.html",
       "home.css",
       "app-shell.css",
+      "clock.js",
       "home.js",
       "ai-providers.js",
       "tool-registry.js",
