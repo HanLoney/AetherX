@@ -12,9 +12,11 @@ const cropper = new window.AetherAvatarCropper($("#avatarCropModal"));
 let profile = null;
 let personalityEvents = [];
 let journals = [];
-let journalFilter = "all";
+const journalPager = new window.AetherJournalPager();
+let journalTurnDirection = "";
 let galleryImages = [];
 let galleryFilter = "all";
+let assistantView = "overview";
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -56,6 +58,8 @@ function renderAvatar() {
   fallback.textContent = name.slice(0, 1);
   $("#heroName").textContent = name;
   $("#removeAvatar").disabled = !dataUrl;
+  const assistantRemove = $("#removeAssistantAvatar");
+  if (assistantRemove) assistantRemove.disabled = !dataUrl;
 }
 
 function renderUser() {
@@ -74,16 +78,18 @@ function renderUser() {
 }
 
 function renderAssistant() {
+  document.body.classList.add("assistant-profile");
   $("#pageEyebrow").textContent = "AI PARTNER · PERSONAL SPACE";
-  $("#pageTitle").textContent = "AI 伙伴主页";
+  $("#pageTitle").textContent = `${profile.name || "AI 伙伴"}的空间`;
   $("#profileRole").textContent = "DIGITAL COMPANION";
   $("#heroSummary").textContent =
-    profile.selfDefinition || "会持续成长的全能助手";
+    "生活在数字空间，也在与你相处中慢慢成为自己";
+  $("#assistantTabs").classList.remove("hidden");
+  $("#editAssistantProfile").classList.remove("hidden");
+  $("#heroRelationship").classList.remove("hidden");
+  document.querySelector(".avatar-actions").classList.add("hidden");
   $("#assistantSection").classList.remove("hidden");
   $("#personaImageSection").classList.remove("hidden");
-  $("#journalSection").classList.remove("hidden");
-  $("#gallerySection").classList.remove("hidden");
-  $("#growthSection").classList.remove("hidden");
   $("#assistantName").value = profile.name || "";
   $("#assistantGender").value = profile.gender || "";
   $("#assistantDefinition").value = profile.selfDefinition || "";
@@ -94,24 +100,117 @@ function renderAssistant() {
   $("#journalHeading").textContent = `${profile.name || "AI 伙伴"}手记`;
   const list = $("#traitList");
   list.replaceChildren();
-  (profile.traits || []).forEach((trait) => {
+  const traits = profile.traits || [];
+  $("#growthTraitCount").textContent = String(traits.length);
+  $("#growthEventCount").textContent = String(personalityEvents.length);
+  traits.forEach((trait, index) => {
     const card = document.createElement("article");
-    card.className = "trait-card";
+    card.className = `trait-card trait-tone-${index % 3}`;
+    const strength = Math.max(0, Math.min(100, Math.round((trait.strength || 0) * 100)));
+    card.style.setProperty("--trait-strength", `${strength}%`);
+    const heading = document.createElement("header");
     const title = document.createElement("strong");
     title.textContent = trait.key;
+    const percentage = document.createElement("span");
+    percentage.textContent = `${strength}%`;
+    heading.append(title, percentage);
     const value = document.createElement("p");
     value.textContent = trait.value;
+    const meter = document.createElement("div");
+    meter.className = "trait-meter";
+    meter.setAttribute("role", "meter");
+    meter.setAttribute("aria-label", `${trait.key}的形成强度`);
+    meter.setAttribute("aria-valuemin", "0");
+    meter.setAttribute("aria-valuemax", "100");
+    meter.setAttribute("aria-valuenow", String(strength));
+    meter.append(document.createElement("i"));
     const meta = document.createElement("small");
-    meta.textContent = `强度 ${Math.round((trait.strength || 0) * 100)}% · ${trait.evidenceCount || 0} 条证据`;
-    card.append(title, value, meta);
+    meta.textContent = `${trait.evidenceCount || 0} 次相处印证`;
+    card.append(heading, value, meter, meta);
     list.append(card);
   });
-  if (!(profile.traits || []).length) {
+  if (!traits.length) {
     list.innerHTML = '<div class="empty">AI 伙伴的人格还在成长中。</div>';
   }
   renderPersonalityTimeline();
   renderJournals();
   renderGallery();
+  renderAssistantOverview();
+  setAssistantView(assistantView);
+}
+
+function setAssistantView(view) {
+  const allowed = ["overview", "journal", "gallery", "growth"];
+  assistantView = allowed.includes(view) ? view : "overview";
+  document.querySelectorAll("[data-assistant-view]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.assistantView !== assistantView);
+  });
+  document.querySelectorAll("[data-profile-view]").forEach((button) => {
+    const active = button.dataset.profileView === assistantView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderAssistantOverview() {
+  $("#overviewRelationship").textContent =
+    profile.relationshipSummary || "一起生活、一起成长的数字伙伴。";
+  $("#overviewJournalCount").textContent = String(journals.length);
+  $("#overviewGalleryCount").textContent = String(galleryImages.length);
+  $("#overviewGrowthCount").textContent = String(personalityEvents.length);
+
+  const journalHost = $("#overviewLatestJournal");
+  journalHost.replaceChildren();
+  const latestJournal = journals[0];
+  if (latestJournal) {
+    const title = document.createElement("strong");
+    title.textContent = latestJournal.title;
+    const excerpt = document.createElement("p");
+    excerpt.textContent = String(latestJournal.content || "")
+      .replace(/[#>*_`\[\]]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 150);
+    const meta = document.createElement("small");
+    meta.textContent = `${latestJournal.type === "daily" ? "日记" : "周记"} · ${latestJournal.periodKey}`;
+    journalHost.append(title, excerpt, meta);
+  } else {
+    journalHost.innerHTML = '<div class="empty">她还没有写下第一篇手记。</div>';
+  }
+
+  const galleryHost = $("#overviewRecentGallery");
+  galleryHost.replaceChildren();
+  galleryImages.slice(0, 3).forEach((image) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.title = image.description || "查看画面";
+    const preview = document.createElement("img");
+    preview.src = image.source;
+    preview.alt = image.description || "她画下的画面";
+    preview.loading = "lazy";
+    button.append(preview);
+    button.addEventListener("click", () => openLightbox(image));
+    galleryHost.append(button);
+  });
+  if (!galleryHost.children.length) {
+    galleryHost.innerHTML = '<div class="empty">她还没有画下新的画面。</div>';
+  }
+
+  const growthHost = $("#overviewLatestGrowth");
+  growthHost.replaceChildren();
+  const latestGrowth = personalityEvents[0];
+  if (latestGrowth) {
+    const title = document.createElement("strong");
+    title.textContent = latestGrowth.traitKey || latestGrowth.category || "一次新的成长";
+    const content = document.createElement("p");
+    content.textContent = latestGrowth.content;
+    const meta = document.createElement("small");
+    meta.textContent = latestGrowth.status === "candidate" ? "等待确认" : "已经成为她的一部分";
+    growthHost.append(title, content, meta);
+  } else {
+    growthHost.innerHTML = '<div class="empty">相处还在继续，变化会慢慢留在这里。</div>';
+  }
 }
 
 function renderPersonaImage() {
@@ -128,52 +227,80 @@ function renderPersonaImage() {
 
 function renderJournals() {
   const list = $("#journalList");
+  const previous = $("#journalPrevious");
+  const next = $("#journalNext");
   list.replaceChildren();
-  journals
-    .filter((journal) => journalFilter === "all" || journal.type === journalFilter)
-    .forEach((journal) => {
-      const card = document.createElement("article");
-      card.className = "journal-card";
-      const header = document.createElement("header");
-      const title = document.createElement("h3");
-      title.textContent = journal.title;
-      const controls = document.createElement("div");
-      controls.className = "journal-card-controls";
-      const time = document.createElement("time");
-      time.textContent = journal.periodKey;
-      const remove = document.createElement("button");
-      remove.className = "journal-delete";
-      remove.type = "button";
-      remove.textContent = "删除";
-      remove.title = "删除这篇手记";
-      remove.addEventListener("click", () => deleteJournal(journal));
-      controls.append(time, remove);
-      header.append(title, controls);
-      const content = document.createElement("div");
-      content.className = "journal-content";
-      if (window.XuanMarkdown?.render) {
-        window.XuanMarkdown.render(content, journal.content);
-      } else {
-        content.classList.add("plain");
-        content.textContent = journal.content;
-      }
-      const meta = document.createElement("div");
-      meta.className = "journal-meta";
-      const kindLabel = document.createElement("span");
-      kindLabel.className = "journal-kind";
-      kindLabel.textContent = journal.type === "daily" ? "日记" : "周记";
-      const mood = document.createElement("span");
-      mood.textContent = journal.mood || "平静";
-      const sources = document.createElement("span");
-      sources.textContent = `${journal.sourceMessageCount || 0} 条原始消息`;
-      meta.append(kindLabel, mood, sources);
-      card.append(header, content, meta);
-      list.append(card);
-    });
-  if (!list.children.length) {
-    list.innerHTML =
+  const snapshot = journalPager.setItems(journals);
+  previous.disabled = !snapshot.hasPrevious;
+  next.disabled = !snapshot.hasNext;
+  $("#journalPageLabel").textContent = snapshot.total
+    ? `${snapshot.index + 1} / ${snapshot.total}`
+    : "0 / 0";
+
+  const journal = snapshot.item;
+  if (!journal) {
+    const emptyPage = document.createElement("article");
+    emptyPage.className = "journal-page journal-page-empty";
+    emptyPage.innerHTML =
       '<div class="empty">还没有手记。完成一个自然日或完整一周后，她会自己写下来。</div>';
+    list.append(emptyPage);
+    return;
   }
+
+  const page = document.createElement("article");
+  page.className = ["journal-page", journalTurnDirection].filter(Boolean).join(" ");
+  const header = document.createElement("header");
+  const heading = document.createElement("div");
+  heading.className = "journal-page-heading";
+  const eyebrow = document.createElement("span");
+  eyebrow.textContent = journal.type === "daily" ? "DIARY" : "WEEKLY NOTE";
+  const title = document.createElement("h3");
+  title.textContent = journal.title;
+  heading.append(eyebrow, title);
+
+  const controls = document.createElement("div");
+  controls.className = "journal-card-controls";
+  const time = document.createElement("time");
+  time.textContent = journal.periodKey;
+  const remove = document.createElement("button");
+  remove.className = "journal-delete";
+  remove.type = "button";
+  remove.textContent = "删除";
+  remove.title = "删除这篇手记";
+  remove.addEventListener("click", () => deleteJournal(journal));
+  controls.append(time, remove);
+  header.append(heading, controls);
+
+  const content = document.createElement("div");
+  content.className = "journal-content";
+  if (window.XuanMarkdown?.render) {
+    window.XuanMarkdown.render(content, journal.content);
+  } else {
+    content.classList.add("plain");
+    content.textContent = journal.content;
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "journal-meta";
+  const kindLabel = document.createElement("span");
+  kindLabel.className = "journal-kind";
+  kindLabel.textContent = journal.type === "daily" ? "日记" : "周记";
+  const mood = document.createElement("span");
+  mood.textContent = journal.mood || "平静";
+  const sources = document.createElement("span");
+  sources.textContent = `${journal.sourceMessageCount || 0} 条原始消息`;
+  meta.append(kindLabel, mood, sources);
+  page.append(header, content, meta);
+  list.append(page);
+  journalTurnDirection = "";
+}
+
+function turnJournalPage(offset) {
+  const before = journalPager.snapshot();
+  const after = journalPager.move(offset);
+  if (before.index === after.index) return;
+  journalTurnDirection = offset > 0 ? "turning-forward" : "turning-backward";
+  renderJournals();
 }
 
 function renderGallery() {
@@ -182,24 +309,64 @@ function renderGallery() {
   const visible = galleryImages.filter(
     (image) => galleryFilter === "all" || image.origin === galleryFilter
   );
-  visible.forEach((image) => {
-    const figure = document.createElement("figure");
-    figure.className = "gallery-item";
-    const img = document.createElement("img");
-    img.src = image.source;
-    img.alt = image.description || "她画的图";
-    img.loading = "lazy";
-    const badge = document.createElement("span");
-    badge.className = `gallery-badge gallery-badge-${image.origin}`;
-    badge.textContent = image.origin === "journal" ? "手记" : "对话";
-    figure.append(img, badge);
-    figure.addEventListener("click", () => openLightbox(image));
-    grid.append(figure);
-  });
-  if (!grid.children.length) {
+  if (!visible.length) {
     grid.innerHTML =
       '<div class="empty">相册还是空的。当她在对话或手记里画下画面时，会收进这里。</div>';
+    return;
   }
+
+  window.XuanGalleryLayout.groupGalleryByMonth(visible).forEach((group) => {
+    const section = document.createElement("section");
+    section.className = "gallery-month";
+    const heading = document.createElement("header");
+    heading.className = "gallery-month-heading";
+    const title = document.createElement("h3");
+    title.textContent = group.label;
+    const count = document.createElement("span");
+    count.textContent = `${group.items.length} 张留影`;
+    heading.append(title, count);
+
+    const photos = document.createElement("div");
+    photos.className = "gallery-month-grid";
+    group.items.forEach((image, index) => {
+      const originLabel = image.origin === "journal" ? "手记" : "对话";
+      const figure = document.createElement("figure");
+      figure.className = `gallery-item gallery-tilt-${index % 4}`;
+      figure.tabIndex = 0;
+      figure.setAttribute("role", "button");
+      figure.setAttribute("aria-label", `查看${originLabel}留影`);
+
+      const photo = document.createElement("div");
+      photo.className = "gallery-photo";
+      const img = document.createElement("img");
+      img.src = image.source;
+      img.alt = `${originLabel}留影`;
+      img.loading = "lazy";
+      const badge = document.createElement("span");
+      badge.className = `gallery-badge gallery-badge-${image.origin}`;
+      badge.textContent = image.origin === "journal" ? "手记" : "对话";
+      photo.append(img, badge);
+
+      const caption = document.createElement("figcaption");
+      const time = document.createElement("time");
+      time.textContent = window.XuanGalleryLayout.formatGalleryDate(image.createdAt);
+      const recordedAt = new Date(image.createdAt);
+      if (!Number.isNaN(recordedAt.getTime())) time.dateTime = recordedAt.toISOString();
+      caption.append(time);
+      figure.append(photo, caption);
+
+      const open = () => openLightbox(image);
+      figure.addEventListener("click", open);
+      figure.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open();
+      });
+      photos.append(figure);
+    });
+    section.append(heading, photos);
+    grid.append(section);
+  });
 }
 
 function openLightbox(image) {
@@ -207,10 +374,10 @@ function openLightbox(image) {
   const img = $("#galleryLightboxImage");
   const caption = $("#galleryLightboxCaption");
   img.src = image.source;
-  img.alt = image.description || "";
+  img.alt = image.origin === "journal" ? "手记里的留影" : "对话里的留影";
   const originLabel = image.origin === "journal" ? "手记" : "对话";
-  const from = image.refTitle ? ` · 来自${originLabel}《${image.refTitle}》` : ` · 来自${originLabel}`;
-  caption.textContent = (image.description || "").concat(from);
+  const recordedAt = window.XuanGalleryLayout.formatGalleryDate(image.createdAt);
+  caption.textContent = `${recordedAt} · 来自${originLabel}`;
   lightbox.classList.remove("hidden");
 }
 
@@ -219,31 +386,38 @@ function closeLightbox() {
 }
 
 function renderPersonalityTimeline() {
-  $("#personalityTimelineSection").classList.remove("hidden");
   const timeline = $("#personalityTimeline");
   timeline.replaceChildren();
-  personalityEvents.forEach((event) => {
+  personalityEvents.forEach((event, index) => {
     const card = document.createElement("article");
-    card.className = "timeline-card";
+    card.className = `timeline-card timeline-tone-${index % 3}`;
+    const date = new Date(event.createdAt);
+    const dateLabel = Number.isNaN(date.getTime())
+      ? "未记录"
+      : date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+    const yearLabel = Number.isNaN(date.getTime()) ? "" : String(date.getFullYear());
+    const time = document.createElement("time");
+    const dateMain = document.createElement("strong");
+    dateMain.textContent = dateLabel;
+    const dateYear = document.createElement("span");
+    dateYear.textContent = yearLabel;
+    time.append(dateMain, dateYear);
     const dot = document.createElement("i");
     dot.className = "timeline-dot";
     const copy = document.createElement("div");
+    copy.className = "timeline-copy";
+    const heading = document.createElement("header");
     const title = document.createElement("strong");
     title.textContent =
       event.traitKey || event.category || "一次新的成长";
+    const status = document.createElement("span");
+    status.className = `growth-status ${event.status === "candidate" ? "pending" : "active"}`;
+    status.textContent = event.status === "candidate" ? "待确认" : "已成为一部分";
+    heading.append(title, status);
     const content = document.createElement("p");
     content.textContent = event.content;
-    const meta = document.createElement("small");
-    const date = new Date(event.createdAt);
-    const dateLabel = Number.isNaN(date.getTime())
-      ? ""
-      : date.toLocaleDateString("zh-CN");
-    meta.textContent = [
-      event.status === "candidate" ? "待确认" : "已生效",
-      dateLabel
-    ].filter(Boolean).join(" · ");
-    copy.append(title, content, meta);
-    card.append(dot, copy);
+    copy.append(heading, content);
+    card.append(time, dot, copy);
     timeline.append(card);
   });
   if (!personalityEvents.length) {
@@ -299,8 +473,22 @@ async function saveAvatar(dataUrl) {
   showNotice(dataUrl ? "头像已经更新。" : "头像已经移除。");
 }
 
+function openAssistantSettings() {
+  if (kind !== "assistant") return;
+  $("#assistantSettingsModal").classList.remove("hidden");
+  $("#assistantName").focus();
+}
+
+function closeAssistantSettings() {
+  $("#assistantSettingsModal").classList.add("hidden");
+}
+
 $("#chooseAvatar").addEventListener("click", () => $("#avatarFile").click());
-$("#avatarButton").addEventListener("click", () => $("#avatarFile").click());
+$("#chooseAssistantAvatar").addEventListener("click", () => $("#avatarFile").click());
+$("#avatarButton").addEventListener("click", () => {
+  if (kind === "assistant") openAssistantSettings();
+  else $("#avatarFile").click();
+});
 $("#avatarFile").addEventListener("change", async (event) => {
   const file = event.currentTarget.files?.[0];
   event.currentTarget.value = "";
@@ -374,13 +562,17 @@ $("#backToChat").addEventListener("click", () => {
 
 document.querySelectorAll(".journal-tab").forEach((button) => {
   button.addEventListener("click", () => {
-    journalFilter = button.dataset.journalType;
+    journalPager.setFilter(button.dataset.journalType);
+    journalTurnDirection = "";
     document.querySelectorAll(".journal-tab").forEach((item) =>
       item.classList.toggle("active", item === button)
     );
     renderJournals();
   });
 });
+
+$("#journalPrevious").addEventListener("click", () => turnJournalPage(-1));
+$("#journalNext").addEventListener("click", () => turnJournalPage(1));
 
 document.querySelectorAll(".gallery-tab").forEach((button) => {
   button.addEventListener("click", () => {
@@ -391,6 +583,29 @@ document.querySelectorAll(".gallery-tab").forEach((button) => {
     renderGallery();
   });
 });
+$("#removeAssistantAvatar").addEventListener("click", async () => {
+  try {
+    await saveAvatar("");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+});
+
+document.querySelectorAll("[data-profile-view]").forEach((button) => {
+  button.addEventListener("click", () => setAssistantView(button.dataset.profileView));
+});
+
+document.querySelectorAll("[data-open-profile-view]").forEach((button) => {
+  button.addEventListener("click", () =>
+    setAssistantView(button.dataset.openProfileView)
+  );
+});
+
+$("#editAssistantProfile").addEventListener("click", openAssistantSettings);
+$("#closeAssistantSettings").addEventListener("click", closeAssistantSettings);
+$("#assistantSettingsModal").addEventListener("click", (event) => {
+  if (event.target === $("#assistantSettingsModal")) closeAssistantSettings();
+});
 
 $("#galleryLightbox").addEventListener("click", (event) => {
   if (event.target === $("#galleryLightbox") || event.target.closest("[data-gallery-close]")) {
@@ -398,7 +613,25 @@ $("#galleryLightbox").addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeLightbox();
+  if (event.key !== "Escape") return;
+  closeLightbox();
+  closeAssistantSettings();
+});
+document.addEventListener("keydown", (event) => {
+  if (
+    kind !== "assistant" ||
+    assistantView !== "journal" ||
+    !$("#assistantSettingsModal").classList.contains("hidden") ||
+    !$("#galleryLightbox").classList.contains("hidden")
+  ) return;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    turnJournalPage(-1);
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    turnJournalPage(1);
+  }
 });
 
 window.addEventListener("message", async (event) => {
@@ -411,9 +644,11 @@ window.addEventListener("message", async (event) => {
     ]);
     renderJournals();
     renderGallery();
+    renderAssistantOverview();
   } else if (type === "aether:gallery-updated") {
     galleryImages = await window.desktop.listAssistantGallery({ limit: 120 });
     renderGallery();
+    renderAssistantOverview();
   }
 });
 
@@ -458,7 +693,8 @@ $("#assistantProfileForm").addEventListener("submit", async (event) => {
       "*"
     );
     window.parent?.postMessage({ type: "xuan:prompt-updated" }, "*");
-    showNotice("AI 主页已经保存。");
+    closeAssistantSettings();
+    showNotice("她的人设已经保存。");
   } catch (error) {
     showNotice(error.message, true);
   }
