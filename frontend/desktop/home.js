@@ -177,40 +177,44 @@ const toolRegistry = window.registerImageTools(
   }
 );
 
+function navIcon(paths) {
+  return `<i aria-hidden="true"><svg viewBox="0 0 24 24">${paths}</svg></i>`;
+}
+
 const memoryModuleBtn = document.createElement("button");
 memoryModuleBtn.id = "memoryModuleBtn";
 memoryModuleBtn.className = "nav-item";
-memoryModuleBtn.innerHTML = "<i>◈</i>记忆中心";
+memoryModuleBtn.innerHTML = `${navIcon('<path d="M7.5 5.5a3 3 0 0 0-3 3v1.2a3.5 3.5 0 0 0 .8 6.8 3 3 0 0 0 4.2 2.7V5.5h-2Z"/><path d="M16.5 5.5a3 3 0 0 1 3 3v1.2a3.5 3.5 0 0 1-.8 6.8 3 3 0 0 1-4.2 2.7V5.5h2ZM9.5 9H7.8M14.5 9h1.7M9.5 14H7.3M14.5 14h2.2"/>')}<span>记忆中心</span>`;
 const albumModuleBtn = document.createElement("button");
 albumModuleBtn.id = "albumModuleBtn";
 albumModuleBtn.className = "nav-item";
-albumModuleBtn.innerHTML = "<i>◇</i>我们的纪念册";
+albumModuleBtn.innerHTML = `${navIcon('<rect x="4.5" y="5.5" width="15" height="13" rx="3"/><circle cx="9" cy="10" r="1.5"/><path d="m6.5 16 3.5-3 2.5 2 2.5-2 2.5 3"/>')}<span>我们的纪念册</span>`;
 const dreamModuleBtn = document.createElement("button");
 dreamModuleBtn.id = "dreamModuleBtn";
 dreamModuleBtn.className = "nav-item";
-dreamModuleBtn.innerHTML = "<i>☾</i>梦境";
+dreamModuleBtn.innerHTML = `${navIcon('<path d="M18.5 15.5A7.5 7.5 0 0 1 8.5 5a7.5 7.5 0 1 0 10 10.5Z"/><path d="m17.5 5 .4 1.1 1.1.4-1.1.4-.4 1.1-.4-1.1-1.1-.4 1.1-.4.4-1.1Z"/>')}<span>梦境</span>`;
 const imageModuleBtn = document.createElement("button");
 imageModuleBtn.id = "imageModuleBtn";
 imageModuleBtn.className = "nav-item";
-imageModuleBtn.innerHTML = "<i>图</i>图像生成";
+imageModuleBtn.innerHTML = `${navIcon('<rect x="4.5" y="6" width="15" height="12.5" rx="3"/><circle cx="9" cy="10.5" r="1.5"/><path d="m6.5 16 3.5-3 3 2.5 2-2 2.5 2.5M17.5 3.5v3M16 5h3"/>')}<span>图像生成</span>`;
 const userProfileBtn = document.createElement("button");
 userProfileBtn.id = "userProfileBtn";
 userProfileBtn.className = "nav-item";
-userProfileBtn.innerHTML = "<i>洛</i>个人主页";
+userProfileBtn.innerHTML = "<i>洛</i><span>个人主页</span>";
 const assistantProfileBtn = document.createElement("button");
 assistantProfileBtn.id = "assistantProfileBtn";
 assistantProfileBtn.className = "nav-item";
-assistantProfileBtn.innerHTML = "<i>玄</i>AI 主页";
-document
-  .querySelector("#moduleSettingsBtn")
-  .before(
-    userProfileBtn,
-    assistantProfileBtn,
-    memoryModuleBtn,
-    albumModuleBtn,
-    dreamModuleBtn,
-    imageModuleBtn
-  );
+assistantProfileBtn.innerHTML = "<i>玄</i><span>AI 主页</span>";
+document.querySelector("#spaceNavGroup").append(
+  userProfileBtn,
+  assistantProfileBtn,
+  memoryModuleBtn
+);
+document.querySelector("#createNavGroup").append(
+  albumModuleBtn,
+  dreamModuleBtn,
+  imageModuleBtn
+);
 
 const historyPanel = document.createElement("section");
 historyPanel.className = "history-panel";
