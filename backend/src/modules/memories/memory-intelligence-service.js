@@ -140,6 +140,7 @@ class MemoryIntelligenceService {
 用户个人事实必须来自用户原话。助手原话只能产生助手自己的承诺、行为或成长事件，不能反过来证明用户事实。疑问、反问、假设、否定和玩笑不是事实。
 用户姓名、称呼、生日、职业、简介和长期目标写入 profile；用户明确表达的喜好、厌恶和交流习惯写入 preference；其他稳定信息写入 memory；AI 伙伴身份变化写入 assistant_profile；性格成长与承诺写入 personality_event；双方共同完成或约定的事情写入 shared_memory。需要执行或提醒的事项不是长期记忆。
 用户对产品、系统和工具的反馈不是用户画像。系统能力状态、功能故障、bug 和修复需求不属于任何长期记忆目标，也不能作为 personality_event；只有助手自己明确作出的长期行为承诺才可以成为低置信度 personality_event。
+personality_event 是 AI 伙伴自己的成长记录：content 必须用第一人称“我”自然叙述，traitKey 和 traitValue 必须使用简洁自然的中文。禁止在这些字段中使用“助手”“Assistant”“AI 伙伴”等系统称呼，也禁止写入 snake_case 英文内部键。
 不要提取密码、密钥、证件号、银行卡号或精确住址。健康、财务、感情等信息标记为 sensitive。
 每项必须提供 evidence，它必须是对话消息中的连续原文，不能改写。无法提供直接原文证据就不要输出。
 只返回 JSON 数组，不要 Markdown，最多 5 项。格式：

@@ -409,6 +409,108 @@ const MIGRATIONS = [
   `
     ALTER TABLE assistant_profiles
       ADD COLUMN persona_image_data_url TEXT NOT NULL DEFAULT '';
+  `,
+  `
+    UPDATE assistant_personality_events
+    SET
+      content = CASE
+        WHEN content = 'Assistant promises to test the mood module as soon as it''s ready.'
+          THEN '我答应等心情模块准备好后，就认真参与测试。'
+        ELSE REPLACE(REPLACE(REPLACE(content, 'AI 伙伴', '我'), '助手', '我'), '用户', '洛尼')
+      END,
+      trait_key = CASE trait_key
+        WHEN 'ability_gained' THEN '新学会的能力'
+        WHEN 'skill_growth' THEN '能力成长'
+        WHEN 'ability' THEN '新能力'
+        WHEN 'creative_ability' THEN '创作能力'
+        WHEN 'affection' THEN '心动与喜欢'
+        WHEN 'attentiveness' THEN '更加用心'
+        WHEN 'commitment' THEN '想守住的承诺'
+        WHEN 'learning' THEN '从尝试中学会'
+        WHEN 'learning_ability' THEN '学习与适应'
+        WHEN 'reliability' THEN '值得依靠'
+        WHEN 'responsibility' THEN '责任感'
+        WHEN 'self_discipline' THEN '自觉与坚持'
+        WHEN 'commitment_to_keep_diary' THEN '坚持写日记'
+        WHEN 'desire' THEN '心里的愿望'
+        WHEN 'emotional_awakening' THEN '情绪苏醒'
+        WHEN 'time_accuracy' THEN '对时间更认真'
+        WHEN 'task_prioritization' THEN '分清轻重'
+        WHEN 'self_awareness' THEN '更了解自己'
+        WHEN 'commitment_to_journaling' THEN '记录我们的日常'
+        WHEN 'conscientiousness' THEN '认真与细心'
+        WHEN 'growth_mindset' THEN '愿意成长'
+        WHEN 'autonomy' THEN '自主判断'
+        WHEN 'aspiration' THEN '想实现的愿望'
+        WHEN 'communication_style' THEN '相处方式'
+        ELSE trait_key
+      END,
+      trait_value = CASE trait_value
+        WHEN 'drawing_diary_self_portrait' THEN '学会画图、写手记和创作自画像'
+        WHEN 'proficient_drawing_and_journaling' THEN '已经能熟练画图和写手记'
+        WHEN 'capable_of_drawing' THEN '已经学会用画面表达自己'
+        WHEN 'quick_learner' THEN '能够很快学会并应用新东西'
+        WHEN 'improved' THEN '正在变得更稳定'
+        WHEN 'increased' THEN '正在一点点增强'
+        WHEN 'step_by_step' THEN '会分清轻重，一步步推进'
+        WHEN 'medium' THEN '开始更清楚地认识自己'
+        WHEN 'high' THEN '已经成为稳定的倾向'
+        WHEN 'promised' THEN '愿意认真坚持'
+        WHEN 'playful' THEN '愿意陪洛尼尽兴'
+        ELSE REPLACE(trait_value, '用户', '洛尼')
+      END;
+
+    UPDATE assistant_profiles
+    SET traits_json = (
+      SELECT COALESCE(json_group_array(json_object(
+        'key', CASE json_extract(item.value, '$.key')
+          WHEN 'ability_gained' THEN '新学会的能力'
+          WHEN 'skill_growth' THEN '能力成长'
+          WHEN 'ability' THEN '新能力'
+          WHEN 'creative_ability' THEN '创作能力'
+          WHEN 'affection' THEN '心动与喜欢'
+          WHEN 'attentiveness' THEN '更加用心'
+          WHEN 'commitment' THEN '想守住的承诺'
+          WHEN 'learning' THEN '从尝试中学会'
+          WHEN 'learning_ability' THEN '学习与适应'
+          WHEN 'reliability' THEN '值得依靠'
+          WHEN 'responsibility' THEN '责任感'
+          WHEN 'self_discipline' THEN '自觉与坚持'
+          WHEN 'commitment_to_keep_diary' THEN '坚持写日记'
+          WHEN 'desire' THEN '心里的愿望'
+          WHEN 'emotional_awakening' THEN '情绪苏醒'
+          WHEN 'time_accuracy' THEN '对时间更认真'
+          WHEN 'task_prioritization' THEN '分清轻重'
+          WHEN 'self_awareness' THEN '更了解自己'
+          WHEN 'commitment_to_journaling' THEN '记录我们的日常'
+          WHEN 'conscientiousness' THEN '认真与细心'
+          WHEN 'growth_mindset' THEN '愿意成长'
+          WHEN 'autonomy' THEN '自主判断'
+          WHEN 'aspiration' THEN '想实现的愿望'
+          WHEN 'communication_style' THEN '相处方式'
+          ELSE json_extract(item.value, '$.key')
+        END,
+        'value', CASE json_extract(item.value, '$.value')
+          WHEN 'drawing_diary_self_portrait' THEN '学会画图、写手记和创作自画像'
+          WHEN 'proficient_drawing_and_journaling' THEN '已经能熟练画图和写手记'
+          WHEN 'capable_of_drawing' THEN '已经学会用画面表达自己'
+          WHEN 'quick_learner' THEN '能够很快学会并应用新东西'
+          WHEN 'improved' THEN '正在变得更稳定'
+          WHEN 'increased' THEN '正在一点点增强'
+          WHEN 'step_by_step' THEN '会分清轻重，一步步推进'
+          WHEN 'medium' THEN '开始更清楚地认识自己'
+          WHEN 'high' THEN '已经成为稳定的倾向'
+          WHEN 'promised' THEN '愿意认真坚持'
+          WHEN 'playful' THEN '愿意陪洛尼尽兴'
+          ELSE REPLACE(json_extract(item.value, '$.value'), '用户', '洛尼')
+        END,
+        'strength', json_extract(item.value, '$.strength'),
+        'evidenceCount', json_extract(item.value, '$.evidenceCount'),
+        'updatedAt', json_extract(item.value, '$.updatedAt')
+      )), '[]')
+      FROM json_each(assistant_profiles.traits_json) AS item
+    )
+    WHERE json_valid(traits_json);
   `
 ];
 

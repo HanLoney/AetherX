@@ -17,7 +17,7 @@ button { color: inherit; cursor: pointer; }
 .profile-page {
   width: min(1120px, calc(100% - 56px));
   margin: 0 auto;
-  padding: 52px 0 96px;
+  padding: 52px 0 132px;
 }
 .page-heading {
   display: flex;
@@ -200,46 +200,73 @@ button { color: inherit; cursor: pointer; }
 .profile-panel h2 { margin: 0 0 5px; font-size: 17px; }
 
 .profile-tabs {
-  position: sticky;
-  z-index: 8;
-  top: 0;
-  width: 100%;
+  width: max-content;
+  max-width: calc(100% - 40px);
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: 22px;
   display: flex;
   justify-content: center;
-  gap: 42px;
-  margin: 28px 0 0;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(119, 113, 144, .11);
-  background: rgba(247,247,252,.72);
-  backdrop-filter: blur(18px);
+  gap: 4px;
+  margin: 0;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 999px;
+  background: rgba(241, 240, 247, .68);
+  box-shadow:
+    0 18px 50px rgba(61, 57, 82, .18),
+    0 4px 14px rgba(92, 86, 119, .1),
+    inset 0 1px rgba(255,255,255,.82);
+  backdrop-filter: blur(24px) saturate(145%);
+  transform: translateX(-50%);
+}
+.profile-tabs::before {
+  content: "";
+  position: absolute;
+  inset: 1px 16px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent);
+  pointer-events: none;
 }
 .profile-tab {
-  min-width: 52px;
-  min-height: 50px;
+  min-width: 76px;
+  min-height: 42px;
   position: relative;
-  padding: 0 4px;
+  z-index: 1;
+  padding: 0 18px;
   border: 0;
+  border-radius: 999px;
   color: #8c8595;
   background: transparent;
   font-size: 11px;
   font-weight: 650;
+  -webkit-app-region: no-drag;
+  transition: color .2s ease, background .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 .profile-tab::after {
   content: "";
-  width: 0;
-  height: 3px;
+  width: 5px;
+  height: 5px;
   position: absolute;
   left: 50%;
-  bottom: -1px;
-  border-radius: 999px 999px 0 0;
+  bottom: 5px;
+  border-radius: 50%;
   background: linear-gradient(90deg, #d383a7, #72a9d8);
-  transform: translateX(-50%);
-  transition: width .2s ease;
+  box-shadow: 0 0 10px rgba(122, 165, 210, .4);
+  opacity: 0;
+  transform: translateX(-50%) scale(.4);
+  transition: opacity .2s ease, transform .2s ease;
 }
+.profile-tab:hover { color: #625d72; background: rgba(255,255,255,.42); }
 .profile-tab.active {
   color: #4f5f7a;
+  background: rgba(255,255,255,.76);
+  box-shadow: 0 5px 16px rgba(77, 72, 101, .1), inset 0 1px rgba(255,255,255,.9);
+  transform: translateY(-1px);
 }
-.profile-tab.active::after { width: 30px; }
+.profile-tab.active::after { opacity: 1; transform: translateX(-50%) scale(1); }
 
 .assistant-overview { margin-top: 0; }
 .overview-card header span {
@@ -525,17 +552,18 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
 .growth-space {
   display: grid;
   gap: 30px;
+  margin-top: 30px;
 }
 .growth-intro {
-  min-height: 300px;
+  min-height: 218px;
   position: relative;
   isolation: isolate;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) auto;
+  grid-template-columns: 142px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 44px;
-  padding: 46px 60px;
+  gap: 36px;
+  padding: 32px 52px;
   border: 1px solid rgba(255,255,255,.7);
   border-radius: 72px 34px 72px 34px;
   color: #fff;
@@ -554,12 +582,12 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
   border-radius: 62px 26px 62px 26px;
 }
 .growth-orbit {
-  width: 300px;
-  height: 300px;
+  width: 226px;
+  height: 226px;
   position: absolute;
   z-index: -1;
-  left: -42px;
-  top: 0;
+  left: -30px;
+  top: -4px;
   border: 1px solid rgba(255,255,255,.13);
   border-radius: 50%;
 }
@@ -580,20 +608,20 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
   background: rgba(255,255,255,.8);
   box-shadow: 0 0 16px rgba(255,255,255,.8);
 }
-.growth-orbit i:nth-child(1) { top: 20px; left: 138px; }
-.growth-orbit i:nth-child(2) { top: 145px; right: 10px; }
-.growth-orbit i:nth-child(3) { bottom: 32px; left: 48px; }
+.growth-orbit i:nth-child(1) { top: 16px; left: 104px; }
+.growth-orbit i:nth-child(2) { top: 108px; right: 8px; }
+.growth-orbit i:nth-child(3) { bottom: 24px; left: 36px; }
 .growth-ring {
-  width: 158px;
-  height: 158px;
+  width: 118px;
+  height: 118px;
   display: grid;
   place-content: center;
   border: 1px solid rgba(255,255,255,.28);
   border-radius: 50%;
   text-align: center;
-  box-shadow: inset 0 0 0 14px rgba(255,255,255,.045), 0 18px 42px rgba(40, 37, 64, .18);
+  box-shadow: inset 0 0 0 10px rgba(255,255,255,.045), 0 14px 34px rgba(40, 37, 64, .16);
 }
-.growth-ring strong { font: 500 48px/1 Georgia, serif; }
+.growth-ring strong { font: 500 38px/1 Georgia, serif; }
 .growth-ring span { margin-top: 7px; color: rgba(255,255,255,.72); font-size: 9px; letter-spacing: .14em; }
 .growth-intro header { position: relative; z-index: 1; }
 .growth-intro header p,
@@ -605,7 +633,7 @@ input:focus, textarea:focus { border-color: rgba(112, 165, 215, .48); }
   letter-spacing: .2em;
 }
 .growth-intro header p { color: rgba(255,255,255,.64); }
-.growth-intro header h2 { margin: 0 0 12px; font-size: 31px; letter-spacing: -.04em; }
+.growth-intro header h2 { margin: 0 0 10px; font-size: 27px; letter-spacing: -.04em; }
 .growth-intro header span { color: rgba(255,255,255,.7); font-size: 11px; line-height: 1.8; }
 .growth-trait-count {
   display: grid;
@@ -1362,11 +1390,11 @@ body.embedded .profile-page { padding-top: 38px; }
 @media (max-width: 900px) {
   .gallery-month-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .growth-intro {
-    grid-template-columns: 150px minmax(0, 1fr);
-    gap: 30px;
-    padding: 40px 44px;
+    grid-template-columns: 118px minmax(0, 1fr);
+    gap: 24px;
+    padding: 30px 38px;
   }
-  .growth-ring { width: 132px; height: 132px; }
+  .growth-ring { width: 108px; height: 108px; }
   .growth-trait-count {
     position: absolute;
     right: 38px;
@@ -1380,8 +1408,14 @@ body.embedded .profile-page { padding-top: 38px; }
   .heading-action { padding: 0 11px; }
   .profile-hero { align-items: flex-start; padding: 22px; }
   .profile-avatar { width: 108px; height: 108px; border-radius: 26px; }
-  .profile-tabs { width: 100%; top: 8px; }
-  .profile-tab { min-width: 0; flex: 1; padding: 0 8px; }
+  .profile-tabs {
+    width: calc(100% - 32px);
+    max-width: 430px;
+    bottom: 14px;
+    gap: 2px;
+    padding: 5px;
+  }
+  .profile-tab { min-width: 0; min-height: 40px; flex: 1; padding: 0 8px; }
   .overview-grid { grid-template-columns: 1fr; }
   .overview-journal-card { grid-row: auto; }
   .overview-stats button { min-height: 64px; flex-direction: column; align-items: center; gap: 2px; }
