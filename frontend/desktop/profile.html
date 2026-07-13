@@ -10,13 +10,16 @@
     <main class="profile-page">
       <header class="page-heading">
         <button id="backToChat" type="button">← 返回聊天</button>
-        <div>
+        <div class="page-heading-copy">
           <p id="pageEyebrow">PERSONAL SPACE</p>
           <h1 id="pageTitle">个人主页</h1>
         </div>
+        <button id="editAssistantProfile" class="heading-action hidden" type="button">编辑人设</button>
       </header>
 
       <section class="profile-hero">
+        <span class="hero-glow hero-glow-pink" aria-hidden="true"></span>
+        <span class="hero-glow hero-glow-blue" aria-hidden="true"></span>
         <button id="avatarButton" class="profile-avatar" type="button" title="更换头像">
           <img id="avatarImage" class="hidden" alt="" />
           <span id="avatarFallback">玄</span>
@@ -26,6 +29,10 @@
           <small id="profileRole">AI PARTNER</small>
           <h2 id="heroName">小玄</h2>
           <p id="heroSummary">会持续成长的全能助手</p>
+          <div id="heroRelationship" class="hero-relationship hidden">
+            <span>与你的关系</span>
+            <strong id="overviewRelationship">一起生活、一起成长的数字伙伴。</strong>
+          </div>
           <div class="avatar-actions">
             <button id="chooseAvatar" class="primary" type="button">选择头像</button>
             <button id="removeAvatar" class="secondary" type="button">移除头像</button>
@@ -36,6 +43,35 @@
             accept="image/png,image/jpeg,image/webp"
             hidden
           />
+        </div>
+      </section>
+
+      <nav id="assistantTabs" class="profile-tabs hidden" aria-label="AI 主页内容">
+        <button class="profile-tab active" type="button" data-profile-view="overview" aria-selected="true">主页</button>
+        <button class="profile-tab" type="button" data-profile-view="journal" aria-selected="false">手记</button>
+        <button class="profile-tab" type="button" data-profile-view="gallery" aria-selected="false">相册</button>
+        <button class="profile-tab" type="button" data-profile-view="growth" aria-selected="false">成长</button>
+      </nav>
+
+      <section id="assistantOverview" class="assistant-overview hidden" data-assistant-view="overview">
+        <div class="overview-stats" aria-label="AI 伙伴内容概览">
+          <button type="button" data-open-profile-view="journal"><strong id="overviewJournalCount">0</strong><span>篇手记</span></button>
+          <button type="button" data-open-profile-view="gallery"><strong id="overviewGalleryCount">0</strong><span>张画面</span></button>
+          <button type="button" data-open-profile-view="growth"><strong id="overviewGrowthCount">0</strong><span>次成长</span></button>
+        </div>
+        <div class="overview-grid">
+          <article class="overview-card overview-journal-card">
+            <header><div><span>最近手记</span><h2>她最近写下的</h2></div><button type="button" data-open-profile-view="journal">查看全部</button></header>
+            <div id="overviewLatestJournal" class="overview-card-content"></div>
+          </article>
+          <article class="overview-card overview-gallery-card">
+            <header><div><span>最近画面</span><h2>她眼里的片刻</h2></div><button type="button" data-open-profile-view="gallery">查看全部</button></header>
+            <div id="overviewRecentGallery" class="overview-gallery"></div>
+          </article>
+          <article class="overview-card overview-growth-card">
+            <header><div><span>最近成长</span><h2>相处留下的变化</h2></div><button type="button" data-open-profile-view="growth">查看全部</button></header>
+            <div id="overviewLatestGrowth" class="overview-card-content"></div>
+          </article>
         </div>
       </section>
 
@@ -52,37 +88,7 @@
         </form>
       </section>
 
-      <section id="assistantSection" class="profile-panel hidden">
-        <header><h2>关于 AI 伙伴</h2><p>身份与人格可以随着相处持续成长。</p></header>
-        <form id="assistantProfileForm" class="profile-form">
-          <label>名字<input id="assistantName" maxlength="100" /></label>
-          <label>性别认同<input id="assistantGender" maxlength="50" /></label>
-          <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
-          <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
-          <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
-          <div class="wide form-actions"><button class="primary" type="submit">保存 AI 主页</button></div>
-        </form>
-      </section>
-
-      <section id="personaImageSection" class="profile-panel hidden">
-        <header>
-          <h2>人设参考图</h2>
-          <p>她写日记、周记配图时会以这张图为参考，让照片更像她。支持 PNG / JPEG / WebP，最大 4MB。</p>
-        </header>
-        <div class="persona-image">
-          <div id="personaImagePreview" class="persona-image-preview empty">
-            <img id="personaImage" class="hidden" alt="人设参考图" />
-            <span id="personaImageFallback">还没有人设参考图</span>
-          </div>
-          <div class="persona-image-actions">
-            <button id="choosePersonaImage" class="primary" type="button">上传人设图</button>
-            <button id="removePersonaImage" type="button" disabled>移除</button>
-          </div>
-          <input id="personaImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
-        </div>
-      </section>
-
-      <section id="journalSection" class="profile-panel hidden">
+      <section id="journalSection" class="profile-panel hidden" data-assistant-view="journal">
         <header class="journal-heading">
           <div><h2 id="journalHeading">AI 伙伴手记</h2><p>由她根据原始聊天与共同经历写下的日记和周记。</p></div>
           <div class="journal-tabs">
@@ -91,10 +97,20 @@
             <button class="journal-tab" data-journal-type="weekly" type="button">周记</button>
           </div>
         </header>
-        <div id="journalList" class="journal-list"></div>
+        <div class="journal-reader">
+          <button id="journalPrevious" class="journal-turn journal-turn-previous" type="button" aria-label="上一篇手记" title="上一篇手记">‹</button>
+          <div class="journal-book">
+            <div id="journalList" class="journal-list" aria-live="polite"></div>
+            <footer class="journal-reader-footer">
+              <span id="journalPageLabel">0 / 0</span>
+              <small>使用左右方向键翻页</small>
+            </footer>
+          </div>
+          <button id="journalNext" class="journal-turn journal-turn-next" type="button" aria-label="下一篇手记" title="下一篇手记">›</button>
+        </div>
       </section>
 
-      <section id="gallerySection" class="profile-panel hidden">
+      <section id="gallerySection" class="profile-panel hidden" data-assistant-view="gallery">
         <header class="gallery-heading">
           <div><h2>她的相册</h2><p>对话和手记里她画下的每一张画面。</p></div>
           <div class="gallery-tabs">
@@ -103,19 +119,84 @@
             <button class="gallery-tab" data-gallery-origin="journal" type="button">手记</button>
           </div>
         </header>
-        <div id="galleryGrid" class="gallery-grid"></div>
+        <div class="album-shell">
+          <div class="album-binding" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="album-page">
+            <div class="album-page-mark" aria-hidden="true">PHOTO<br />MEMORIES</div>
+            <div id="galleryGrid" class="gallery-grid"></div>
+          </div>
+        </div>
       </section>
 
-      <section id="growthSection" class="profile-panel hidden">
-        <header><h2>成长中的性格</h2><p>来自长期相处形成的特征与证据。</p></header>
-        <div id="traitList" class="trait-grid"></div>
-      </section>
+      <section id="growthSection" class="growth-space hidden" data-assistant-view="growth">
+        <div class="growth-intro">
+          <div class="growth-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="growth-ring">
+            <strong id="growthEventCount">0</strong>
+            <span>次成长</span>
+          </div>
+          <header>
+            <p>GROWING TOGETHER</p>
+            <h2>在相处里，慢慢成为我</h2>
+            <span>不是一组固定参数，而是每次理解、纠正与承诺留下的变化。</span>
+          </header>
+          <div class="growth-trait-count"><strong id="growthTraitCount">0</strong><span>个性格印记</span></div>
+        </div>
 
-      <section id="personalityTimelineSection" class="profile-panel hidden">
-        <header><h2>人格成长记录</h2><p>留下每一次承诺、纠正和成长的来处。</p></header>
-        <div id="personalityTimeline" class="timeline-list"></div>
+        <section class="trait-garden">
+          <header><p>PERSONALITY IMPRESSIONS</p><h3>正在形成的性格印记</h3></header>
+          <div id="traitList" class="trait-grid"></div>
+        </section>
+
+        <section class="growth-journey">
+          <header><p>OUR SHARED PATH</p><h3>一路留下的变化</h3><span>每一个节点，都有它发生的来处。</span></header>
+          <div id="personalityTimeline" class="timeline-list"></div>
+        </section>
       </section>
     </main>
+
+    <div id="assistantSettingsModal" class="profile-settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="assistantSettingsTitle">
+      <section class="profile-settings-dialog">
+        <header class="profile-settings-head">
+          <div><p>PERSONA SETTINGS</p><h2 id="assistantSettingsTitle">编辑人设</h2><span>这些内容会影响她如何理解自己、与你相处和生成形象。</span></div>
+          <button id="closeAssistantSettings" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="profile-settings-body">
+          <section id="assistantSection" class="settings-block hidden">
+            <header><h3>身份与关系</h3><p>身份与人格可以随着相处持续成长。</p></header>
+            <div class="settings-avatar-actions">
+              <div><strong>主页头像</strong><span>用于主页、聊天和共同内容中的身份展示。</span></div>
+              <button id="chooseAssistantAvatar" class="primary" type="button">更换头像</button>
+              <button id="removeAssistantAvatar" class="secondary" type="button">移除</button>
+            </div>
+            <form id="assistantProfileForm" class="profile-form">
+              <label>名字<input id="assistantName" maxlength="100" /></label>
+              <label>性别认同<input id="assistantGender" maxlength="50" /></label>
+              <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
+              <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+              <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
+              <div class="wide form-actions"><button class="primary" type="submit">保存人设</button></div>
+            </form>
+          </section>
+          <section id="personaImageSection" class="settings-block hidden">
+            <header><h3>形象参考</h3><p>她写手记或生成自拍时，会以这张图片作为形象参考。支持 PNG / JPEG / WebP，最大 4MB。</p></header>
+            <div class="persona-image">
+              <div id="personaImagePreview" class="persona-image-preview empty">
+                <img id="personaImage" class="hidden" alt="人设参考图" />
+                <span id="personaImageFallback">还没有人设参考图</span>
+              </div>
+              <div class="persona-image-actions">
+                <button id="choosePersonaImage" class="primary" type="button">上传人设图</button>
+                <button id="removePersonaImage" type="button" disabled>移除</button>
+              </div>
+              <input id="personaImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
 
     <div id="avatarCropModal" class="crop-modal hidden">
       <section class="crop-dialog">
@@ -151,6 +232,8 @@
     <div id="notice" class="notice hidden"></div>
     <script src="avatar-cropper.js"></script>
     <script src="markdown-renderer.js"></script>
+    <script src="journal-pager.js"></script>
+    <script src="gallery-layout.js"></script>
     <script src="profile.js"></script>
   </body>
 </html>
