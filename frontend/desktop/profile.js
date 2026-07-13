@@ -187,10 +187,11 @@ function renderAssistantOverview() {
   galleryImages.slice(0, 3).forEach((image) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.title = image.description || "查看画面";
+    const previewLabel = image.origin === "journal" ? "查看手记留影" : "查看对话留影";
+    button.title = previewLabel;
     const preview = document.createElement("img");
     preview.src = image.source;
-    preview.alt = image.description || "她画下的画面";
+    preview.alt = previewLabel;
     preview.loading = "lazy";
     button.append(preview);
     button.addEventListener("click", () => openLightbox(image));

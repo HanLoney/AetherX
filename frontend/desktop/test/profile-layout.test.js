@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "profile.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "profile.css"), "utf8");
+const javascript = fs.readFileSync(path.join(__dirname, "..", "profile.js"), "utf8");
 
 test("AI profile page keeps every id unique", () => {
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
@@ -60,4 +61,10 @@ test("profile navigation is a clickable bottom glass capsule", () => {
 test("growth banner is separated from the hero and stays compact", () => {
   assert.match(css, /\.growth-space\s*\{[^}]*margin-top:\s*30px;/s);
   assert.match(css, /\.growth-intro\s*\{[^}]*min-height:\s*218px;/s);
+});
+
+test("overview gallery never exposes image generation descriptions as tooltips", () => {
+  assert.doesNotMatch(javascript, /button\.title\s*=\s*image\.description/);
+  assert.doesNotMatch(javascript, /preview\.alt\s*=\s*image\.description/);
+  assert.match(javascript, /button\.title\s*=\s*previewLabel/);
 });
