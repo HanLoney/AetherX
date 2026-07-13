@@ -292,13 +292,14 @@
       inputSchema: objectSchema({
         status: {
           type: "string",
-          enum: ["active", "candidate"],
-          description: "可选状态"
+          enum: ["all", "active", "candidate"],
+          description: "可选状态，all 表示全部"
         }
       }),
       async execute(input) {
         try {
-          const events = await global.desktop.listPersonalityEvents(input);
+          const filters = input?.status === "all" ? {} : (input || {});
+          const events = await global.desktop.listPersonalityEvents(filters);
           return { ok: true, content: `找到 ${events.length} 条人格成长记录。`, data: events };
         } catch (error) {
           return failure(error);
@@ -376,13 +377,14 @@
       inputSchema: objectSchema({
         status: {
           type: "string",
-          enum: ["active", "candidate"],
-          description: "可选状态"
+          enum: ["all", "active", "candidate"],
+          description: "可选状态，all 表示全部"
         }
       }),
       async execute(input) {
         try {
-          const memories = await global.desktop.listSharedMemories(input);
+          const filters = input?.status === "all" ? {} : (input || {});
+          const memories = await global.desktop.listSharedMemories(filters);
           return { ok: true, content: `找到 ${memories.length} 条共同记忆。`, data: memories };
         } catch (error) {
           return failure(error);
@@ -459,4 +461,7 @@
   }
 
   global.registerMemoryTools = registerMemoryTools;
-})(window);
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { registerMemoryTools };
+  }
+})(typeof window !== "undefined" ? window : globalThis);

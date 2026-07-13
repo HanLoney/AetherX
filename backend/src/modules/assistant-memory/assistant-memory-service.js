@@ -50,7 +50,8 @@ class AssistantMemoryService {
   }
 
   listEvents(userId, query = {}) {
-    return this.repository.listEvents(userId, text(query.status, 30));
+    const status = text(query.status, 30);
+    return this.repository.listEvents(userId, status === "all" ? "" : status);
   }
 
   recordEvent(userId, input) {
@@ -110,7 +111,11 @@ class AssistantMemoryService {
   }
 
   listSharedMemories(userId, query = {}) {
-    return this.repository.listSharedMemories(userId, text(query.status, 30));
+    const status = text(query.status, 30);
+    return this.repository.listSharedMemories(
+      userId,
+      status === "all" ? "" : status
+    );
   }
 
   createSharedMemory(userId, input) {
