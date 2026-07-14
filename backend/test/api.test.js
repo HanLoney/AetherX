@@ -17,8 +17,8 @@ const {
 } = require("../src/modules/ai/ai-provider-client");
 const {
   injectRuntimeTime,
-  isDirectTimeRequest,
-  normalizeCurrentTimeClaims
+  normalizeCurrentTimeClaims,
+  registerAiRoutes
 } = require("../src/modules/ai/ai-routes");
 
 const authTokens = new Map();
@@ -224,26 +224,70 @@ test("time awareness API reports first recorded interaction", async () => {
   });
 });
 
-test("direct time questions bypass model inference and use the runtime clock", async () => {
-  await withServer(async (baseUrl) => {
-    const result = await request(baseUrl, "POST", "/api/v1/ai/chat", {
+test("time-related questions always use model wording with authoritative runtime facts", async () => {
+  const routes = new Map();
+  const providerCalls = [];
+  registerAiRoutes(
+    {
+      add(method, route, handler) {
+        routes.set(`${method} ${route}`, handler);
+      }
+    },
+    {
+      getCredentials: () => ({ apiKey: "test-key" })
+    },
+    {
+      chat: async (_config, payload) => {
+        providerCalls.push(payload);
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            choices: [{
+              message: {
+                role: "assistant",
+                content: "唔，现在已经 **10:34** 啦～我当然记得你几点下班。"
+              }
+            }]
+          }
+        };
+      }
+    },
+    {
+      getContext: () => ({
+        localTime: "10:35",
+        timeZone: "Asia/Shanghai",
+        context: "[权威运行时事实：时间感知]\n用户当地时间：10:35"
+      })
+    }
+  );
+
+  const handler = routes.get("POST /api/v1/ai/chat");
+  const response = await handler({
+    userId: "user",
+    body: {
       messages: [
-        { role: "system", content: "普通系统提示" },
-        { role: "user", content: "现在几点" }
+        { role: "system", content: "保持自然、亲近的人格表达" },
+        { role: "user", content: "那你知道我几点下班了吗" }
       ],
       runtime: {
         timeAwareness: true,
         timeZone: "Asia/Shanghai",
         locale: "zh-CN"
       }
-    });
-    assert.equal(result.response.status, 200);
-    assert.equal(result.payload.data.ok, true);
-    assert.match(
-      result.payload.data.data.choices[0].message.content,
-      /现在是 \*\*\d{2}:\d{2}\*\*/
-    );
+    }
   });
+
+  assert.equal(providerCalls.length, 1);
+  assert.match(providerCalls[0].messages[0].content, /用户当地时间：10:35/);
+  assert.match(
+    response.data.data.choices[0].message.content,
+    /唔，现在已经 \*\*10:35\*\* 啦～/
+  );
+  assert.doesNotMatch(
+    response.data.data.choices[0].message.content,
+    /以系统刚刚读取的.*时间为准/
+  );
 });
 
 test("runtime time is merged into leading system facts and corrects model claims", () => {
@@ -260,7 +304,6 @@ test("runtime time is merged into leading system facts and corrects model claims
   assert.equal(injected[0].role, "system");
   assert.match(injected[0].content, /用户当地时间：10:35/);
   assert.match(injected[0].content, /基础规则/);
-  assert.equal(isDirectTimeRequest(messages), true);
 
   const result = {
     data: {
