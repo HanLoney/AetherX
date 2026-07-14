@@ -68,3 +68,13 @@ test("overview gallery never exposes image generation descriptions as tooltips",
   assert.doesNotMatch(javascript, /preview\.alt\s*=\s*image\.description/);
   assert.match(javascript, /button\.title\s*=\s*previewLabel/);
 });
+
+test("AI profile loads core content independently and paginates gallery images", () => {
+  assert.match(html, /id="galleryLoadMore"/);
+  assert.match(javascript, /Promise\.allSettled\(/);
+  assert.match(javascript, /getAssistantGallerySummary\(/);
+  assert.match(javascript, /getAssistantGalleryPage\(/);
+  assert.match(javascript, /GALLERY_OVERVIEW_LIMIT\s*=\s*3/);
+  assert.match(javascript, /GALLERY_PAGE_SIZE\s*=\s*6/);
+  assert.doesNotMatch(javascript, /listAssistantGallery\(\{ limit: 120 \}\)/);
+});
