@@ -1337,6 +1337,35 @@ body.embedded .profile-page { padding-top: 38px; }
 .gallery-badge-chat { background: rgba(97, 125, 164, .82); }
 .gallery-badge-journal { background: rgba(197, 121, 158, .82); }
 .gallery-grid .empty { grid-column: 1 / -1; }
+.gallery-pagination {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 36px;
+  margin-top: 42px;
+}
+.gallery-pagination span {
+  color: #9a919f;
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+.gallery-pagination button {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 1px solid rgba(105, 126, 160, .16);
+  border-radius: 999px;
+  color: #667fa4;
+  background: rgba(255,255,255,.74);
+  box-shadow: 0 6px 16px rgba(80, 72, 98, .08);
+}
+.gallery-pagination button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.94);
+}
+.gallery-pagination button:disabled { cursor: wait; opacity: .56; }
 .gallery-lightbox {
   position: fixed;
   inset: 0;

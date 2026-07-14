@@ -1,6 +1,10 @@
 const MARKDOWN_IMAGE = /!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g;
 const DEFAULT_LIMIT = 80;
 const MAX_LIMIT = 200;
+const DEFAULT_SUMMARY_LIMIT = 3;
+const MAX_SUMMARY_LIMIT = 6;
+const DEFAULT_PAGE_LIMIT = 6;
+const MAX_PAGE_LIMIT = 24;
 
 class GalleryService {
   constructor(repository) {
@@ -8,16 +12,48 @@ class GalleryService {
   }
 
   list(userId, query = {}) {
-    const limit = Math.max(
-      1,
-      Math.min(MAX_LIMIT, Number(query.limit) || DEFAULT_LIMIT)
+    const limit = boundedInteger(query.limit, DEFAULT_LIMIT, MAX_LIMIT);
+    return this.collect(userId).slice(0, limit);
+  }
+
+  summary(userId, query = {}) {
+    const limit = boundedInteger(
+      query.limit,
+      DEFAULT_SUMMARY_LIMIT,
+      MAX_SUMMARY_LIMIT
     );
+    const items = this.collect(userId);
+    return {
+      total: items.length,
+      items: items.slice(0, limit)
+    };
+  }
+
+  page(userId, query = {}) {
+    const limit = boundedInteger(
+      query.limit,
+      DEFAULT_PAGE_LIMIT,
+      MAX_PAGE_LIMIT
+    );
+    const offset = nonNegativeInteger(query.offset);
+    const allItems = this.collect(userId);
+    const items = allItems.slice(offset, offset + limit);
+    return {
+      items,
+      total: allItems.length,
+      offset,
+      limit,
+      hasMore: offset + items.length < allItems.length
+    };
+  }
+
+  collect(userId) {
     const items = [
       ...this.journalImages(userId),
       ...this.conversationImages(userId)
     ];
     items.sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0));
-    return items.slice(0, limit);
+    return items;
   }
 
   journalImages(userId) {
@@ -70,6 +106,18 @@ class GalleryService {
     }
     return images;
   }
+}
+
+function boundedInteger(value, fallback, maximum) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(maximum, parsed)
+    : fallback;
+}
+
+function nonNegativeInteger(value) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 module.exports = { GalleryService };

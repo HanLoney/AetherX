@@ -265,6 +265,12 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant-gallery:list", (_event, filters) =>
     api.listAssistantGallery(filters)
   );
+  ipcMain.handle("assistant-gallery:summary", (_event, filters) =>
+    api.getAssistantGallerySummary(filters)
+  );
+  ipcMain.handle("assistant-gallery:page", (_event, filters) =>
+    api.getAssistantGalleryPage(filters)
+  );
   ipcMain.handle("dreams:get", (_event, id) => api.getDream(id));
   ipcMain.handle("dreams:get-by-date", (_event, dreamDate) =>
     api.getDreamByDate(dreamDate)

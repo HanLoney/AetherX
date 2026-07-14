@@ -9,14 +9,25 @@ if (params.has("embedded")) {
 
 const $ = (selector) => document.querySelector(selector);
 const cropper = new window.AetherAvatarCropper($("#avatarCropModal"));
+const GALLERY_OVERVIEW_LIMIT = 3;
+const GALLERY_PAGE_SIZE = 6;
 let profile = null;
 let personalityEvents = [];
 let journals = [];
 const journalPager = new window.AetherJournalPager();
 let journalTurnDirection = "";
 let galleryImages = [];
+let galleryTotal = 0;
+let galleryHasMore = false;
+let galleryLoading = kind === "assistant";
+let galleryLoadError = "";
+let galleryLoadPromise = null;
 let galleryFilter = "all";
 let assistantView = "overview";
+const assistantContentState = {
+  growth: { loading: kind === "assistant", error: "" },
+  journals: { loading: kind === "assistant", error: "" }
+};
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -102,7 +113,9 @@ function renderAssistant() {
   list.replaceChildren();
   const traits = profile.traits || [];
   $("#growthTraitCount").textContent = String(traits.length);
-  $("#growthEventCount").textContent = String(personalityEvents.length);
+  $("#growthEventCount").textContent = assistantContentState.growth.loading
+    ? "…"
+    : String(personalityEvents.length);
   traits.forEach((trait, index) => {
     const card = document.createElement("article");
     card.className = `trait-card trait-tone-${index % 3}`;
@@ -154,14 +167,23 @@ function setAssistantView(view) {
     button.setAttribute("aria-selected", String(active));
   });
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (assistantView === "gallery" && galleryHasMore) {
+    void loadMoreGallery().catch(showGalleryLoadFailure);
+  }
 }
 
 function renderAssistantOverview() {
   $("#overviewRelationship").textContent =
     profile.relationshipSummary || "一起生活、一起成长的数字伙伴。";
-  $("#overviewJournalCount").textContent = String(journals.length);
-  $("#overviewGalleryCount").textContent = String(galleryImages.length);
-  $("#overviewGrowthCount").textContent = String(personalityEvents.length);
+  $("#overviewJournalCount").textContent = assistantContentState.journals.loading
+    ? "…"
+    : String(journals.length);
+  $("#overviewGalleryCount").textContent = galleryLoading && !galleryTotal
+    ? "…"
+    : String(galleryTotal);
+  $("#overviewGrowthCount").textContent = assistantContentState.growth.loading
+    ? "…"
+    : String(personalityEvents.length);
 
   const journalHost = $("#overviewLatestJournal");
   journalHost.replaceChildren();
@@ -178,6 +200,10 @@ function renderAssistantOverview() {
     const meta = document.createElement("small");
     meta.textContent = `${latestJournal.type === "daily" ? "日记" : "周记"} · ${latestJournal.periodKey}`;
     journalHost.append(title, excerpt, meta);
+  } else if (assistantContentState.journals.loading) {
+    journalHost.innerHTML = '<div class="empty">手记正在慢慢翻开…</div>';
+  } else if (assistantContentState.journals.error) {
+    journalHost.innerHTML = '<div class="empty">手记暂时没有加载成功。</div>';
   } else {
     journalHost.innerHTML = '<div class="empty">她还没有写下第一篇手记。</div>';
   }
@@ -197,7 +223,11 @@ function renderAssistantOverview() {
     button.addEventListener("click", () => openLightbox(image));
     galleryHost.append(button);
   });
-  if (!galleryHost.children.length) {
+  if (!galleryHost.children.length && galleryLoading) {
+    galleryHost.innerHTML = '<div class="empty">最近画面正在赶来…</div>';
+  } else if (!galleryHost.children.length && galleryLoadError) {
+    galleryHost.innerHTML = '<div class="empty">最近画面暂时没有加载成功。</div>';
+  } else if (!galleryHost.children.length) {
     galleryHost.innerHTML = '<div class="empty">她还没有画下新的画面。</div>';
   }
 
@@ -216,6 +246,10 @@ function renderAssistantOverview() {
     const meta = document.createElement("small");
     meta.textContent = latestGrowth.status === "candidate" ? "等待确认" : "已经成为她的一部分";
     growthHost.append(title, content, meta);
+  } else if (assistantContentState.growth.loading) {
+    growthHost.innerHTML = '<div class="empty">成长记录正在整理…</div>';
+  } else if (assistantContentState.growth.error) {
+    growthHost.innerHTML = '<div class="empty">成长记录暂时没有加载成功。</div>';
   } else {
     growthHost.innerHTML = '<div class="empty">相处还在继续，变化会慢慢留在这里。</div>';
   }
@@ -249,8 +283,12 @@ function renderJournals() {
   if (!journal) {
     const emptyPage = document.createElement("article");
     emptyPage.className = "journal-page journal-page-empty";
-    emptyPage.innerHTML =
-      '<div class="empty">还没有手记。完成一个自然日或完整一周后，她会自己写下来。</div>';
+    const message = assistantContentState.journals.loading
+      ? "手记正在慢慢翻开…"
+      : assistantContentState.journals.error
+        ? "手记暂时没有加载成功，请稍后重试。"
+        : "还没有手记。完成一个自然日或完整一周后，她会自己写下来。";
+    emptyPage.innerHTML = `<div class="empty">${message}</div>`;
     list.append(emptyPage);
     return;
   }
@@ -318,8 +356,15 @@ function renderGallery() {
     (image) => galleryFilter === "all" || image.origin === galleryFilter
   );
   if (!visible.length) {
-    grid.innerHTML =
-      '<div class="empty">相册还是空的。当她在对话或手记里画下画面时，会收进这里。</div>';
+    const message = galleryLoading
+      ? "正在翻开相册…"
+      : galleryLoadError
+        ? "这一页暂时没有加载成功，请重试。"
+        : galleryImages.length
+          ? "当前已加载的画面里还没有这一类。"
+          : "相册还是空的。当她在对话或手记里画下画面时，会收进这里。";
+    grid.innerHTML = `<div class="empty">${message}</div>`;
+    renderGalleryPagination();
     return;
   }
 
@@ -375,6 +420,31 @@ function renderGallery() {
     section.append(heading, photos);
     grid.append(section);
   });
+  renderGalleryPagination();
+}
+
+function renderGalleryPagination() {
+  const status = $("#galleryPageStatus");
+  const more = $("#galleryLoadMore");
+  if (galleryLoading) {
+    status.textContent = galleryImages.length
+      ? `已翻开 ${galleryImages.length} 张，下一页正在赶来…`
+      : "画面正在赶来…";
+  } else if (galleryLoadError) {
+    status.textContent = "这一页暂时没翻开。";
+  } else if (!galleryTotal) {
+    status.textContent = "";
+  } else if (galleryHasMore) {
+    status.textContent = `已翻开 ${galleryImages.length} / ${galleryTotal} 张`;
+  } else {
+    status.textContent = `共 ${galleryTotal} 张，已经翻到最后一页`;
+  }
+  more.disabled = galleryLoading;
+  more.textContent = galleryLoadError ? "重新加载" : "继续翻阅";
+  more.classList.toggle(
+    "hidden",
+    !galleryLoadError && (!galleryHasMore || galleryLoading)
+  );
 }
 
 function openLightbox(image) {
@@ -432,7 +502,12 @@ function renderPersonalityTimeline() {
     timeline.append(card);
   });
   if (!personalityEvents.length) {
-    timeline.innerHTML = '<div class="empty">还没有人格成长记录。</div>';
+    const message = assistantContentState.growth.loading
+      ? "成长记录正在整理…"
+      : assistantContentState.growth.error
+        ? "成长记录暂时没有加载成功，请稍后重试。"
+        : "还没有人格成长记录。";
+    timeline.innerHTML = `<div class="empty">${message}</div>`;
   }
 }
 
@@ -445,18 +520,140 @@ function render() {
   }
 }
 
+function refreshGrowthViews() {
+  $("#growthEventCount").textContent = assistantContentState.growth.loading
+    ? "…"
+    : String(personalityEvents.length);
+  renderPersonalityTimeline();
+  renderAssistantOverview();
+}
+
+function refreshJournalViews() {
+  renderJournals();
+  renderAssistantOverview();
+}
+
+function refreshGalleryViews() {
+  renderGallery();
+  renderAssistantOverview();
+}
+
+async function loadGrowthContent() {
+  assistantContentState.growth.loading = true;
+  assistantContentState.growth.error = "";
+  refreshGrowthViews();
+  try {
+    personalityEvents = await window.desktop.listPersonalityEvents();
+  } catch (error) {
+    assistantContentState.growth.error = error.message;
+    throw error;
+  } finally {
+    assistantContentState.growth.loading = false;
+    refreshGrowthViews();
+  }
+}
+
+async function loadJournalContent() {
+  assistantContentState.journals.loading = true;
+  assistantContentState.journals.error = "";
+  refreshJournalViews();
+  try {
+    journals = await window.desktop.listJournals({ limit: 50 });
+  } catch (error) {
+    assistantContentState.journals.error = error.message;
+    throw error;
+  } finally {
+    assistantContentState.journals.loading = false;
+    refreshJournalViews();
+  }
+}
+
+async function loadGallerySummary() {
+  if (galleryLoadPromise) return galleryLoadPromise;
+  galleryLoading = true;
+  galleryLoadError = "";
+  refreshGalleryViews();
+  galleryLoadPromise = (async () => {
+    try {
+      const summary = await window.desktop.getAssistantGallerySummary({
+        limit: GALLERY_OVERVIEW_LIMIT
+      });
+      galleryImages = Array.isArray(summary?.items) ? summary.items : [];
+      galleryTotal = Math.max(0, Number(summary?.total) || 0);
+      galleryHasMore = galleryImages.length < galleryTotal;
+    } catch (error) {
+      galleryImages = [];
+      galleryTotal = 0;
+      galleryHasMore = false;
+      galleryLoadError = error.message;
+      throw error;
+    } finally {
+      galleryLoading = false;
+      galleryLoadPromise = null;
+      refreshGalleryViews();
+    }
+  })();
+  return galleryLoadPromise;
+}
+
+async function loadMoreGallery() {
+  if (galleryLoadPromise) return galleryLoadPromise;
+  if (!galleryHasMore && galleryImages.length) return;
+  galleryLoading = true;
+  galleryLoadError = "";
+  refreshGalleryViews();
+  galleryLoadPromise = (async () => {
+    try {
+      const page = await window.desktop.getAssistantGalleryPage({
+        offset: galleryImages.length,
+        limit: GALLERY_PAGE_SIZE
+      });
+      const knownIds = new Set(galleryImages.map((image) => image.id));
+      const nextItems = (Array.isArray(page?.items) ? page.items : []).filter(
+        (image) => !knownIds.has(image.id)
+      );
+      galleryImages = [...galleryImages, ...nextItems];
+      galleryTotal = Math.max(galleryImages.length, Number(page?.total) || 0);
+      galleryHasMore = Boolean(page?.hasMore);
+    } catch (error) {
+      galleryLoadError = error.message;
+      throw error;
+    } finally {
+      galleryLoading = false;
+      galleryLoadPromise = null;
+      refreshGalleryViews();
+    }
+  })();
+  return galleryLoadPromise;
+}
+
+function showGalleryLoadFailure(error) {
+  showNotice(`相册暂时没有加载成功：${error.message}`, true);
+}
+
+async function loadAssistantContent() {
+  const results = await Promise.allSettled([
+    loadGrowthContent(),
+    loadJournalContent(),
+    loadGallerySummary()
+  ]);
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) {
+    showNotice("部分内容暂时没有加载成功，可以稍后重试。", true);
+  }
+  if (assistantView === "gallery" && galleryHasMore) {
+    void loadMoreGallery().catch(showGalleryLoadFailure);
+  }
+}
+
 async function loadProfile() {
   if (kind === "user") {
     profile = await window.desktop.getProfile();
   } else {
-    [profile, personalityEvents, journals, galleryImages] = await Promise.all([
-      window.desktop.getAssistantProfile(),
-      window.desktop.listPersonalityEvents(),
-      window.desktop.listJournals({ limit: 50 }),
-      window.desktop.listAssistantGallery({ limit: 120 })
-    ]);
+    profile = await window.desktop.getAssistantProfile();
   }
   render();
+  if (kind === "assistant") await loadAssistantContent();
 }
 
 async function deleteJournal(journal) {
@@ -594,6 +791,12 @@ document.querySelectorAll(".gallery-tab").forEach((button) => {
     renderGallery();
   });
 });
+$("#galleryLoadMore").addEventListener("click", () => {
+  const request = galleryLoadError && !galleryImages.length
+    ? loadGallerySummary()
+    : loadMoreGallery();
+  void request.catch(showGalleryLoadFailure);
+});
 $("#removeAssistantAvatar").addEventListener("click", async () => {
   try {
     await saveAvatar("");
@@ -649,17 +852,19 @@ window.addEventListener("message", async (event) => {
   if (kind !== "assistant") return;
   const type = event.data?.type;
   if (type === "aether:journals-updated") {
-    [journals, galleryImages] = await Promise.all([
-      window.desktop.listJournals({ limit: 50 }),
-      window.desktop.listAssistantGallery({ limit: 120 })
+    const results = await Promise.allSettled([
+      loadJournalContent(),
+      loadGallerySummary()
     ]);
-    renderJournals();
-    renderGallery();
-    renderAssistantOverview();
+    if (results.some((result) => result.status === "rejected")) {
+      showNotice("更新后的部分内容暂时没有加载成功。", true);
+    }
   } else if (type === "aether:gallery-updated") {
-    galleryImages = await window.desktop.listAssistantGallery({ limit: 120 });
-    renderGallery();
-    renderAssistantOverview();
+    try {
+      await loadGallerySummary();
+    } catch (error) {
+      showGalleryLoadFailure(error);
+    }
   }
 });
 

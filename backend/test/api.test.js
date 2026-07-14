@@ -2026,6 +2026,28 @@ test("assistant gallery aggregates images from conversations and journals", asyn
     assert.equal(chatItem.source, chatSource);
     assert.equal(chatItem.selfie, true);
     assert.equal(chatItem.refTitle, "画给你看");
+
+    const summary = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/gallery/summary?limit=1"
+    );
+    assert.equal(summary.response.status, 200);
+    assert.equal(summary.payload.data.total, 2);
+    assert.equal(summary.payload.data.items.length, 1);
+    assert.equal(summary.payload.data.items[0].id, items[0].id);
+
+    const page = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/gallery/page?offset=1&limit=1"
+    );
+    assert.equal(page.response.status, 200);
+    assert.equal(page.payload.data.total, 2);
+    assert.equal(page.payload.data.offset, 1);
+    assert.equal(page.payload.data.items.length, 1);
+    assert.equal(page.payload.data.items[0].id, items[1].id);
+    assert.equal(page.payload.data.hasMore, false);
   });
 });
 

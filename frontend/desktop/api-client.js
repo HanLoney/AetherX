@@ -440,6 +440,26 @@ class XuanApiClient {
     );
   }
 
+  getAssistantGallerySummary(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/assistant/gallery/summary${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  getAssistantGalleryPage(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/assistant/gallery/page${query.size ? `?${query}` : ""}`
+    );
+  }
+
   getDream(id) {
     return this.request("GET", `/api/v1/dreams/${encodeURIComponent(id)}`);
   }
