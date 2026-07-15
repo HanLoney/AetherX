@@ -41,11 +41,55 @@ const TYPE_LABELS = {
   plan: "计划",
   routine: "习惯"
 };
+const DOMAIN_ICONS = {
+  profile: [
+    "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+    "M4 21a8 8 0 0 1 16 0"
+  ],
+  life: ["m3 11 9-8 9 8", "M5 10v11h14V10", "M9 21v-6h6v6"],
+  relationship: [
+    "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"
+  ],
+  health: ["M3 12h4l3-8 4 16 3-8h4"],
+  work: [
+    "M4 7h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z",
+    "M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    "M2 12h20"
+  ],
+  learning: [
+    "M3 5a7 7 0 0 1 9 2v14a7 7 0 0 0-9-2V5Z",
+    "M21 5a7 7 0 0 0-9 2v14a7 7 0 0 1 9-2V5Z"
+  ],
+  emotion: [
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z",
+    "M8 14s1.5 2 4 2 4-2 4-2",
+    "M9 9h.01",
+    "M15 9h.01"
+  ],
+  shared: [
+    "M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1",
+    "M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"
+  ]
+};
 const STATUS_GROUPS = [
-  { status: "candidate", label: "待确认记忆", description: "需要洛尼确认后才会参与召回" },
-  { status: "active", label: "已确认记忆", description: "AI 伙伴会在相关场景中主动参考" },
+  { status: "candidate", label: "待确认记忆", description: ({ userName }) => `需要${userName}确认后才会参与召回` },
+  { status: "active", label: "已确认记忆", description: ({ assistantName }) => `${assistantName}会在相关场景中自然想起` },
   { status: "archived", label: "已归档记忆", description: "保留记录，但不会参与召回" }
 ];
+
+function participantNames() {
+  return {
+    userName:
+      state.profile?.preferredName || state.profile?.displayName || "你",
+    assistantName: state.assistantProfile?.name || "小玄"
+  };
+}
+
+function groupDescription(groupInfo) {
+  return typeof groupInfo.description === "function"
+    ? groupInfo.description(participantNames())
+    : groupInfo.description;
+}
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -161,7 +205,7 @@ function renderAssistantProfile() {
     list.append(card);
   });
   if (!(profile.traits || []).length) {
-    list.innerHTML = '<div class="empty">AI 伙伴的人格还在成长中。</div>';
+    list.innerHTML = `<div class="empty">${participantNames().assistantName}的人格还在成长中。</div>`;
   }
 }
 
@@ -252,13 +296,14 @@ function renderPersonalityEvents() {
 }
 
 const SHARED_STATUS_GROUPS = [
-  { status: "candidate", label: "待确认共同记忆", description: "需要洛尼确认后才会生效" },
+  { status: "candidate", label: "待确认共同记忆", description: ({ userName }) => `需要${userName}确认后才会生效` },
   { status: "active", label: "已确认共同记忆", description: "我们共同的经历、决定与约定" }
 ];
 
 function createSharedMemoryRow(memory) {
   const row = document.createElement("article");
-  row.className = "memory-row";
+  row.className = "memory-row shared-memory-row";
+  const marker = createMemoryMarker("shared", "共同记忆");
   const content = document.createElement("div");
   content.className = "memory-content";
   const text = document.createElement("p");
@@ -297,7 +342,7 @@ function createSharedMemoryRow(memory) {
       await loadAll();
     }, "danger")
   );
-  row.append(content, actions);
+  row.append(marker, content, actions);
   return row;
 }
 
@@ -315,7 +360,7 @@ function renderSharedMemories() {
       <div><i class="status-dot"></i><strong></strong><span></span></div>
       <span class="group-count"></span>`;
     header.querySelector("strong").textContent = groupInfo.label;
-    header.querySelector("div span").textContent = groupInfo.description;
+    header.querySelector("div span").textContent = groupDescription(groupInfo);
     header.querySelector(".group-count").textContent = `${memories.length} 条`;
     const rows = document.createElement("div");
     rows.className = "memory-list";
@@ -448,7 +493,7 @@ function renderMemories() {
       <div><i class="status-dot"></i><strong></strong><span></span></div>
       <span class="group-count"></span>`;
     header.querySelector("strong").textContent = groupInfo.label;
-    header.querySelector("div span").textContent = groupInfo.description;
+    header.querySelector("div span").textContent = groupDescription(groupInfo);
     header.querySelector(".group-count").textContent = `${memories.length} 条`;
     const rows = document.createElement("div");
     rows.className = "memory-list";
@@ -462,14 +507,19 @@ function renderMemories() {
     empty.className = "memory-group empty";
     empty.textContent = state.memories.length
       ? "没有符合当前筛选条件的记忆。"
-      : "AI 伙伴还没有长期记忆。可以点击“新增记忆”记录一件重要的事。";
+      : `${participantNames().assistantName}还没有长期记忆。可以写下一件值得记住的事。`;
     list.append(empty);
   }
 }
 
 function createMemoryRow(memory) {
   const row = document.createElement("article");
-  row.className = "memory-row";
+  const domainKey = DOMAIN_ICONS[memory.domain] ? memory.domain : "profile";
+  row.className = `memory-row domain-${domainKey}`;
+  const marker = createMemoryMarker(
+    domainKey,
+    DOMAIN_LABELS[memory.domain] || memory.domain
+  );
   const content = document.createElement("div");
   content.className = "memory-content";
   const text = document.createElement("p");
@@ -483,7 +533,11 @@ function createMemoryRow(memory) {
   type.textContent = TYPE_LABELS[memory.type] || memory.type;
   const source = document.createElement("span");
   source.textContent =
-    memory.source === "explicit" ? "洛尼明确告知" : memory.source === "inferred" ? "AI 推测" : "导入";
+    memory.source === "explicit"
+      ? `${participantNames().userName}明确告知`
+      : memory.source === "inferred"
+        ? `${participantNames().assistantName}推测`
+        : "导入";
   const confidence = document.createElement("span");
   confidence.textContent = `置信度 ${Math.round(memory.confidence * 100)}%`;
   const validity = document.createElement("span");
@@ -510,8 +564,25 @@ function createMemoryRow(memory) {
   }
   actions.append(actionButton("编辑", () => editMemory(memory)));
   actions.append(actionButton("忘记", () => deleteMemory(memory.id), "danger"));
-  row.append(content, actions);
+  row.append(marker, content, actions);
   return row;
+}
+
+function createMemoryMarker(iconKey, label) {
+  const marker = document.createElement("div");
+  marker.className = "memory-domain-mark";
+  marker.title = label;
+  marker.setAttribute("aria-label", label);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const pathData of DOMAIN_ICONS[iconKey] || DOMAIN_ICONS.profile) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.append(path);
+  }
+  marker.append(svg);
+  return marker;
 }
 
 function actionButton(text, handler, className = "") {
@@ -535,7 +606,7 @@ async function refreshMemories() {
 
 async function confirmMemory(id) {
   await window.desktop.confirmMemory(id);
-  showNotice("这条记忆已经由洛尼确认。");
+  showNotice(`这条记忆已经由${participantNames().userName}确认。`);
   await refreshMemories();
 }
 
@@ -573,7 +644,7 @@ function resetMemoryForm() {
 }
 
 async function deleteMemory(id) {
-  if (!confirm("确定让 AI 伙伴忘记这条记忆吗？删除后无法恢复。")) return;
+  if (!confirm(`确定让${participantNames().assistantName}忘记这条记忆吗？删除后无法恢复。`)) return;
   await window.desktop.deleteMemory(id);
   showNotice("这条记忆已经彻底删除。");
   await refreshMemories();
@@ -784,7 +855,7 @@ $("#memoryForm").addEventListener("submit", async (event) => {
     if (id) await window.desktop.updateMemory(id, payload);
     else await window.desktop.createMemory(payload);
     resetMemoryForm();
-    showNotice(id ? "记忆已修改。" : "AI 伙伴记住啦。");
+    showNotice(id ? "记忆已修改。" : `${participantNames().assistantName}记住啦。`);
     await refreshMemories();
   } catch (error) {
     showNotice(error.message, true);
