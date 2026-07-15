@@ -5,6 +5,30 @@ class AlbumRepository {
     this.database = database;
   }
 
+  getParticipantNames(userId) {
+    const row = this.database
+      .prepare(
+        `SELECT
+           COALESCE(
+             NULLIF(profile.preferred_name, ''),
+             NULLIF(profile.display_name, ''),
+             NULLIF(account.display_name, ''),
+             NULLIF(account.username, ''),
+             '用户'
+           ) AS user_name,
+           COALESCE(NULLIF(assistant.name, ''), '小玄') AS assistant_name
+         FROM users AS account
+         LEFT JOIN user_profiles AS profile ON profile.user_id = account.id
+         LEFT JOIN assistant_profiles AS assistant ON assistant.user_id = account.id
+         WHERE account.id = ?`
+      )
+      .get(userId);
+    return {
+      userName: row?.user_name || "用户",
+      assistantName: row?.assistant_name || "小玄"
+    };
+  }
+
   listMoments(userId, filters = {}) {
     const conditions = ["user_id = ?"];
     const values = [userId];

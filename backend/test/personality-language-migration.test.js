@@ -21,7 +21,27 @@ test("personality language migration rewrites stored system wording", () => {
       );
       CREATE TABLE assistant_profiles(
         user_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '小玄',
         traits_json TEXT NOT NULL
+      );
+      CREATE TABLE user_profiles(
+        user_id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL DEFAULT '',
+        preferred_name TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE album_moments(
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        mood TEXT NOT NULL DEFAULT '',
+        tags_json TEXT NOT NULL DEFAULT '[]'
+      );
+      CREATE TABLE album_moment_sources(
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        source_excerpt TEXT NOT NULL DEFAULT ''
       );
     `);
     const markApplied = database.prepare(
@@ -41,6 +61,7 @@ test("personality language migration rewrites stored system wording", () => {
       updatedAt: 1
     }]));
     database.close();
+    database = null;
     database = openDatabase(dataDir);
 
     const event = database.prepare(

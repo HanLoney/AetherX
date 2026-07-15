@@ -535,6 +535,80 @@ const MIGRATIONS = [
       ON auth_sessions(user_id, expires_at);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry
       ON auth_sessions(expires_at);
+  `,
+  `
+    WITH participant_names AS (
+      SELECT
+        owner.user_id,
+        COALESCE(
+          NULLIF(profile.preferred_name, ''),
+          NULLIF(profile.display_name, ''),
+          NULLIF(account.display_name, ''),
+          NULLIF(account.username, ''),
+          '用户'
+        ) AS user_name,
+        COALESCE(NULLIF(assistant.name, ''), '小玄') AS assistant_name
+      FROM (SELECT DISTINCT user_id FROM album_moments) AS owner
+      LEFT JOIN users AS account ON account.id = owner.user_id
+      LEFT JOIN user_profiles AS profile ON profile.user_id = owner.user_id
+      LEFT JOIN assistant_profiles AS assistant ON assistant.user_id = owner.user_id
+    )
+    UPDATE album_moments
+    SET
+      title = REPLACE(REPLACE(REPLACE(REPLACE(
+        title, '用户', char(57344)), '助手', char(57345)),
+        char(57344), participant_names.user_name),
+        char(57345), participant_names.assistant_name),
+      summary = REPLACE(REPLACE(REPLACE(REPLACE(
+        summary, '用户', char(57344)), '助手', char(57345)),
+        char(57344), participant_names.user_name),
+        char(57345), participant_names.assistant_name),
+      detail = REPLACE(REPLACE(REPLACE(REPLACE(
+        detail, '用户', char(57344)), '助手', char(57345)),
+        char(57344), participant_names.user_name),
+        char(57345), participant_names.assistant_name),
+      mood = REPLACE(REPLACE(REPLACE(REPLACE(
+        mood, '用户', char(57344)), '助手', char(57345)),
+        char(57344), participant_names.user_name),
+        char(57345), participant_names.assistant_name),
+      tags_json = REPLACE(REPLACE(REPLACE(REPLACE(
+        tags_json, '用户', char(57344)), '助手', char(57345)),
+        char(57344), participant_names.user_name),
+        char(57345), participant_names.assistant_name)
+    FROM participant_names
+    WHERE album_moments.user_id = participant_names.user_id
+      AND (
+        instr(title, '用户') > 0 OR instr(title, '助手') > 0 OR
+        instr(summary, '用户') > 0 OR instr(summary, '助手') > 0 OR
+        instr(detail, '用户') > 0 OR instr(detail, '助手') > 0 OR
+        instr(mood, '用户') > 0 OR instr(mood, '助手') > 0 OR
+        instr(tags_json, '用户') > 0 OR instr(tags_json, '助手') > 0
+      );
+
+    WITH participant_names AS (
+      SELECT
+        owner.user_id,
+        COALESCE(
+          NULLIF(profile.preferred_name, ''),
+          NULLIF(profile.display_name, ''),
+          NULLIF(account.display_name, ''),
+          NULLIF(account.username, ''),
+          '用户'
+        ) AS user_name,
+        COALESCE(NULLIF(assistant.name, ''), '小玄') AS assistant_name
+      FROM (SELECT DISTINCT user_id FROM album_moment_sources) AS owner
+      LEFT JOIN users AS account ON account.id = owner.user_id
+      LEFT JOIN user_profiles AS profile ON profile.user_id = owner.user_id
+      LEFT JOIN assistant_profiles AS assistant ON assistant.user_id = owner.user_id
+    )
+    UPDATE album_moment_sources
+    SET source_excerpt = REPLACE(REPLACE(REPLACE(REPLACE(
+      source_excerpt, '用户', char(57344)), '助手', char(57345)),
+      char(57344), participant_names.user_name),
+      char(57345), participant_names.assistant_name)
+    FROM participant_names
+    WHERE album_moment_sources.user_id = participant_names.user_id
+      AND (instr(source_excerpt, '用户') > 0 OR instr(source_excerpt, '助手') > 0);
   `
 ];
 
