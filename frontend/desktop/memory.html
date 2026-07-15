@@ -40,115 +40,136 @@
 
       <main class="memory-main">
         <section class="memory-topbar">
-          <div>
-            <p>PERSONAL MEMORY</p>
-            <h1>记忆中心</h1>
-            <span>清楚掌握 AI 伙伴记住的每一件事。</span>
+          <div class="memory-hero-copy">
+            <p>PRIVATE MEMORY ARCHIVE</p>
+            <h1>记忆，沿着相处生长</h1>
+            <span>每一件被记住的小事，都有来处，也始终由你掌握。</span>
+          </div>
+          <div class="memory-orbit" aria-hidden="true">
+            <i></i><i></i><i></i><span>记</span>
           </div>
           <div class="memory-stats">
-            <div><strong id="totalMemoryCount">0</strong><span>全部</span></div>
-            <div><strong id="memoryCount">0</strong><span>已确认</span></div>
-            <div class="candidate-stat"><strong id="candidateMemoryCount">0</strong><span>待确认</span></div>
+            <div><strong id="totalMemoryCount">0</strong><span>全部收藏</span></div>
+            <div><strong id="memoryCount">0</strong><span>正在陪伴</span></div>
+            <div class="candidate-stat"><strong id="candidateMemoryCount">0</strong><span>等待确认</span></div>
           </div>
         </section>
 
         <div id="notice" class="notice hidden"></div>
 
         <nav class="memory-tabs" aria-label="记忆中心导航">
-          <button class="memory-tab active" data-view="memories">全部记忆</button>
-          <button class="memory-tab" data-view="shared">共同记忆</button>
-          <button class="memory-tab" data-view="prompts">提示词设置</button>
-          <button class="memory-tab" data-view="preferences">偏好与习惯</button>
+          <button class="memory-tab active" data-view="memories"><small>01</small>长期记忆</button>
+          <button class="memory-tab" data-view="shared"><small>02</small>共同片段</button>
+          <button class="memory-tab" data-view="prompts"><small>03</small>相处设定</button>
+          <button class="memory-tab" data-view="preferences"><small>04</small>偏好习惯</button>
         </nav>
 
         <section id="memoriesView" class="tab-view">
-          <section class="auto-confirm-setting">
-            <div class="auto-confirm-icon">↯</div>
-            <div>
-              <strong>自动确认新记忆</strong>
-              <span>开启后，普通与个人级记忆将直接参与召回；敏感记忆仍需手动确认。</span>
-            </div>
-            <small id="autoConfirmStatus">已关闭</small>
-            <label class="memory-switch">
-              <input id="autoConfirmMemory" type="checkbox" />
-              <span><i></i></span>
-            </label>
-          </section>
-          <section class="auto-confirm-setting">
-            <div class="auto-confirm-icon">!</div>
-            <div>
-              <strong>无条件自动确认</strong>
-              <span>开启后，敏感记忆和低置信度候选也会直接参与召回。</span>
-            </div>
-            <small id="autoConfirmAllStatus">已关闭</small>
-            <label class="memory-switch">
-              <input id="autoConfirmAllMemory" type="checkbox" />
-              <span><i></i></span>
-            </label>
-          </section>
-
-          <div class="memory-toolbar">
-            <div class="search-field">
-              <span>⌕</span>
-              <input id="memorySearch" placeholder="搜索记忆、人物或事件" />
-            </div>
-            <select id="domainFilter">
-              <option value="">全部领域</option>
-              <option value="life">生活</option>
-              <option value="relationship">人际关系</option>
-              <option value="health">健康</option>
-              <option value="work">工作</option>
-              <option value="learning">学习</option>
-              <option value="emotion">情绪关怀</option>
-            </select>
-            <select id="statusFilter">
-              <option value="">全部状态</option>
-              <option value="active">已确认</option>
-              <option value="candidate">待确认</option>
-              <option value="archived">已归档</option>
-            </select>
-            <button id="addMemoryBtn" class="primary" type="button">＋ 新增记忆</button>
-          </div>
-
-          <section id="memoryEditor" class="memory-editor hidden">
+          <section class="memory-rules">
             <header>
-              <div><strong id="memoryEditorTitle">新增记忆</strong><span>这条信息会直接成为已确认记忆。</span></div>
-              <button id="closeMemoryEditor" type="button">×</button>
+              <div><small>MEMORY GATE</small><strong>记忆守门规则</strong></div>
+              <p>决定哪些新片段可以直接走进我们的长期记忆。</p>
             </header>
-            <form id="memoryForm">
-              <input id="memoryId" type="hidden" />
-              <textarea id="memoryContent" placeholder="AI 伙伴应该记住什么？" required></textarea>
-              <div class="form-row">
-                <select id="memoryDomain">
-                  <option value="life">生活</option><option value="relationship">人际关系</option>
-                  <option value="health">健康</option><option value="work">工作</option>
-                  <option value="learning">学习</option><option value="emotion">情绪关怀</option>
-                </select>
-                <select id="memoryType">
-                  <option value="fact">事实</option><option value="episode">经历</option>
-                  <option value="decision">决定</option><option value="plan">计划</option>
-                  <option value="routine">习惯</option>
-                </select>
-                <select id="memorySensitivity">
-                  <option value="normal">普通</option><option value="personal">个人</option>
-                  <option value="sensitive">敏感</option>
-                </select>
-                <input id="memoryEntities" placeholder="相关人物/地点，用逗号分隔" />
-                <button class="primary" type="submit"><span id="memorySubmitText">记住这件事</span></button>
-                <button id="cancelMemoryEdit" class="secondary" type="button">取消</button>
-              </div>
-            </form>
+            <div class="memory-rule-grid">
+              <section class="auto-confirm-setting">
+                <div class="auto-confirm-icon">◇</div>
+                <div>
+                  <strong>自动收下普通记忆</strong>
+                  <span>普通与个人级记忆直接参与回忆，敏感内容仍交给你确认。</span>
+                </div>
+                <small id="autoConfirmStatus">已关闭</small>
+                <label class="memory-switch">
+                  <input id="autoConfirmMemory" type="checkbox" />
+                  <span><i></i></span>
+                </label>
+              </section>
+              <section class="auto-confirm-setting auto-confirm-all">
+                <div class="auto-confirm-icon">!</div>
+                <div>
+                  <strong>不经确认直接收下</strong>
+                  <span>包括敏感内容和低置信度候选，请只在完全信任时开启。</span>
+                </div>
+                <small id="autoConfirmAllStatus">已关闭</small>
+                <label class="memory-switch">
+                  <input id="autoConfirmAllMemory" type="checkbox" />
+                  <span><i></i></span>
+                </label>
+              </section>
+            </div>
           </section>
 
-          <div id="memoryList" class="memory-groups"></div>
+          <section class="memory-archive">
+            <header class="memory-archive-heading">
+              <div>
+                <small>MEMORY CATALOGUE</small>
+                <h2>记忆目录</h2>
+                <p>按状态、领域或关键词，找到某一段被珍藏的来处。</p>
+              </div>
+              <button id="addMemoryBtn" class="primary" type="button"><span>＋</span> 写下一条记忆</button>
+            </header>
+
+            <div class="memory-toolbar">
+              <div class="search-field">
+                <span>⌕</span>
+                <input id="memorySearch" placeholder="搜索记忆、人物或事件" />
+              </div>
+              <select id="domainFilter" aria-label="按记忆领域筛选">
+                <option value="">全部领域</option>
+                <option value="life">生活</option>
+                <option value="relationship">人际关系</option>
+                <option value="health">健康</option>
+                <option value="work">工作</option>
+                <option value="learning">学习</option>
+                <option value="emotion">情绪关怀</option>
+              </select>
+              <select id="statusFilter" aria-label="按记忆状态筛选">
+                <option value="">全部状态</option>
+                <option value="active">已确认</option>
+                <option value="candidate">待确认</option>
+                <option value="archived">已归档</option>
+              </select>
+            </div>
+
+            <section id="memoryEditor" class="memory-editor hidden">
+              <header>
+                <div><small>NEW ARCHIVE</small><strong id="memoryEditorTitle">新增记忆</strong><span>这条信息会直接成为已确认记忆。</span></div>
+                <button id="closeMemoryEditor" type="button" aria-label="关闭记忆编辑器">×</button>
+              </header>
+              <form id="memoryForm">
+                <input id="memoryId" type="hidden" />
+                <textarea id="memoryContent" placeholder="想记住什么？" required></textarea>
+                <div class="form-row">
+                  <select id="memoryDomain">
+                    <option value="life">生活</option><option value="relationship">人际关系</option>
+                    <option value="health">健康</option><option value="work">工作</option>
+                    <option value="learning">学习</option><option value="emotion">情绪关怀</option>
+                  </select>
+                  <select id="memoryType">
+                    <option value="fact">事实</option><option value="episode">经历</option>
+                    <option value="decision">决定</option><option value="plan">计划</option>
+                    <option value="routine">习惯</option>
+                  </select>
+                  <select id="memorySensitivity">
+                    <option value="normal">普通</option><option value="personal">个人</option>
+                    <option value="sensitive">敏感</option>
+                  </select>
+                  <input id="memoryEntities" placeholder="相关人物/地点，用逗号分隔" />
+                  <button class="primary" type="submit"><span id="memorySubmitText">记住这件事</span></button>
+                  <button id="cancelMemoryEdit" class="secondary" type="button">取消</button>
+                </div>
+              </form>
+            </section>
+
+            <div id="memoryList" class="memory-groups"></div>
+          </section>
         </section>
 
         <section id="profileView" class="tab-view hidden">
           <section class="panel">
-            <header><div><h2>我的画像</h2><p>稳定、明确并且由洛尼亲自维护的信息。</p></div></header>
+            <header><div><h2>我的画像</h2><p>稳定、明确并且由你亲自维护的信息。</p></div></header>
             <form id="profileForm" class="profile-grid">
               <label>名字<input id="displayName" maxlength="100" /></label>
-              <label>希望 AI 伙伴怎么称呼<input id="preferredName" maxlength="100" /></label>
+              <label>希望伙伴怎么称呼<input id="preferredName" maxlength="100" /></label>
               <label>生日<input id="birthday" maxlength="10" placeholder="11-14 或 1990-11-14" /></label>
               <label>职业 / 当前身份<input id="occupation" maxlength="200" /></label>
               <label class="wide">关于我<textarea id="bio" maxlength="2000"></textarea></label>
@@ -170,7 +191,7 @@
               <label>名字<input id="assistantName" maxlength="100" /></label>
               <label>性别认同<input id="assistantGender" maxlength="50" /></label>
               <label class="wide">自我定位<textarea id="assistantDefinition" maxlength="1000"></textarea></label>
-              <label class="wide">与洛尼的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+              <label class="wide">与你的关系<textarea id="assistantRelationship" maxlength="1000"></textarea></label>
               <label class="wide">价值倾向（每行“名称：内容”）<textarea id="assistantValues"></textarea></label>
               <div class="wide actions"><button class="primary" type="submit">保存人格画像</button></div>
             </form>
@@ -180,7 +201,7 @@
             <div id="assistantTraitList" class="trait-grid"></div>
           </section>
           <section class="panel">
-            <header><div><h2>人格变化记录</h2><p>记录 AI 伙伴的承诺、行为、纠正与成长。</p></div></header>
+            <header><div><h2>人格变化记录</h2><p>记录承诺、行为、纠正与成长。</p></div></header>
             <div id="personalityEventList" class="timeline-list"></div>
           </section>
         </section>
@@ -188,7 +209,7 @@
         <section id="sharedView" class="tab-view hidden">
           <section class="panel">
             <header>
-              <div><h2>我们的共同记忆</h2><p>记录用户与 AI 伙伴共同完成、决定和约定的事情。</p></div>
+              <div><h2>我们的共同记忆</h2><p>记录共同完成、决定和约定的事情。</p></div>
             </header>
             <div id="sharedMemoryList"></div>
           </section>
