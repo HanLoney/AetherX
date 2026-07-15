@@ -41,25 +41,52 @@
 
       <main class="album-main">
         <section class="album-topbar">
-          <div>
+          <div class="album-heading">
             <p>OUR ALBUM</p>
             <h1>我们的纪念册</h1>
-            <span>共同记忆、手记和心情，会在这里被写成可以翻阅的时刻。</span>
+            <span>把我们共同走过的片刻，装订成一本可以慢慢翻阅的书。</span>
           </div>
           <div class="album-actions">
-            <input id="albumSearch" placeholder="搜索标题、心情或内容" />
-            <button id="refreshAlbumBtn" type="button">刷新</button>
+            <label class="album-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="albumSearch" aria-label="搜索纪念册" placeholder="寻找某个时刻" />
+            </label>
+            <button id="refreshAlbumBtn" type="button" aria-label="刷新纪念册">重新翻开</button>
           </div>
         </section>
 
         <section class="album-board">
-          <div class="album-stats">
-            <span class="album-stats-kicker">ALBUM INDEX</span>
-            <div><strong id="momentCount">0</strong><span>纪念卡</span></div>
-            <div><strong id="sourceCount">0</strong><span>真实来源</span></div>
-            <div><strong id="latestMoment">还没有</strong><span>最近时刻</span></div>
+          <header class="album-index">
+            <div class="album-index-title">
+              <span>MEMORY ARCHIVE</span>
+              <strong>只属于我们的时刻</strong>
+            </div>
+            <div class="album-stats">
+              <div><strong id="momentCount">0</strong><span>个纪念</span></div>
+              <div><strong id="sourceCount">0</strong><span>份真实来源</span></div>
+              <div><strong id="latestMoment">还没有</strong><span>最近收录</span></div>
+            </div>
+            <div class="album-authenticity"><i></i>每一页都有来处</div>
+          </header>
+
+          <div class="album-reader">
+            <button id="albumPrevious" class="album-turn album-turn-previous" type="button" aria-label="上一页">
+              <span aria-hidden="true">‹</span><small>上一页</small>
+            </button>
+            <div class="album-book">
+              <div class="album-cover-detail album-cover-detail-top" aria-hidden="true"></div>
+              <div class="album-cover-detail album-cover-detail-bottom" aria-hidden="true"></div>
+              <div id="albumTimeline" class="album-timeline" aria-live="polite"></div>
+              <footer class="album-reader-footer">
+                <span id="albumPageLabel">0 / 0</span>
+                <i aria-hidden="true"></i>
+                <small>OUR STORY, PAGE BY PAGE</small>
+              </footer>
+            </div>
+            <button id="albumNext" class="album-turn album-turn-next" type="button" aria-label="下一页">
+              <span aria-hidden="true">›</span><small>下一页</small>
+            </button>
           </div>
-          <div id="albumTimeline" class="album-timeline"></div>
         </section>
       </main>
     </div>
@@ -68,6 +95,7 @@
 
     <script src="api-client.js"></script>
     <script src="module-settings.js"></script>
+    <script src="album-pager.js"></script>
     <script src="album.js"></script>
   </body>
 </html>

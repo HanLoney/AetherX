@@ -5,24 +5,33 @@
       this.getConfig = options.getConfig;
       this.requestAI = options.requestAI;
       this.createMoment = options.createMoment;
+      this.getUserName = options.getUserName || (() => "洛尼");
+      this.getAssistantName = options.getAssistantName || (() => "小玄");
     }
 
     async writeFromSharedMemories(sharedMemories = []) {
       if (!this.isEnabled() || !sharedMemories.length) return null;
       const config = this.getConfig();
       if (!config?.hasApiKey) return null;
+      const userName = text(this.getUserName(), 40) || "洛尼";
+      const assistantName = text(this.getAssistantName(), 40) || "小玄";
       const sources = sharedMemories
         .filter((item) => item?.id && item?.content)
         .slice(0, 5)
         .map((item) => ({
           sourceType: "shared_memory",
           sourceId: item.id,
-          sourceExcerpt: item.content,
+          sourceExcerpt: personalizeRoles(
+            item.content,
+            userName,
+            assistantName
+          ),
           weight: Math.max(0.5, Math.min(1, Number(item.importance) || 0.75))
         }));
       if (!sources.length) return null;
       const prompt = [
-        "你是小玄的纪念册书写模块。请基于真实来源，以小玄自己的感受写一张纪念卡。",
+        `你是${assistantName}的纪念册书写模块。请基于真实来源，以${assistantName}自己的感受写一张纪念卡。`,
+        `用户的名字是${userName}，助手的名字是${assistantName}。成文必须直接使用名字，严禁用“用户”“助手”代称他们。`,
         "不要写成系统总结，不要编造来源之外的经历；可以有温柔、亲密、主观的表达。",
         '只输出 JSON：{"title":"标题","summary":"短摘要","detail":"完整纪念文字","mood":"心情","tags":["标签"],"importance":0到1}。'
       ].join("\n");
@@ -91,5 +100,16 @@
     return String(value || "").trim().slice(0, limit);
   }
 
+  function personalizeRoles(value, userName, assistantName) {
+    return String(value || "")
+      .replaceAll("用户", "\uE000")
+      .replaceAll("助手", "\uE001")
+      .replaceAll("\uE000", userName)
+      .replaceAll("\uE001", assistantName);
+  }
+
   global.XuanAlbumWriter = XuanAlbumWriter;
-})(window);
+  if (typeof module !== "undefined") {
+    module.exports = { XuanAlbumWriter, personalizeRoles };
+  }
+})(typeof window === "undefined" ? globalThis : window);

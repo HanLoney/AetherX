@@ -1173,7 +1173,13 @@ const albumWriter = new window.XuanAlbumWriter({
   isEnabled: () => window.XuanModules.isEnabled("anniversary-album"),
   getConfig: () => state.config,
   requestAI: (payload) => window.desktop.requestAI(payload),
-  createMoment: (moment) => window.desktop.createAlbumMoment(moment)
+  createMoment: (moment) => window.desktop.createAlbumMoment(moment),
+  getUserName: () =>
+    state.userProfile?.preferredName ||
+    state.userProfile?.displayName ||
+    state.auth?.user?.displayName ||
+    "洛尼",
+  getAssistantName: () => state.assistantProfile?.name || "小玄"
 });
 
 const journalWriter = new window.AetherJournalWriter({
