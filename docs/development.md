@@ -7,7 +7,6 @@
 | `backend` | Node.js 22、内置 `node:sqlite` | 认证、业务 API、SQLite、AI 代理、同步 |
 | `frontend/desktop` | Electron、原生 HTML/CSS/JS | 桌面 UI、托盘、内置 Hub、桌面工具 |
 | `frontend/mobile` | Vue 3、Vite、Capacitor | Android UI、设备配对、在线同步 |
-| `frontend/uniapp` | UniApp | 旧原型，仅供参考，不作为正式数据客户端 |
 
 各子项目独立安装依赖，仓库当前没有根级 workspace。
 
