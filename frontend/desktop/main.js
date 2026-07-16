@@ -6,13 +6,15 @@ const {
   Notification,
   safeStorage,
   Tray,
-  dialog
+  dialog,
+  clipboard
 } = require("electron");
 const path = require("node:path");
 const { XuanApiClient } = require("./api-client");
 const { AuthStore } = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
 const { DesktopSyncCoordinator } = require("./sync-runtime");
+const { generatePairingQrDataUrl } = require("./qr-code");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const defaultServerUrl =
@@ -166,6 +168,13 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("devices:list", () => api.listDevices());
   ipcMain.handle("devices:revoke", (_event, id) => api.revokeDevice(id));
+  ipcMain.handle("clipboard:write", (_event, value) => {
+    clipboard.writeText(String(value || ""));
+    return true;
+  });
+  ipcMain.handle("qrcode:generate", async (_event, value) => {
+    return generatePairingQrDataUrl(value);
+  });
   ipcMain.handle("sync:changes", (_event, filters) =>
     api.listSyncChanges(filters)
   );
@@ -438,7 +447,11 @@ app.whenReady().then(async () => {
   api.setToken(storedAuth.token);
   currentUser = storedAuth.user;
   try {
-    localHub = await startLocalHub({ electronApp: app, baseUrl: api.baseUrl });
+    localHub = await startLocalHub({
+      electronApp: app,
+      baseUrl: api.baseUrl,
+      enableAdbReverse: true
+    });
   } catch (error) {
     console.error("Unable to start the bundled AetherX Hub.", error);
     dialog.showErrorBox(
