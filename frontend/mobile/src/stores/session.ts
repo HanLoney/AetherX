@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from "vue";
-import { AetherApi, type AuthUser } from "../lib/api";
+import { AetherApi, type AuthConfig, type AuthUser } from "../lib/api";
 import { clearSession, loadServerUrl, loadSession, saveServerUrl, saveSession } from "../lib/storage";
 
 const ready = ref(false);
@@ -48,14 +48,7 @@ async function login(input: { serverUrl: string; username: string; password: str
     const candidate = createApi(input.serverUrl);
     await candidate.health();
     const result = await candidate.login({ username: input.username, password: input.password });
-    candidate.setConnection(input.serverUrl, result.token);
-    api = candidate;
-    user.value = result.user;
-    serverUrl.value = candidate.serverUrl;
-    await Promise.all([
-      saveServerUrl(serverUrl.value),
-      saveSession({ token: result.token, user: result.user })
-    ]);
+    await establishAuthenticatedSession(candidate, result.token, result.user);
     return result.user;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "没有成功连接到 AetherX。";
@@ -63,6 +56,51 @@ async function login(input: { serverUrl: string; username: string; password: str
   } finally {
     busy.value = false;
   }
+}
+
+async function register(input: {
+  serverUrl: string;
+  username: string;
+  displayName: string;
+  password: string;
+  registrationSecret?: string;
+}) {
+  busy.value = true;
+  error.value = "";
+  try {
+    const candidate = createApi(input.serverUrl);
+    await candidate.health();
+    const result = await candidate.register({
+      username: input.username,
+      displayName: input.displayName,
+      password: input.password,
+      registrationSecret: input.registrationSecret
+    });
+    await establishAuthenticatedSession(candidate, result.token, result.user);
+    return result;
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "账号没有创建成功。";
+    throw cause;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function inspectRegistration(server: string): Promise<AuthConfig> {
+  const candidate = createApi(server);
+  await candidate.health();
+  return candidate.authConfig();
+}
+
+async function establishAuthenticatedSession(candidate: AetherApi, token: string, authenticatedUser: AuthUser) {
+  candidate.setConnection(candidate.serverUrl, token);
+  api = candidate;
+  user.value = authenticatedUser;
+  serverUrl.value = candidate.serverUrl;
+  await Promise.all([
+    saveServerUrl(serverUrl.value),
+    saveSession({ token, user: authenticatedUser })
+  ]);
 }
 
 async function pair(code: string) {
@@ -134,6 +172,8 @@ export function useSessionStore() {
     authenticated: computed(() => Boolean(user.value)),
     bootstrap,
     login,
+    register,
+    inspectRegistration,
     pair,
     logout,
     requireApi
