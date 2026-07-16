@@ -16,25 +16,32 @@ test("only loopback server URLs start the bundled desktop hub", () => {
 });
 
 test("hub paths preserve development data and isolate packaged data", () => {
-  const desktopDir = path.join("D:", "project", "frontend", "desktop");
+  const filesystemRoot = path.parse(process.cwd()).root;
+  const desktopDir = path.join(
+    filesystemRoot,
+    "project",
+    "frontend",
+    "desktop"
+  );
   const developmentApp = {
     isPackaged: false,
-    getPath: () => path.join("D:", "ignored")
+    getPath: () => path.join(filesystemRoot, "ignored")
   };
   const backendRoot = resolveBackendRoot(developmentApp, desktopDir);
-  assert.equal(backendRoot, path.join("D:", "project", "backend"));
+  assert.equal(backendRoot, path.join(filesystemRoot, "project", "backend"));
   assert.equal(
     resolveHubDataDir(developmentApp, backendRoot, {}),
-    path.join("D:", "project", "backend", ".data")
+    path.join(filesystemRoot, "project", "backend", ".data")
   );
 
   const packagedApp = {
     isPackaged: true,
-    getPath: () => path.join("C:", "Users", "test", "AetherX")
+    getPath: () =>
+      path.join(filesystemRoot, "Users", "test", "AetherX")
   };
   assert.equal(
     resolveHubDataDir(packagedApp, "ignored", {}),
-    path.join("C:", "Users", "test", "AetherX", "hub")
+    path.join(filesystemRoot, "Users", "test", "AetherX", "hub")
   );
 });
 
