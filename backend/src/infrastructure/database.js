@@ -609,8 +609,125 @@ const MIGRATIONS = [
     FROM participant_names
     WHERE album_moment_sources.user_id = participant_names.user_id
       AND (instr(source_excerpt, '用户') > 0 OR instr(source_excerpt, '助手') > 0);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS paired_devices (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      public_key TEXT NOT NULL DEFAULT '',
+      token_hash TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      revoked_at INTEGER,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_paired_devices_user
+      ON paired_devices(user_id, status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS device_pairing_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      secret_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      device_name TEXT NOT NULL DEFAULT '',
+      public_key TEXT NOT NULL DEFAULT '',
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      approved_at INTEGER,
+      redeemed_at INTEGER,
+      device_id TEXT,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(device_id) REFERENCES paired_devices(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pairing_sessions_user
+      ON device_pairing_sessions(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pairing_sessions_expiry
+      ON device_pairing_sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS sync_changes (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_changes_user_seq
+      ON sync_changes(user_id, seq);
   `
 ];
+
+const SYNC_TRIGGER_EXCLUSIONS = new Set([
+  "auth_sessions",
+  "device_pairing_sessions",
+  "memory_evidence",
+  "schema_migrations",
+  "sync_changes"
+]);
+
+function ensureSyncTriggers(database) {
+  const tables = database
+    .prepare(
+      `SELECT name
+       FROM sqlite_schema
+       WHERE type = 'table'
+         AND name NOT LIKE 'sqlite_%'`
+    )
+    .all()
+    .map((row) => row.name)
+    .filter(
+      (name) =>
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+        !name.includes("_fts") &&
+        !SYNC_TRIGGER_EXCLUSIONS.has(name)
+    );
+
+  for (const table of tables) {
+    const columns = database
+      .prepare(`PRAGMA table_info("${table}")`)
+      .all()
+      .map((column) => column.name);
+    if (!columns.includes("user_id")) continue;
+    const entityColumn = columns.includes("id") ? "id" : "user_id";
+    const triggerBase = `sync_${table}`;
+    database.exec(`
+      CREATE TRIGGER IF NOT EXISTS "${triggerBase}_insert"
+      AFTER INSERT ON "${table}"
+      BEGIN
+        INSERT INTO sync_changes(
+          user_id, entity_type, entity_id, operation, created_at
+        ) VALUES (
+          NEW.user_id, '${table}', NEW."${entityColumn}", 'upsert',
+          CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS "${triggerBase}_update"
+      AFTER UPDATE ON "${table}"
+      BEGIN
+        INSERT INTO sync_changes(
+          user_id, entity_type, entity_id, operation, created_at
+        ) VALUES (
+          NEW.user_id, '${table}', NEW."${entityColumn}", 'upsert',
+          CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS "${triggerBase}_delete"
+      AFTER DELETE ON "${table}"
+      BEGIN
+        INSERT INTO sync_changes(
+          user_id, entity_type, entity_id, operation, created_at
+        ) VALUES (
+          OLD.user_id, '${table}', OLD."${entityColumn}", 'delete',
+          CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+        );
+      END;
+    `);
+  }
+}
 
 function openDatabase(dataDir) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -646,7 +763,9 @@ function openDatabase(dataDir) {
     }
   });
 
+  ensureSyncTriggers(database);
+
   return database;
 }
 
-module.exports = { openDatabase };
+module.exports = { ensureSyncTriggers, openDatabase };

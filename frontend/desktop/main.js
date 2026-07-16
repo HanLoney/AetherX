@@ -1,13 +1,17 @@
 const {
   app,
   BrowserWindow,
+  Menu,
   ipcMain,
   Notification,
-  safeStorage
+  safeStorage,
+  Tray,
+  dialog
 } = require("electron");
 const path = require("node:path");
 const { XuanApiClient } = require("./api-client");
 const { AuthStore } = require("./auth-store");
+const { startLocalHub } = require("./hub-runtime");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const defaultServerUrl =
@@ -17,6 +21,11 @@ const defaultServerUrl =
 let authStore;
 let mainWindow;
 let currentUser = null;
+let localHub = null;
+let tray = null;
+let isQuitting = false;
+let hubShutdownComplete = false;
+let hubShutdownPromise = null;
 const api = new XuanApiClient({
   baseUrl: defaultServerUrl,
   onUnauthorized: () => {
@@ -127,6 +136,20 @@ function registerIpcHandlers() {
     }
     return true;
   });
+  ipcMain.handle("devices:pairing:create", (_event, input) =>
+    api.createPairingSession(input)
+  );
+  ipcMain.handle("devices:pairing:get", (_event, id) =>
+    api.getPairingSession(id)
+  );
+  ipcMain.handle("devices:pairing:approve", (_event, id) =>
+    api.approvePairingSession(id)
+  );
+  ipcMain.handle("devices:list", () => api.listDevices());
+  ipcMain.handle("devices:revoke", (_event, id) => api.revokeDevice(id));
+  ipcMain.handle("sync:changes", (_event, filters) =>
+    api.listSyncChanges(filters)
+  );
 
   ipcMain.handle("ai:config:get", () => api.getAiConfig());
   ipcMain.handle("ai:config:save", (_event, input) =>
@@ -297,6 +320,11 @@ function registerIpcHandlers() {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
@@ -318,9 +346,62 @@ function createWindow() {
   mainWindow = win;
   win.loadFile("auth.html");
   win.once("ready-to-show", () => win.show());
+  win.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    win.hide();
+  });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });
+  return win;
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  else {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+function createTray() {
+  tray = new Tray(appIcon);
+  tray.setToolTip("AetherX");
+  tray.on("double-click", showMainWindow);
+  rebuildTrayMenu();
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return;
+  const supportsLoginItem = ["win32", "darwin"].includes(process.platform);
+  const openAtLogin = supportsLoginItem
+    ? app.getLoginItemSettings().openAtLogin
+    : false;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "打开 AetherX", click: showMainWindow },
+      { type: "separator" },
+      {
+        label: "开机自动启动",
+        type: "checkbox",
+        checked: openAtLogin,
+        enabled: supportsLoginItem,
+        click(item) {
+          app.setLoginItemSettings({ openAtLogin: item.checked });
+          rebuildTrayMenu();
+        }
+      },
+      { type: "separator" },
+      {
+        label: "退出",
+        click() {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ])
+  );
 }
 
 function openPage(sender, file) {
@@ -331,19 +412,40 @@ function openPage(sender, file) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
   const storedAuth = authStore.load();
   if (storedAuth.serverUrl) api.setBaseUrl(storedAuth.serverUrl);
   api.setToken(storedAuth.token);
   currentUser = storedAuth.user;
+  try {
+    localHub = await startLocalHub({ electronApp: app, baseUrl: api.baseUrl });
+  } catch (error) {
+    console.error("Unable to start the bundled AetherX Hub.", error);
+    dialog.showErrorBox(
+      "AetherX Hub 启动失败",
+      "本机数据服务没有成功启动。请确认 4318 端口未被其他程序占用，然后重新打开 AetherX。"
+    );
+  }
   registerIpcHandlers();
+  createTray();
   createWindow();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+app.on("before-quit", (event) => {
+  isQuitting = true;
+  if (!localHub?.owned || hubShutdownComplete) return;
+  event.preventDefault();
+  if (!hubShutdownPromise) {
+    hubShutdownPromise = localHub
+      .stop()
+      .catch((error) => console.error("Unable to stop the bundled AetherX Hub.", error))
+      .finally(() => {
+        hubShutdownComplete = true;
+        app.quit();
+      });
+  }
 });

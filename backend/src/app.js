@@ -100,6 +100,13 @@ const { registerGalleryRoutes } = require("./modules/gallery/gallery-routes");
 const { AuthRepository } = require("./modules/auth/auth-repository");
 const { AuthService } = require("./modules/auth/auth-service");
 const { registerAuthRoutes } = require("./modules/auth/auth-routes");
+const { DeviceRepository } = require("./modules/devices/device-repository");
+const { DeviceService } = require("./modules/devices/device-service");
+const { registerDeviceRoutes } = require("./modules/devices/device-routes");
+const { SyncRepository } = require("./modules/sync/sync-repository");
+const { SyncService } = require("./modules/sync/sync-service");
+const { SyncEventBroker } = require("./modules/sync/sync-event-broker");
+const { registerSyncRoutes } = require("./modules/sync/sync-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -108,6 +115,10 @@ function createApp(config) {
     registrationSecret: config.registrationSecret,
     sessionTtlDays: config.sessionTtlDays
   });
+  const deviceService = new DeviceService(new DeviceRepository(database));
+  const syncRepository = new SyncRepository(database);
+  const syncService = new SyncService(syncRepository);
+  const syncEventBroker = new SyncEventBroker(syncRepository);
   const router = createRouter({
     corsOrigin: config.corsOrigin,
     authenticate: (authorization) => authService.authenticate(authorization)
@@ -171,6 +182,8 @@ function createApp(config) {
     { public: true }
   );
   registerAuthRoutes(router, authService);
+  registerDeviceRoutes(router, deviceService);
+  registerSyncRoutes(router, syncService, syncEventBroker);
   registerTodoRoutes(router, todoService);
   registerAiRoutes(
     router,
@@ -211,6 +224,7 @@ function createApp(config) {
     },
     close() {
       return new Promise((resolve, reject) => {
+        syncEventBroker.close();
         server.close((error) => {
           database.close();
           if (error) reject(error);

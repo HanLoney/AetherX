@@ -1,0 +1,76 @@
+name: 缺陷报告
+description: 报告可以稳定复现的 AetherX 问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请移除 API Key、密码、令牌、配对秘密、私人对话和数据库内容。安全漏洞请使用 Security Advisory 私下报告。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue，没有找到相同问题
+          required: true
+        - label: 这不是需要私下报告的安全漏洞
+          required: true
+        - label: 我已经移除日志和截图中的隐私与凭证
+          required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 受影响组件
+      options:
+        - 桌面端
+        - Android 客户端
+        - Hub 后端
+        - 多端同步
+        - 文档
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交
+      placeholder: 例如 1.2.4 或 git commit hash
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: 操作系统、Node.js、客户端类型、部署方式等
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 看到……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志或请求 ID
+      description: 不要粘贴 Authorization 请求头、环境文件或真实私人内容
+      render: shell

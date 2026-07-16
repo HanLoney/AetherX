@@ -290,6 +290,188 @@ test("time-related questions always use model wording with authoritative runtime
   );
 });
 
+test("phone pairing requires desktop approval and creates a revocable device token", async () => {
+  await withServer(async (baseUrl) => {
+    const created = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/pairing/sessions",
+      { ttlSeconds: 120 }
+    );
+    assert.equal(created.response.status, 200);
+    assert.equal(created.payload.data.status, "created");
+    assert.ok(created.payload.data.secret.length >= 32);
+
+    const sessionId = created.payload.data.id;
+    const secret = created.payload.data.secret;
+    const claimed = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/pairing/sessions/${sessionId}/claim`,
+      {
+        secret,
+        deviceName: "Test Phone",
+        publicKey: "test-device-public-key"
+      }
+    );
+    assert.equal(claimed.response.status, 200);
+    assert.equal(claimed.payload.data.status, "pending");
+
+    const beforeApproval = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/pairing/sessions/${sessionId}/redeem`,
+      { secret }
+    );
+    assert.equal(beforeApproval.response.status, 409);
+
+    const pending = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/pairing/sessions/${sessionId}`
+    );
+    assert.equal(pending.payload.data.deviceName, "Test Phone");
+    assert.equal(pending.payload.data.status, "pending");
+
+    const approved = await request(
+      baseUrl,
+      "POST",
+      `/api/v1/pairing/sessions/${sessionId}/approve`
+    );
+    assert.equal(approved.payload.data.status, "approved");
+
+    const redeemed = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/pairing/sessions/${sessionId}/redeem`,
+      { secret }
+    );
+    assert.equal(redeemed.response.status, 200);
+    assert.equal(redeemed.payload.data.device.name, "Test Phone");
+    const deviceId = redeemed.payload.data.device.id;
+    const deviceToken = redeemed.payload.data.token;
+
+    const deviceSession = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/auth/session",
+      undefined,
+      deviceToken
+    );
+    assert.equal(deviceSession.response.status, 200);
+    assert.equal(deviceSession.payload.data.user.username, "test-user");
+
+    const devices = await request(baseUrl, "GET", "/api/v1/devices");
+    assert.equal(devices.payload.data.devices.length, 1);
+    assert.equal(devices.payload.data.devices[0].id, deviceId);
+
+    const revoked = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/devices/${deviceId}`
+    );
+    assert.equal(revoked.response.status, 204);
+
+    const rejected = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/auth/session",
+      undefined,
+      deviceToken
+    );
+    assert.equal(rejected.response.status, 401);
+  });
+});
+
+test("sync changes are transactional, incremental and isolated by cursor", async () => {
+  await withServer(async (baseUrl) => {
+    const initial = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/sync/changes?after=0&limit=500"
+    );
+    const cursor = initial.payload.data.nextCursor;
+
+    const created = await request(baseUrl, "POST", "/api/v1/todos", {
+      text: "sync me",
+      startAt: Date.now(),
+      endAt: Date.now() + 60000
+    });
+    const todoId = created.payload.data.id;
+
+    const changes = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/sync/changes?after=${cursor}&limit=100`
+    );
+    assert.ok(changes.payload.data.nextCursor > cursor);
+    assert.ok(
+      changes.payload.data.changes.some(
+        (change) =>
+          change.entityType === "todos" &&
+          change.entityId === todoId &&
+          change.operation === "upsert"
+      )
+    );
+
+    const afterCreate = changes.payload.data.nextCursor;
+    await request(baseUrl, "DELETE", `/api/v1/todos/${todoId}`);
+    const deletion = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/sync/changes?after=${afterCreate}`
+    );
+    assert.ok(
+      deletion.payload.data.changes.some(
+        (change) =>
+          change.entityType === "todos" &&
+          change.entityId === todoId &&
+          change.operation === "delete"
+      )
+    );
+  });
+});
+
+test("sync event stream emits changes after the ready event", async () => {
+  await withServer(async (baseUrl) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/sync/events?after=0`, {
+        headers: { Authorization: `Bearer ${authTokens.get(baseUrl)}` },
+        signal: controller.signal
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type"), /text\/event-stream/);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let received = "";
+
+      while (!received.includes("event: ready")) {
+        const part = await reader.read();
+        assert.equal(part.done, false);
+        received += decoder.decode(part.value, { stream: true });
+      }
+
+      const created = await request(baseUrl, "POST", "/api/v1/todos", {
+        text: "stream me",
+        startAt: Date.now(),
+        endAt: Date.now() + 60000
+      });
+      while (!received.includes(`\"entityId\":\"${created.payload.data.id}\"`)) {
+        const part = await reader.read();
+        assert.equal(part.done, false);
+        received += decoder.decode(part.value, { stream: true });
+      }
+      assert.match(received, /event: change/);
+      await reader.cancel();
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  });
+});
+
 test("runtime time is merged into leading system facts and corrects model claims", () => {
   const messages = [
     { role: "system", content: "基础规则" },

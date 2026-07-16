@@ -80,6 +80,7 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
       }
       const context = {
         request,
+        response,
         requestId,
         params,
         query: Object.fromEntries(url.searchParams.entries()),
@@ -90,6 +91,7 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
           : {}
       };
       const result = await route.handler(context);
+      if (result?.handled) return;
       const status = result?.status || 200;
       response.writeHead(status);
       response.end(

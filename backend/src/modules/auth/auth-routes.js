@@ -23,7 +23,7 @@ function registerAuthRoutes(router, service) {
     data: { user: auth.user }
   }));
   router.add("POST", "/api/v1/auth/logout", ({ auth }) => {
-    service.logout(auth.tokenHash);
+    service.logout(auth);
     return { status: 204 };
   });
 }

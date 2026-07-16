@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Independently deployable backend for AetherX",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HanLoney/AetherX.git",
+    "directory": "backend"
+  },
+  "bugs": "https://github.com/HanLoney/AetherX/issues",
+  "homepage": "https://github.com/HanLoney/AetherX#readme",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

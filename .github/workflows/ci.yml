@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/desktop/package-lock.json
+            frontend/mobile/package-lock.json
+
+      - name: Check documentation
+        run: node scripts/check-docs.js
+
+      - name: Test backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm test
+
+      - name: Test desktop
+        working-directory: frontend/desktop
+        run: |
+          npm ci
+          npm test
+
+      - name: Test mobile
+        working-directory: frontend/mobile
+        run: |
+          npm ci
+          npm test
+          npm run build

@@ -110,23 +110,45 @@ class AuthService {
     const tokenHash = hashToken(token);
     const session = this.repository.findSession(tokenHash);
     const now = Date.now();
-    if (!session || session.expires_at <= now) {
-      if (session) this.repository.deleteSession(tokenHash);
+    if (session) {
+      if (session.expires_at <= now) {
+        this.repository.deleteSession(tokenHash);
+        throw new HttpError(401, "SESSION_EXPIRED", "登录状态已失效，请重新登录。");
+      }
+      if (now - session.last_used_at >= SESSION_TOUCH_INTERVAL) {
+        this.repository.touchSession(session.session_id, now);
+      }
+      return {
+        kind: "session",
+        sessionId: session.session_id,
+        tokenHash,
+        userId: session.user_id,
+        user: presentUser(session)
+      };
+    }
+
+    const device = this.repository.findDeviceSession(tokenHash);
+    if (!device) {
       throw new HttpError(401, "SESSION_EXPIRED", "登录状态已失效，请重新登录。");
     }
-    if (now - session.last_used_at >= SESSION_TOUCH_INTERVAL) {
-      this.repository.touchSession(session.session_id, now);
+    if (now - device.last_seen_at >= SESSION_TOUCH_INTERVAL) {
+      this.repository.touchDevice(device.device_id, now);
     }
     return {
-      sessionId: session.session_id,
+      kind: "device",
+      deviceId: device.device_id,
       tokenHash,
-      userId: session.user_id,
-      user: presentUser(session)
+      userId: device.user_id,
+      user: presentUser(device)
     };
   }
 
-  logout(tokenHash) {
-    this.repository.deleteSession(tokenHash);
+  logout(auth) {
+    if (auth?.kind === "device") {
+      this.repository.revokeDeviceByToken(auth.tokenHash, Date.now());
+      return;
+    }
+    this.repository.deleteSession(auth?.tokenHash || "");
   }
 
   assertLoginAllowed(key) {

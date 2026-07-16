@@ -2,6 +2,16 @@ openapi: 3.1.0
 info:
   title: AetherX API
   version: 1.0.0
+  description: AetherX Hub 的 REST API 与 SSE 同步契约。除明确标记为公开的接口外，所有请求都需要 Bearer 认证。
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: AetherX Project
+    url: https://github.com/HanLoney/AetherX
+externalDocs:
+  description: AetherX 文档中心
+  url: https://github.com/HanLoney/AetherX/blob/main/docs/README.md
 servers:
   - url: http://127.0.0.1:4318/api/v1
 security:
@@ -35,6 +45,92 @@ paths:
       summary: 注销当前会话
       responses:
         "204": { description: 已退出登录 }
+  /pairing/sessions:
+    post:
+      summary: 创建短时手机配对会话
+      responses:
+        "200": { description: 配对会话、一次性秘密与过期时间 }
+  /pairing/sessions/{id}:
+    get:
+      summary: 查询属于当前账号的配对状态
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 当前配对状态和待确认设备 }
+  /pairing/sessions/{id}/claim:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      security: []
+      summary: 手机使用一次性秘密申请配对
+      responses:
+        "200": { description: 已进入待确认状态 }
+  /pairing/sessions/{id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      summary: 当前账号确认手机配对请求
+      responses:
+        "200": { description: 已允许手机兑换设备令牌 }
+  /pairing/sessions/{id}/redeem:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      security: []
+      summary: 已确认的手机兑换设备令牌
+      responses:
+        "200": { description: 只返回一次的设备令牌与设备信息 }
+  /devices:
+    get:
+      summary: 查询当前账号的配对设备
+      responses:
+        "200": { description: 设备列表 }
+  /devices/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      summary: 撤销设备及其访问令牌
+      responses:
+        "204": { description: 已撤销 }
+  /sync/changes:
+    get:
+      summary: 按游标补拉当前账号的增量变化
+      parameters:
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200": { description: 增量变化、下一游标和是否还有更多 }
+  /sync/events:
+    get:
+      summary: 订阅当前账号的 SSE 实时变化通知
+      parameters:
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: text/event-stream，先发送 ready，随后发送 change
+          content:
+            text/event-stream: {}
   /todos:
     get:
       summary: 查询待办
@@ -69,6 +165,11 @@ paths:
       summary: 删除待办
       responses:
         "204": { description: 已删除 }
+  /todos/completed:
+    delete:
+      summary: 清除当前账号的已完成待办
+      responses:
+        "200": { description: 已删除数量 }
   /ai/config:
     get:
       summary: 获取公开 AI 配置
@@ -106,6 +207,10 @@ paths:
       summary: 保存用户画像
       responses:
         "200": { description: 已保存 }
+    patch:
+      summary: 局部更新用户画像
+      responses:
+        "200": { description: 已更新 }
   /preferences:
     get:
       summary: 查询用户偏好
@@ -115,6 +220,10 @@ paths:
       summary: 新增或更新偏好
       responses:
         "200": { description: 已保存 }
+    post:
+      summary: 新增偏好
+      responses:
+        "201": { description: 已创建 }
   /preferences/{id}:
     delete:
       summary: 删除偏好
@@ -142,6 +251,12 @@ paths:
       responses:
         "201": { description: 已创建 }
   /memories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取单条记忆
+      responses:
+        "200": { description: 记忆详情 }
     patch:
       summary: 修改记忆
       responses:
@@ -151,6 +266,8 @@ paths:
       responses:
         "204": { description: 已删除 }
   /memories/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
     post:
       summary: 确认候选记忆
       responses:
@@ -165,6 +282,11 @@ paths:
       summary: 从一轮对话中自动提取候选记忆
       responses:
         "200": { description: 去重后的候选记忆列表 }
+  /memories/consolidate:
+    post:
+      summary: 合并当前账号的重复记忆
+      responses:
+        "200": { description: 合并结果 }
   /memories/settings:
     get:
       summary: 获取记忆自动确认设置
@@ -199,6 +321,8 @@ paths:
       responses:
         "201": { description: 已创建 }
   /conversations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
     get:
       summary: 恢复完整会话及模型上下文
       responses:
@@ -208,11 +332,250 @@ paths:
       responses:
         "204": { description: 已删除 }
   /conversations/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/Id"
     put:
       summary: 增量写入或更新会话消息
       responses:
         "200": { description: 已保存的消息数量 }
+  /prompt-settings:
+    get:
+      summary: 获取当前账号的提示词设置
+      responses:
+        "200": { description: 提示词设置 }
+    put:
+      summary: 保存提示词设置并记录版本
+      responses:
+        "200": { description: 已保存 }
+  /prompt-settings/versions:
+    get:
+      summary: 获取提示词历史版本
+      responses:
+        "200": { description: 版本列表 }
+  /prompt-settings/versions/{version}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Version"
+    post:
+      summary: 恢复指定提示词版本
+      responses:
+        "200": { description: 已恢复 }
+  /time-awareness/context:
+    post:
+      summary: 获取适合注入对话的时间上下文
+      responses:
+        "200": { description: 时间与日程上下文 }
+  /assistant/profile:
+    get:
+      summary: 获取 AI 伙伴画像与成长状态
+      responses:
+        "200": { description: AI 伙伴画像 }
+    patch:
+      summary: 局部更新 AI 伙伴画像
+      responses:
+        "200": { description: 已更新 }
+  /assistant/personality-events:
+    get:
+      summary: 查询人格成长事件
+      responses:
+        "200": { description: 事件列表 }
+    post:
+      summary: 创建人格成长事件
+      responses:
+        "201": { description: 已创建 }
+  /assistant/personality-events/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 确认人格成长事件
+      responses:
+        "200": { description: 已确认 }
+  /assistant/personality-events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除人格成长事件
+      responses:
+        "204": { description: 已删除 }
+  /shared-memories:
+    get:
+      summary: 查询共同记忆
+      responses:
+        "200": { description: 共同记忆列表 }
+    post:
+      summary: 创建共同记忆
+      responses:
+        "201": { description: 已创建 }
+  /shared-memories/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 确认共同记忆
+      responses:
+        "200": { description: 已确认 }
+  /shared-memories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除共同记忆
+      responses:
+        "204": { description: 已删除 }
+  /assistant/journals:
+    get:
+      summary: 查询 AI 伙伴手记
+      responses:
+        "200": { description: 手记列表 }
+    put:
+      summary: 创建或更新手记
+      responses:
+        "200": { description: 已保存 }
+  /assistant/journals/material:
+    get:
+      summary: 查询生成手记所需的时间范围材料
+      responses:
+        "200": { description: 手记材料 }
+  /assistant/journals/{type}/{periodKey}:
+    parameters:
+      - $ref: "#/components/parameters/JournalType"
+      - $ref: "#/components/parameters/PeriodKey"
+    get:
+      summary: 按类型和周期获取手记
+      responses:
+        "200": { description: 手记详情 }
+  /assistant/journals/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除手记
+      responses:
+        "204": { description: 已删除 }
+  /assistant/gallery/summary:
+    get:
+      summary: 获取 AI 伙伴画廊汇总
+      responses:
+        "200": { description: 画廊汇总 }
+  /assistant/gallery/page:
+    get:
+      summary: 获取 AI 伙伴画廊分页
+      responses:
+        "200": { description: 画廊分页 }
+  /assistant/gallery:
+    get:
+      summary: 查询 AI 伙伴画廊
+      responses:
+        "200": { description: 画面列表 }
+  /album/moments:
+    get:
+      summary: 查询纪念册时刻
+      responses:
+        "200": { description: 时刻列表 }
+    post:
+      summary: 创建纪念册时刻
+      responses:
+        "201": { description: 已创建 }
+  /album/moments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取纪念册时刻详情
+      responses:
+        "200": { description: 时刻详情 }
+    patch:
+      summary: 更新纪念册时刻
+      responses:
+        "200": { description: 已更新 }
+    delete:
+      summary: 删除纪念册时刻
+      responses:
+        "204": { description: 已删除 }
+  /album/moments/{id}/hide:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 隐藏纪念册时刻
+      responses:
+        "200": { description: 已隐藏 }
+  /album/moments/{id}/sources:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 为纪念册时刻添加来源
+      responses:
+        "201": { description: 已添加 }
+  /album/source-candidates:
+    get:
+      summary: 查询可加入纪念册的来源候选
+      responses:
+        "200": { description: 来源候选列表 }
+  /dreams:
+    get:
+      summary: 查询梦境
+      responses:
+        "200": { description: 梦境列表 }
+    post:
+      summary: 创建梦境
+      responses:
+        "201": { description: 已创建 }
+  /dreams/material:
+    get:
+      summary: 查询生成梦境所需材料
+      responses:
+        "200": { description: 梦境材料 }
+  /dreams/by-date/{dreamDate}:
+    parameters:
+      - $ref: "#/components/parameters/DreamDate"
+    get:
+      summary: 按日期获取梦境
+      responses:
+        "200": { description: 梦境详情 }
+  /dreams/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取梦境详情
+      responses:
+        "200": { description: 梦境详情 }
+    patch:
+      summary: 更新梦境
+      responses:
+        "200": { description: 已更新 }
+    delete:
+      summary: 删除梦境
+      responses:
+        "204": { description: 已删除 }
+  /dreams/{id}/sources:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 为梦境添加来源
+      responses:
+        "201": { description: 已添加 }
 components:
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+    Version:
+      in: path
+      name: version
+      required: true
+      schema: { type: integer, minimum: 1 }
+    JournalType:
+      in: path
+      name: type
+      required: true
+      schema: { type: string }
+    PeriodKey:
+      in: path
+      name: periodKey
+      required: true
+      schema: { type: string }
+    DreamDate:
+      in: path
+      name: dreamDate
+      required: true
+      schema: { type: string, format: date }
   securitySchemes:
     bearerAuth:
       type: http

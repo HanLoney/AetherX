@@ -5,8 +5,16 @@
   "main": "main.js",
   "author": "Xuanxiaotech",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HanLoney/AetherX.git",
+    "directory": "frontend/desktop"
+  },
+  "bugs": "https://github.com/HanLoney/AetherX/issues",
+  "homepage": "https://github.com/HanLoney/AetherX#readme",
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
     "dist": "npm run dist:installer && npm run dist:portable",
     "dist:installer": "electron-builder --win nsis --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
     "dist:portable": "electron-builder --win portable --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
@@ -24,6 +32,7 @@
     },
     "files": [
       "main.js",
+      "hub-runtime.js",
       "api-client.js",
       "auth-store.js",
       "preload.js",
@@ -77,6 +86,17 @@
       "styles.css",
       "renderer.js",
       "app-icon-rounded.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../../backend",
+        "to": "backend",
+        "filter": [
+          "src/**/*",
+          "package.json",
+          "README.md"
+        ]
+      }
     ],
     "win": {
       "icon": "app-icon-rounded.png",

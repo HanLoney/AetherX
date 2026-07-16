@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私下报告安全漏洞
+    url: https://github.com/HanLoney/AetherX/security/advisories/new
+    about: 不要公开提交未修复漏洞、凭证或私人数据
+  - name: 查看文档中心
+    url: https://github.com/HanLoney/AetherX/blob/main/docs/README.md
+    about: 安装、部署、开发、备份与排障说明

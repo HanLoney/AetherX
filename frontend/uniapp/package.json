@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "AetherX multi-platform client",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HanLoney/AetherX.git",
+    "directory": "frontend/uniapp"
+  },
+  "bugs": "https://github.com/HanLoney/AetherX/issues",
+  "homepage": "https://github.com/HanLoney/AetherX#readme",
   "scripts": {
     "dev:h5": "uni",
     "dev:app": "uni -p app",
