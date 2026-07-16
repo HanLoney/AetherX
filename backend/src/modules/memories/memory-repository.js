@@ -3,10 +3,12 @@ const {
   expandQueryTerms,
   scoreTextMatch
 } = require("./memory-text");
+const { supportsFts5 } = require("../../infrastructure/database");
 
 class MemoryRepository {
   constructor(database) {
     this.database = database;
+    this.fullTextSearchEnabled = supportsFts5(database);
   }
 
   list(userId, filters = {}) {
@@ -38,15 +40,17 @@ class MemoryRepository {
       .map((term) => `"${term.replaceAll('"', '""')}"`)
       .join(" AND ");
     if (!expression) return this.list(userId, { status: "active" });
-    const fullTextMatches = this.database
-      .prepare(
-         `SELECT m.* FROM memories_fts f
-         JOIN memories m ON m.id = f.memory_id
-         WHERE memories_fts MATCH ? AND f.user_id = ?
-         ORDER BY rank LIMIT 50`
-      )
-      .all(expression, userId)
-      .map(mapMemory);
+    const fullTextMatches = this.fullTextSearchEnabled
+      ? this.database
+          .prepare(
+            `SELECT m.* FROM memories_fts f
+             JOIN memories m ON m.id = f.memory_id
+             WHERE memories_fts MATCH ? AND f.user_id = ?
+             ORDER BY rank LIMIT 50`
+          )
+          .all(expression, userId)
+          .map(mapMemory)
+      : [];
     const terms = expandQueryTerms(query);
     const fullTextIds = new Set(fullTextMatches.map((memory) => memory.id));
     return this.list(userId, {})
@@ -159,9 +163,11 @@ class MemoryRepository {
           userId,
           id
         );
-      this.database
-        .prepare("DELETE FROM memories_fts WHERE memory_id = ?")
-        .run(id);
+      if (this.fullTextSearchEnabled) {
+        this.database
+          .prepare("DELETE FROM memories_fts WHERE memory_id = ?")
+          .run(id);
+      }
       this.writeFts(id, userId, next.content, next.entities);
       this.database.exec("COMMIT");
       return this.find(userId, id);
@@ -174,9 +180,13 @@ class MemoryRepository {
   delete(userId, id) {
     this.database.exec("BEGIN");
     try {
-      this.database
-        .prepare("DELETE FROM memories_fts WHERE memory_id = ? AND user_id = ?")
-        .run(id, userId);
+      if (this.fullTextSearchEnabled) {
+        this.database
+          .prepare(
+            "DELETE FROM memories_fts WHERE memory_id = ? AND user_id = ?"
+          )
+          .run(id, userId);
+      }
       const changes = this.database
         .prepare("DELETE FROM memories WHERE user_id = ? AND id = ?")
         .run(userId, id).changes;
@@ -189,6 +199,7 @@ class MemoryRepository {
   }
 
   writeFts(id, userId, content, entities) {
+    if (!this.fullTextSearchEnabled) return;
     this.database
       .prepare(
         `INSERT INTO memories_fts(memory_id, user_id, content, entities)

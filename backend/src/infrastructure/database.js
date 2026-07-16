@@ -2,6 +2,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
+const fts5Availability = new WeakMap();
+
 const MIGRATIONS = [
   `
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -729,9 +731,47 @@ function ensureSyncTriggers(database) {
   }
 }
 
-function openDatabase(dataDir) {
+function detectFts5(database) {
+  try {
+    database.exec(`
+      CREATE VIRTUAL TABLE temp.aetherx_fts5_probe USING fts5(value);
+      DROP TABLE temp.aetherx_fts5_probe;
+    `);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function withoutFts5Migration(sql) {
+  return sql.replace(
+    /\s*CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5\([\s\S]*?\);/,
+    ""
+  );
+}
+
+function hasMemorySearchIndex(database) {
+  try {
+    database.exec("SELECT 1 FROM memories_fts LIMIT 0");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function supportsFts5(database) {
+  return (
+    fts5Availability.get(database) ??
+    (detectFts5(database) && hasMemorySearchIndex(database))
+  );
+}
+
+function openDatabase(dataDir, options = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   const database = new DatabaseSync(path.join(dataDir, "xuanai.db"));
+  const fts5Enabled =
+    options.fullTextSearch !== false && detectFts5(database);
+  fts5Availability.set(database, fts5Enabled);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -750,7 +790,7 @@ function openDatabase(dataDir) {
     if (applied.includes(version)) return;
     database.exec("BEGIN");
     try {
-      database.exec(sql);
+      database.exec(fts5Enabled ? sql : withoutFts5Migration(sql));
       database
         .prepare(
           "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)"
@@ -763,9 +803,14 @@ function openDatabase(dataDir) {
     }
   });
 
+  fts5Availability.set(
+    database,
+    fts5Enabled && hasMemorySearchIndex(database)
+  );
+
   ensureSyncTriggers(database);
 
   return database;
 }
 
-module.exports = { ensureSyncTriggers, openDatabase };
+module.exports = { ensureSyncTriggers, openDatabase, supportsFts5 };
