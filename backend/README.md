@@ -31,6 +31,8 @@ curl.exe http://127.0.0.1:4318/health
 
 开发数据库默认位于 `backend/.data/xuanai.db`。
 
+在本地执行 `npm start` 或 `npm run dev` 时，启动脚本会检测已授权的 Android 设备，并自动执行与 `AETHERX_PORT` 一致的 `adb reverse`。未安装 Android SDK、没有连接手机或设备尚未授权都不会阻止后端启动。可设置 `AETHERX_ADB_REVERSE=0` 关闭该行为，也可使用 `ADB_PATH` 指定 adb 路径。systemd 等直接运行 `node src/server.js` 的生产部署不会执行此开发辅助逻辑。
+
 ## 配置
 
 复制示例文件并按运行环境加载其中变量：

@@ -13,7 +13,9 @@
   "homepage": "https://github.com/HanLoney/AetherX#readme",
   "main": "src/server.js",
   "scripts": {
+    "prestart": "node scripts/ensure-adb-reverse.js",
     "start": "node src/server.js",
+    "predev": "node scripts/ensure-adb-reverse.js",
     "dev": "node --watch src/server.js",
     "test": "node --test"
   },

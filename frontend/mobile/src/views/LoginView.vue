@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ArrowRight, Eye, EyeOff, Link2, LockKeyhole, Server, UserPlus, UserRound } from "@lucide/vue";
+import { ArrowRight, Eye, EyeOff, Link2, LockKeyhole, ScanLine, Server, UserPlus, UserRound } from "@lucide/vue";
+import {
+  CapacitorBarcodeScanner,
+  CapacitorBarcodeScannerAndroidScanningLibrary,
+  CapacitorBarcodeScannerCameraDirection,
+  CapacitorBarcodeScannerScanOrientation,
+  CapacitorBarcodeScannerTypeHint
+} from "@capacitor/barcode-scanner";
 import type { AuthConfig } from "../lib/api";
 import { useSessionStore } from "../stores/session";
 
@@ -17,6 +24,7 @@ const mode = ref<"login" | "register" | "pair">("login");
 const pairingCode = ref("");
 const authConfig = ref<AuthConfig | null>(null);
 const localError = ref("");
+const scanning = ref(false);
 const registrationAvailable = computed(() => authConfig.value?.registrationAvailable !== false);
 const errorMessage = computed(() => localError.value || session.error.value);
 
@@ -46,7 +54,7 @@ async function selectMode(nextMode: typeof mode.value) {
 async function submit() {
   if (mode.value === "pair") {
     if (!pairingCode.value.trim()) return;
-    try { await session.pair(pairingCode.value); await router.replace("/home"); } catch { /* store 呈现 */ }
+    try { await connectWithPairingCode(pairingCode.value); } catch { /* store 呈现 */ }
     return;
   }
   if (!username.value.trim() || !password.value) return;
@@ -65,6 +73,39 @@ async function submit() {
     }
     await router.replace("/home");
   } catch { /* 错误由 store 呈现 */ }
+}
+
+async function connectWithPairingCode(code: string) {
+  pairingCode.value = code.trim();
+  await session.pair(pairingCode.value);
+  await router.replace("/home");
+}
+
+async function scanPairingCode() {
+  if (scanning.value || session.busy.value) return;
+  localError.value = "";
+  scanning.value = true;
+  try {
+    const result = await CapacitorBarcodeScanner.scanBarcode({
+      hint: CapacitorBarcodeScannerTypeHint.QR_CODE,
+      cameraDirection: CapacitorBarcodeScannerCameraDirection.BACK,
+      scanOrientation: CapacitorBarcodeScannerScanOrientation.ADAPTIVE,
+      scanInstructions: "扫描电脑端显示的 AetherX 配对二维码",
+      scanButton: false,
+      cancelButtonAccessibilityLabel: "取消扫描",
+      torchButtonOnAccessibilityLabel: "关闭手电筒",
+      torchButtonOffAccessibilityLabel: "打开手电筒",
+      android: { scanningLibrary: CapacitorBarcodeScannerAndroidScanningLibrary.ZXING }
+    });
+    const code = String(result.ScanResult || "").trim();
+    if (!code) return;
+    await connectWithPairingCode(code);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "没有识别到有效的配对二维码。";
+    if (!/cancel|取消/i.test(message)) localError.value = message;
+  } finally {
+    scanning.value = false;
+  }
 }
 
 onMounted(() => void inspectServer());
@@ -116,7 +157,12 @@ onMounted(() => void inspectServer());
         </div>
       </div>
       <div v-else class="login-fields pairing-fields">
-        <div class="pairing-note"><Link2 :size="19"/><span><strong>粘贴电脑端生成的连接码</strong><small>提交后，请回到电脑端确认这台手机。</small></span></div>
+        <div class="pairing-note"><Link2 :size="19"/><span><strong>连接电脑端 AetherX</strong><small>扫码或粘贴连接码后，请回到电脑端确认这台手机。</small></span></div>
+        <button class="scan-pairing-button" type="button" :disabled="scanning || session.busy.value" @click="scanPairingCode">
+          <ScanLine :size="21" />
+          <span><strong>{{ scanning ? "正在打开相机…" : "扫描电脑二维码" }}</strong><small>使用手机相机安全读取一次性连接码</small></span>
+        </button>
+        <div class="pairing-divider"><span>或者手动粘贴</span></div>
         <div class="field"><label for="pairingCode">一次性连接码</label><textarea id="pairingCode" v-model="pairingCode" rows="4" placeholder="aetherx://pair?…" /></div>
       </div>
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
@@ -151,5 +197,6 @@ onMounted(() => void inspectServer());
 .login-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 11px; margin-top: 16px; }
 .login-sheet footer { margin-top: 17px; color: #a29cac; font-size: 9px; text-align: center; }
 .pairing-fields{margin-bottom:17px}.pairing-note{display:flex;align-items:center;gap:11px;padding:12px 13px;border:1px solid rgba(var(--blue-rgb),.18);border-radius:14px;color:#7c7191;background:linear-gradient(120deg,rgba(235,244,252,.75),rgba(252,239,247,.68))}.pairing-note>span{display:grid;gap:3px}.pairing-note strong{font-size:10px}.pairing-note small{color:#9791a1;font-size:9px}.pairing-fields textarea{min-height:94px;font-size:10px;line-height:1.55}
+.scan-pairing-button{min-height:70px;display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid rgba(var(--pink-rgb),.22);border-radius:17px;color:#fff;background:linear-gradient(135deg,rgba(197,130,178,.96),rgba(113,167,217,.96));box-shadow:0 14px 30px rgba(126,126,181,.2);text-align:left}.scan-pairing-button>svg{flex:0 0 auto}.scan-pairing-button>span{display:grid;gap:4px}.scan-pairing-button strong{font-size:12px}.scan-pairing-button small{color:rgba(255,255,255,.78);font-size:9px}.scan-pairing-button:disabled{opacity:.58}.pairing-divider{display:flex;align-items:center;gap:10px;color:#aaa4b1;font-size:8px}.pairing-divider::before,.pairing-divider::after{height:1px;flex:1;background:rgba(122,115,143,.12);content:""}
 @media (min-width: 760px) { .login-page { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 60px; padding-left: 8vw; padding-right: 8vw; } .login-story { margin: 0; } .login-sheet { width: 100%; margin: 0; } }
 </style>

@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("devices:pairing:approve", id),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   revokeDevice: (id) => ipcRenderer.invoke("devices:revoke", id),
+  writeClipboard: (value) => ipcRenderer.invoke("clipboard:write", value),
+  generateQrCode: (value) => ipcRenderer.invoke("qrcode:generate", value),
   listSyncChanges: (filters) => ipcRenderer.invoke("sync:changes", filters),
   onSyncChanges: (callback) => {
     if (typeof callback !== "function") return () => {};

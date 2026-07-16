@@ -74,6 +74,8 @@ const elements = {
   accountMenuName: document.querySelector("#accountMenuName"),
   accountUsername: document.querySelector("#accountUsername"),
   accountServer: document.querySelector("#accountServer"),
+  deviceManagerBtn: document.querySelector("#deviceManagerBtn"),
+  deviceManagerMask: document.querySelector("#deviceManagerMask"),
   logoutBtn: document.querySelector("#logoutBtn"),
   statusPill: document.querySelector("#statusPill"),
   statusLabel: document.querySelector("#statusLabel"),
@@ -122,6 +124,13 @@ const titlebarClock = new window.AetherClock({
   locale: navigator.language || "zh-CN"
 });
 titlebarClock.start();
+
+const deviceManager = new window.AetherDeviceManager({
+  api: window.desktop,
+  root: elements.deviceManagerMask,
+  getServerUrl: () => state.auth?.serverUrl || ""
+});
+deviceManager.bind();
 
 async function illustrateJournalContent(content) {
   const illustrator = window.AetherJournalIllustrator;
@@ -2273,6 +2282,11 @@ elements.accountBtn.addEventListener("click", () => {
   elements.accountMenu.classList.toggle("hidden", !opening);
   elements.accountBtn.setAttribute("aria-expanded", String(opening));
 });
+elements.deviceManagerBtn.addEventListener("click", () => {
+  elements.accountMenu.classList.add("hidden");
+  elements.accountBtn.setAttribute("aria-expanded", "false");
+  deviceManager.open();
+});
 elements.logoutBtn.addEventListener("click", async () => {
   elements.logoutBtn.disabled = true;
   elements.logoutBtn.querySelector("span").textContent = "正在退出…";
@@ -2451,6 +2465,7 @@ window.addEventListener("beforeunload", () => {
   reminderEngine.stop();
   journalWriter.stop();
   dreamWriter.stop();
+  deviceManager.destroy();
 });
 
 initialize().catch((error) => {

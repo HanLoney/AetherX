@@ -25,7 +25,7 @@
   },
   "build": {
     "appId": "com.xuanxiaotech.todo",
-  "productName": "AetherX",
+    "productName": "AetherX",
     "asar": true,
     "directories": {
       "output": "dist"
@@ -44,6 +44,8 @@
       "home.css",
       "app-shell.css",
       "clock.js",
+      "device-manager.js",
+      "qr-code.js",
       "home.js",
       "ai-providers.js",
       "tool-registry.js",
@@ -79,9 +81,9 @@
       "profile.html",
       "profile.css",
       "profile.js",
-    "journal-pager.js",
-    "gallery-layout.js",
-    "growth-language.js",
+      "journal-pager.js",
+      "gallery-layout.js",
+      "growth-language.js",
       "avatar-cropper.js",
       "index.html",
       "styles.css",
@@ -94,6 +96,7 @@
         "to": "backend",
         "filter": [
           "src/**/*",
+          "scripts/ensure-adb-reverse.js",
           "package.json",
           "README.md"
         ]
@@ -104,11 +107,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -119,5 +126,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "AetherX"
     }
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

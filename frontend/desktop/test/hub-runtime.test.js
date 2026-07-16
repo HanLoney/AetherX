@@ -40,6 +40,7 @@ test("hub paths preserve development data and isolate packaged data", () => {
 
 test("local hub starts once and returns an owned shutdown handle", async () => {
   const calls = [];
+  const reverseCalls = [];
   let closed = false;
   const hub = await startLocalHub({
     electronApp: {
@@ -49,6 +50,8 @@ test("local hub starts once and returns an owned shutdown handle", async () => {
     baseUrl: "http://127.0.0.1:4318",
     desktopDir: path.join("D:", "project", "frontend", "desktop"),
     environment: {},
+    enableAdbReverse: true,
+    ensureAdbReverse: (options) => reverseCalls.push(options),
     fetchImpl: async () => {
       throw new Error("offline");
     },
@@ -67,6 +70,8 @@ test("local hub starts once and returns an owned shutdown handle", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].host, "127.0.0.1");
   assert.equal(calls[0].port, 4318);
+  assert.equal(reverseCalls.length, 1);
+  assert.equal(reverseCalls[0].env.AETHERX_PORT, "4318");
   await hub.stop();
   assert.equal(closed, true);
 });

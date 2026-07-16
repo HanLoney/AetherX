@@ -56,11 +56,30 @@ async function startLocalHub(options) {
     fetchImpl = globalThis.fetch
   } = options;
   if (!isLoopbackHubUrl(baseUrl)) return null;
+  const backendRoot = resolveBackendRoot(electronApp, desktopDir);
+  const configureUsbDevices = () => {
+    if (!options.enableAdbReverse) return;
+    try {
+      const configure =
+        options.ensureAdbReverse ||
+        require(path.join(backendRoot, "scripts", "ensure-adb-reverse.js"))
+          .ensureAdbReverse;
+      const url = new URL(baseUrl);
+      configure({
+        env: {
+          ...environment,
+          AETHERX_PORT: String(url.port || DEFAULT_HUB_PORT)
+        }
+      });
+    } catch (error) {
+      console.warn(`[AetherX] 自动配置手机 USB 连接失败，Hub 仍会正常运行：${error.message}`);
+    }
+  };
   if (await probeAetherXHub(baseUrl, { fetchImpl })) {
+    configureUsbDevices();
     return { owned: false, baseUrl, stop: async () => {} };
   }
 
-  const backendRoot = resolveBackendRoot(electronApp, desktopDir);
   const createBackendApp =
     options.createBackendApp || require(path.join(backendRoot, "src", "app.js")).createApp;
   const url = new URL(baseUrl);
@@ -86,6 +105,8 @@ async function startLocalHub(options) {
     }
     throw error;
   }
+
+  configureUsbDevices();
 
   return {
     owned: true,
