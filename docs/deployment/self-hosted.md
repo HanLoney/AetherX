@@ -73,17 +73,17 @@ sudo chmod 600 /var/lib/aetherx/xuanai.db
 
 ```bash
 openssl rand -hex 32
-openssl rand -hex 32
 ```
 
-第一个作为主密钥，第二个作为注册口令。创建 `/etc/aetherx.env`：
+把输出作为主密钥。若准备使用邀请制，再单独生成一个随机值作为注册口令。创建 `/etc/aetherx.env`：
 
 ```ini
 AETHERX_HOST=127.0.0.1
 AETHERX_PORT=4318
 AETHERX_DATA_DIR=/var/lib/aetherx
 AETHERX_MASTER_KEY=替换为稳定的随机主密钥
-AETHERX_REGISTRATION_SECRET=替换为单独的随机注册口令
+AETHERX_REGISTRATION_MODE=open
+AETHERX_REGISTRATION_SECRET=
 AETHERX_SESSION_TTL_DAYS=30
 AETHERX_CORS_ORIGIN=*
 ```
@@ -98,7 +98,8 @@ sudo chmod 640 /etc/aetherx.env
 说明：
 
 - `AETHERX_MASTER_KEY` 必须长期保持不变并单独备份；
-- `AETHERX_REGISTRATION_SECRET` 用于创建第二个及后续账号，可以定期轮换；
+- `AETHERX_REGISTRATION_MODE=open` 允许直接创建新账号；
+- 私有部署可改为 `invite` 并设置 `AETHERX_REGISTRATION_SECRET`；设为 `closed` 时首个账号创建后会关闭注册；
 - 没有浏览器 Web 客户端时可以保持 `AETHERX_CORS_ORIGIN=*`；若只允许固定 Web Origin，应改为实际 Origin；
 - 不要把环境文件提交到 Git。
 
@@ -183,7 +184,7 @@ curl -i https://hub.example.com/health
 https://hub.example.com
 ```
 
-空数据库允许创建第一个账号。如果设置了注册口令，第一个账号也必须提供正确口令。之后在桌面端“接入设置”中填写 AI Provider、模型和 API Key。
+空数据库始终允许创建第一个账号。默认 `open` 模式也允许继续创建彼此隔离的账号。之后在桌面端“接入设置”中填写 AI Provider、模型和 API Key。
 
 AI Key 由服务器保存。移动端只调用 Hub 的 AI API，不需要单独配置 Key。
 

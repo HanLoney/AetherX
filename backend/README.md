@@ -47,6 +47,7 @@ Copy-Item .env.example .env
 | `AETHERX_PORT` | `4318` | 监听端口 |
 | `AETHERX_DATA_DIR` | 当前工作目录下 `.data` | SQLite 与本地加密材料目录 |
 | `AETHERX_MASTER_KEY` | 本地模式自动生成 | AI 凭证加密主密钥；生产环境必须固定设置 |
+| `AETHERX_REGISTRATION_MODE` | `open` | 注册策略：`open`、`invite` 或 `closed` |
 | `AETHERX_REGISTRATION_SECRET` | 空 | 新账号注册口令 |
 | `AETHERX_SESSION_TTL_DAYS` | `30` | 登录会话有效天数，最小为 1 |
 | `AETHERX_CORS_ORIGIN` | `*` | 允许的浏览器 Origin |
@@ -58,9 +59,10 @@ Copy-Item .env.example .env
 
 ## 账号与旧数据迁移
 
-- 空数据库允许创建第一个账号；
-- 如果设置了注册口令，第一个账号也必须提供口令；
-- 已存在账号且未设置注册口令时，注册入口关闭；
+- 默认使用 `open`，允许用户直接创建彼此隔离的新账号；
+- `invite` 模式要求配置并填写 `AETHERX_REGISTRATION_SECRET`；
+- `closed` 模式会在首个账号创建完成后关闭新账号注册；
+- 空数据库始终允许创建第一个账号，便于完成服务器初始化；
 - 第一个账号会在同一事务中认领旧版 `local-user` 数据；
 - 任一表迁移失败时，账号创建和数据认领一起回滚；
 - 账号名长度为 2～32，只允许文字、数字、点、横线和下划线；

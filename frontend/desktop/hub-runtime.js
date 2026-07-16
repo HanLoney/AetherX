@@ -71,6 +71,7 @@ async function startLocalHub(options) {
     port: Number(url.port || DEFAULT_HUB_PORT),
     dataDir: resolveHubDataDir(electronApp, backendRoot, environment),
     masterKey: environment.AETHERX_MASTER_KEY || environment.XUANAI_MASTER_KEY || "",
+    registrationMode: environment.AETHERX_REGISTRATION_MODE || "open",
     registrationSecret: environment.AETHERX_REGISTRATION_SECRET || "",
     sessionTtlDays: Number(environment.AETHERX_SESSION_TTL_DAYS || 30),
     corsOrigin: environment.AETHERX_CORS_ORIGIN || "*"

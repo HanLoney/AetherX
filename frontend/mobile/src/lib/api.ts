@@ -4,6 +4,13 @@ export interface AuthUser {
   displayName: string;
 }
 
+export interface AuthConfig {
+  registrationAvailable: boolean;
+  firstUser: boolean;
+  registrationMode: "open" | "invite" | "closed";
+  requiresRegistrationSecret: boolean;
+}
+
 export interface Todo {
   id: string;
   text: string;
@@ -119,6 +126,10 @@ export class AetherApi {
   }
 
   health() { return this.request<{ status: string; service: string }>("GET", "/health"); }
+  authConfig() { return this.request<AuthConfig>("GET", "/api/v1/auth/config"); }
+  register(input: { username: string; displayName?: string; password: string; registrationSecret?: string }) {
+    return this.request<{ token: string; user: AuthUser; expiresAt: number; migratedExistingData: boolean }>("POST", "/api/v1/auth/register", input);
+  }
   login(input: { username: string; password: string }) {
     return this.request<{ token: string; user: AuthUser; expiresAt: number }>("POST", "/api/v1/auth/login", input);
   }

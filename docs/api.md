@@ -38,6 +38,8 @@ Authorization: Bearer <token>
 curl https://hub.example.com/api/v1/auth/config
 ```
 
+返回 `registrationMode`、`registrationAvailable`、`firstUser` 和 `requiresRegistrationSecret`。默认模式为 `open`。
+
 ### 登录
 
 ```bash

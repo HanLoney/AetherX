@@ -13,6 +13,7 @@ const MAX_LOGIN_FAILURES = 8;
 class AuthService {
   constructor(repository, options = {}) {
     this.repository = repository;
+    this.registrationMode = normalizeRegistrationMode(options.registrationMode);
     this.registrationSecret = String(options.registrationSecret || "");
     this.sessionTtlMs = Math.max(1, Number(options.sessionTtlDays) || 30) * 86400000;
     this.loginAttempts = new Map();
@@ -20,10 +21,13 @@ class AuthService {
 
   getRegistrationConfig() {
     const firstUser = this.repository.countUsers() === 0;
+    const inviteReady = this.registrationMode === "invite" && Boolean(this.registrationSecret);
     return {
-      registrationAvailable: firstUser || Boolean(this.registrationSecret),
+      registrationAvailable:
+        firstUser || this.registrationMode === "open" || inviteReady,
       firstUser,
-      requiresRegistrationSecret: Boolean(this.registrationSecret)
+      registrationMode: this.registrationMode,
+      requiresRegistrationSecret: inviteReady
     };
   }
 
@@ -38,10 +42,15 @@ class AuthService {
 
     const result = this.repository.transaction(() => {
       const firstUser = this.repository.countUsers() === 0;
-      if (!firstUser && !this.registrationSecret) {
+      const registrationClosed =
+        !firstUser &&
+        (this.registrationMode === "closed" ||
+          (this.registrationMode === "invite" && !this.registrationSecret));
+      if (registrationClosed) {
         throw new HttpError(403, "REGISTRATION_CLOSED", "当前服务器未开放新账号注册。");
       }
       if (
+        this.registrationMode === "invite" &&
         this.registrationSecret &&
         !safeTextEqual(String(input.registrationSecret || ""), this.registrationSecret)
       ) {
@@ -178,6 +187,14 @@ class AuthService {
       }
     }
   }
+}
+
+function normalizeRegistrationMode(value) {
+  const mode = String(value || "open").trim().toLocaleLowerCase();
+  if (!["open", "invite", "closed"].includes(mode)) {
+    throw new Error("registrationMode must be open, invite or closed.");
+  }
+  return mode;
 }
 
 function normalizeUsername(value) {

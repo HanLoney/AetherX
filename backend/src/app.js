@@ -112,6 +112,7 @@ function createApp(config) {
   const database = openDatabase(config.dataDir);
   const secretBox = createSecretBox(config.dataDir, config.masterKey);
   const authService = new AuthService(new AuthRepository(database), {
+    registrationMode: config.registrationMode,
     registrationSecret: config.registrationSecret,
     sessionTtlDays: config.sessionTtlDays
   });

@@ -48,15 +48,16 @@ sudo journalctl -u caddy -n 100 --no-pager -l
 
 ## 不能创建第二个账号
 
-这是默认安全策略。数据库已有账号且没有设置 `AETHERX_REGISTRATION_SECRET` 时，注册入口自动关闭。
+先检查服务器的注册模式。默认 `open` 会开放创建账号；`invite` 需要注册口令；`closed` 会在首个账号创建后关闭入口。
 
-在服务器环境文件中设置注册口令并重启：
+要开放创建功能，在服务器环境文件中设置并重启：
 
 ```ini
-AETHERX_REGISTRATION_SECRET=使用高熵随机值
+AETHERX_REGISTRATION_MODE=open
+AETHERX_REGISTRATION_SECRET=
 ```
 
-客户端创建账号时必须填写同一个口令。创建完成后可以移除或轮换口令，再重启服务关闭注册。
+保存后重启服务，桌面端和 Android 端都会显示“创建账号”。若使用 `invite`，客户端还必须填写同一个注册口令。
 
 ## 首页内容暂时为空
 

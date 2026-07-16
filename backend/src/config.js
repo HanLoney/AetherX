@@ -10,6 +10,9 @@ function loadConfig(environment = process.env) {
       path.join(process.cwd(), ".data"),
     masterKey:
       environment.AETHERX_MASTER_KEY || environment.XUANAI_MASTER_KEY || "",
+    registrationMode: normalizeRegistrationMode(
+      environment.AETHERX_REGISTRATION_MODE || "open"
+    ),
     registrationSecret: environment.AETHERX_REGISTRATION_SECRET || "",
     sessionTtlDays: Number(environment.AETHERX_SESSION_TTL_DAYS || 30),
     corsOrigin:
@@ -17,4 +20,12 @@ function loadConfig(environment = process.env) {
   };
 }
 
-module.exports = { loadConfig };
+function normalizeRegistrationMode(value) {
+  const mode = String(value || "open").trim().toLocaleLowerCase();
+  if (!["open", "invite", "closed"].includes(mode)) {
+    throw new Error("AETHERX_REGISTRATION_MODE must be open, invite or closed.");
+  }
+  return mode;
+}
+
+module.exports = { loadConfig, normalizeRegistrationMode };

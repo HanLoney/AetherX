@@ -2283,6 +2283,61 @@ test("first account atomically claims existing local-user data", async () => {
   });
 });
 
+test("registration is open by default for more than one account", async () => {
+  await withUnregisteredServer(async (baseUrl) => {
+    const first = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "open-first",
+      password: "open-first-password"
+    });
+    const second = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "open-second",
+      password: "open-second-password"
+    });
+    assert.equal(first.response.status, 200);
+    assert.equal(second.response.status, 200);
+
+    const config = await rawRequest(baseUrl, "GET", "/api/v1/auth/config");
+    assert.equal(config.payload.data.registrationAvailable, true);
+    assert.equal(config.payload.data.registrationMode, "open");
+    assert.equal(config.payload.data.requiresRegistrationSecret, false);
+  });
+});
+
+test("invite registration requires the configured secret", async () => {
+  await withUnregisteredServer(async (baseUrl) => {
+    const rejected = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "invite-user",
+      password: "invite-user-password"
+    });
+    assert.equal(rejected.response.status, 403);
+    assert.equal(rejected.payload.error.code, "INVALID_REGISTRATION_SECRET");
+
+    const accepted = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "invite-user",
+      password: "invite-user-password",
+      registrationSecret: "invite-only"
+    });
+    assert.equal(accepted.response.status, 200);
+  }, { registrationMode: "invite", registrationSecret: "invite-only" });
+});
+
+test("closed registration allows bootstrap owner then closes", async () => {
+  await withUnregisteredServer(async (baseUrl) => {
+    const first = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "closed-owner",
+      password: "closed-owner-password"
+    });
+    assert.equal(first.response.status, 200);
+
+    const second = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "closed-second",
+      password: "closed-second-password"
+    });
+    assert.equal(second.response.status, 403);
+    assert.equal(second.payload.error.code, "REGISTRATION_CLOSED");
+  }, { registrationMode: "closed" });
+});
+
 test("authenticated users cannot read or mutate each other's data", async () => {
   await withUnregisteredServer(
     async (baseUrl) => {
@@ -2374,7 +2429,7 @@ test("authenticated users cannot read or mutate each other's data", async () => 
       );
       assert.equal(stolenConversation.response.status, 404);
     },
-    { registrationSecret: "invite-only" }
+    { registrationMode: "invite", registrationSecret: "invite-only" }
   );
 });
 

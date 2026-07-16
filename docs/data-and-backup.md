@@ -48,7 +48,8 @@ backend/.data/xuanai.db
 | --- | --- | --- |
 | `xuanai.db` | 是 | 账号、记忆、对话、待办、配置等业务数据 |
 | `AETHERX_MASTER_KEY` | 是 | 解密数据库中保存的 AI Provider 凭证 |
-| `AETHERX_REGISTRATION_SECRET` | 建议 | 保持当前注册流程，可在恢复后轮换 |
+| `AETHERX_REGISTRATION_MODE` | 建议 | 保持开放、邀请制或关闭注册的策略 |
+| `AETHERX_REGISTRATION_SECRET` | 邀请制必需 | 保持邀请注册流程，可在恢复后轮换 |
 | 桌面 `auth.json` | 否 | 本机登录会话，可重新登录生成 |
 | 手机设备令牌 | 否 | 可以重新配对生成 |
 
