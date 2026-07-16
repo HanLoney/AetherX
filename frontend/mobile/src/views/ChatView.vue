@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { History, Menu, Plus, SendHorizontal, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -19,6 +19,7 @@ const sending = ref(false);
 const error = ref("");
 const historyOpen = ref(false);
 const messageList = ref<HTMLElement | null>(null);
+let conversationRefreshPending = false;
 const assistantName = computed(() => String(data.assistant.value.name || "小玄"));
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
@@ -37,6 +38,20 @@ async function openConversation(conversation: Conversation) {
   historyOpen.value = false;
   await scrollToBottom();
 }
+
+watch(() => data.conversationRevision.value, async () => {
+  if (!current.value) return;
+  if (sending.value) {
+    conversationRefreshPending = true;
+    return;
+  }
+  const latest = data.conversations.value.find((item) => item.id === current.value?.id);
+  if (!latest) {
+    newConversation();
+    return;
+  }
+  await openConversation(latest).catch(() => undefined);
+});
 
 function newConversation() {
   current.value = null;
@@ -71,6 +86,11 @@ async function send() {
     error.value = cause instanceof Error ? cause.message : "消息没有发出去。";
   } finally {
     sending.value = false;
+    if (conversationRefreshPending && current.value) {
+      conversationRefreshPending = false;
+      const latest = data.conversations.value.find((item) => item.id === current.value?.id);
+      if (latest) await openConversation(latest).catch(() => undefined);
+    }
     await scrollToBottom();
   }
 }

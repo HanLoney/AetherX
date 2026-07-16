@@ -321,4 +321,15 @@ $("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 $("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 $("#closeBtn").addEventListener("click", () => window.desktop.close());
 
+window.addEventListener("message", (event) => {
+  if (event.data?.type !== "aether:sync-changes") return;
+  const relevant = new Set(["album_moments", "album_moment_sources", "messages"]);
+  if (!(event.data.changes || []).some((change) => relevant.has(change.entityType))) return;
+  clearTimeout(loadMoments.syncTimer);
+  loadMoments.syncTimer = setTimeout(
+    () => loadMoments({ preserveCurrent: true, silent: true }),
+    180
+  );
+});
+
 loadMoments();

@@ -156,7 +156,18 @@ $("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 $("#closeBtn").addEventListener("click", () => window.desktop.close());
 
 window.addEventListener("message", (event) => {
-  if (event.data?.type === "aether:dreams-updated") loadDreams();
+  if (event.data?.type === "aether:dreams-updated") {
+    loadDreams();
+    return;
+  }
+  if (event.data?.type !== "aether:sync-changes") return;
+  const relevant = new Set(["assistant_dreams", "assistant_dream_sources"]);
+  if (!(event.data.changes || []).some((change) => relevant.has(change.entityType))) return;
+  clearTimeout(loadDreams.syncTimer);
+  loadDreams.syncTimer = setTimeout(
+    () => loadDreams().catch((error) => showNotice(error.message || "梦境读取失败。", true)),
+    180
+  );
 });
 
 loadDreams().catch((error) => showNotice(error.message || "梦境读取失败。", true));

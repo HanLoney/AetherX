@@ -53,15 +53,25 @@ export async function clearSession() {
   }
 }
 
-export async function loadSyncCursor() {
-  const value = Number((await Preferences.get({ key: CURSOR_KEY })).value || 0);
+export function syncCursorKey(scope: string) {
+  const normalized = String(scope || "default").trim().toLocaleLowerCase();
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${CURSOR_KEY}.${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export async function loadSyncCursor(scope = "default") {
+  const value = Number((await Preferences.get({ key: syncCursorKey(scope) })).value || 0);
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
-export async function saveSyncCursor(cursor: number) {
-  await Preferences.set({ key: CURSOR_KEY, value: String(cursor) });
+export async function saveSyncCursor(scope: string, cursor: number) {
+  await Preferences.set({ key: syncCursorKey(scope), value: String(cursor) });
 }
 
-export async function clearSyncCursor() {
-  await Preferences.remove({ key: CURSOR_KEY });
+export async function clearSyncCursor(scope = "default") {
+  await Preferences.remove({ key: syncCursorKey(scope) });
 }
