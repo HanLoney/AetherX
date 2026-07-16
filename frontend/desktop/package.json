@@ -33,6 +33,7 @@
     "files": [
       "main.js",
       "hub-runtime.js",
+      "sync-runtime.js",
       "api-client.js",
       "auth-store.js",
       "preload.js",

@@ -10,6 +10,7 @@ const profile = ref<Record<string, unknown>>({});
 const assistant = ref<Record<string, unknown>>({});
 const loading = ref(false);
 const lastUpdatedAt = ref<number | null>(null);
+const conversationRevision = ref(0);
 const syncState = ref<"idle" | "syncing" | "online" | "error">("idle");
 let sync: SyncCoordinator | null = null;
 
@@ -24,6 +25,7 @@ async function refreshAll() {
     todos.value = todoResult;
     memories.value = memoryResult;
     conversations.value = conversationResult;
+    conversationRevision.value += 1;
     profile.value = profileResult;
     assistant.value = assistantResult;
     lastUpdatedAt.value = Date.now();
@@ -41,7 +43,10 @@ async function refreshGroups(groups: Set<string>) {
   const jobs: Promise<void>[] = [];
   if (groups.has("todos")) jobs.push(api.listTodos().then((value) => { todos.value = value; }));
   if (groups.has("memories")) jobs.push(api.listMemories().then((value) => { memories.value = value; }));
-  if (groups.has("conversations")) jobs.push(api.listConversations().then((value) => { conversations.value = value; }));
+  if (groups.has("conversations")) jobs.push(api.listConversations().then((value) => {
+    conversations.value = value;
+    conversationRevision.value += 1;
+  }));
   if (groups.has("profile")) jobs.push(api.profile().then((value) => { profile.value = value; }));
   if (groups.has("assistant")) jobs.push(api.assistantProfile().then((value) => { assistant.value = value; }));
   await Promise.all(jobs);
@@ -64,11 +69,14 @@ function changeGroups(changes: SyncChange[]) {
 
 async function startSync() {
   if (sync) return;
-  const api = useSessionStore().requireApi();
+  const session = useSessionStore();
+  const api = session.requireApi();
+  const userId = session.user.value?.id;
+  if (!userId) throw new Error("登录状态已经失效，请重新登录。");
   sync = new SyncCoordinator(api, async (changes) => {
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
-  });
+  }, `${api.serverUrl}|${userId}`);
   try {
     await sync.start();
     syncState.value = "online";
@@ -80,8 +88,17 @@ async function startSync() {
 function stopSync() {
   sync?.stop();
   sync = null;
+  todos.value = [];
+  memories.value = [];
+  conversations.value = [];
+  profile.value = {};
+  assistant.value = {};
+  lastUpdatedAt.value = null;
+  conversationRevision.value += 1;
   syncState.value = "idle";
 }
+
+window.addEventListener("aetherx:session-invalidated", stopSync);
 
 async function toggleTodo(todo: Todo) {
   const updated = await useSessionStore().requireApi().updateTodo(todo.id, { completed: !todo.completed });
@@ -117,6 +134,7 @@ export function useDataStore() {
     assistant: readonly(assistant),
     loading: readonly(loading),
     lastUpdatedAt: readonly(lastUpdatedAt),
+    conversationRevision: readonly(conversationRevision),
     syncState: readonly(syncState),
     activeTodos: computed(() => todos.value.filter((todo) => !todo.completed)),
     pendingMemories: computed(() => memories.value.filter((memory) => memory.status === "candidate")),

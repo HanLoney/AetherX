@@ -12,6 +12,7 @@ const path = require("node:path");
 const { XuanApiClient } = require("./api-client");
 const { AuthStore } = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
+const { DesktopSyncCoordinator } = require("./sync-runtime");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const defaultServerUrl =
@@ -32,10 +33,23 @@ const api = new XuanApiClient({
     if (!api.token || !authStore) return;
     api.setToken("");
     currentUser = null;
+    desktopSync.stop();
     authStore.clearSession(api.baseUrl);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("auth.html");
   }
 });
+const desktopSync = new DesktopSyncCoordinator({
+  api,
+  onChanges: async (changes) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("sync:received", changes);
+  }
+});
+
+async function startAuthenticatedSync() {
+  if (!currentUser || !api.token) return;
+  await desktopSync.start(`${api.baseUrl}|${currentUser.id}`);
+}
 
 function registerIpcHandlers() {
   ipcMain.on("window:minimize", (event) => {
@@ -77,6 +91,7 @@ function registerIpcHandlers() {
     const session = await api.getSession();
     currentUser = session.user;
     authStore.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+    await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { authenticated: true, user: currentUser };
   });
@@ -84,6 +99,7 @@ function registerIpcHandlers() {
     const previousServerUrl = api.baseUrl;
     api.setBaseUrl(serverUrl);
     if (api.baseUrl !== previousServerUrl) {
+      desktopSync.stop();
       api.setToken("");
       currentUser = null;
       authStore.clearSession(api.baseUrl);
@@ -100,6 +116,7 @@ function registerIpcHandlers() {
     api.setToken(result.token);
     currentUser = result.user;
     authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { user: result.user };
   });
@@ -115,6 +132,7 @@ function registerIpcHandlers() {
     api.setToken(result.token);
     currentUser = result.user;
     authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return {
       user: result.user,
@@ -129,6 +147,7 @@ function registerIpcHandlers() {
     try {
       if (api.token) await api.logout();
     } finally {
+      desktopSync.stop();
       api.setToken("");
       currentUser = null;
       authStore.clearSession(api.baseUrl);
@@ -437,6 +456,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", (event) => {
   isQuitting = true;
+  desktopSync.stop();
   if (!localHub?.owned || hubShutdownComplete) return;
   event.preventDefault();
   if (!hubShutdownPromise) {

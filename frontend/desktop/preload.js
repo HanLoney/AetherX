@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("desktop", {
   listDevices: () => ipcRenderer.invoke("devices:list"),
   revokeDevice: (id) => ipcRenderer.invoke("devices:revoke", id),
   listSyncChanges: (filters) => ipcRenderer.invoke("sync:changes", filters),
+  onSyncChanges: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, changes) => callback(changes);
+    ipcRenderer.on("sync:received", listener);
+    return () => ipcRenderer.removeListener("sync:received", listener);
+  },
   showNotification: (notification) =>
     ipcRenderer.invoke("notification:show", notification),
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),

@@ -849,8 +849,24 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("message", async (event) => {
-  if (kind !== "assistant") return;
   const type = event.data?.type;
+  if (type === "aether:sync-changes") {
+    const changed = new Set((event.data.changes || []).map((change) => change.entityType));
+    const userRelevant = changed.has("user_profiles");
+    const assistantRelevant = [
+      "assistant_profiles", "assistant_personality_events", "assistant_journals",
+      "assistant_journals_v2", "messages", "ai_image_configs"
+    ].some((entityType) => changed.has(entityType));
+    if ((kind === "user" && userRelevant) || (kind === "assistant" && assistantRelevant)) {
+      clearTimeout(loadProfile.syncTimer);
+      loadProfile.syncTimer = setTimeout(
+        () => loadProfile().catch((error) => showNotice(error.message, true)),
+        180
+      );
+    }
+    return;
+  }
+  if (kind !== "assistant") return;
   if (type === "aether:journals-updated") {
     const results = await Promise.allSettled([
       loadJournalContent(),

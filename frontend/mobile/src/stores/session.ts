@@ -1,6 +1,6 @@
 import { computed, readonly, ref } from "vue";
 import { AetherApi, type AuthUser } from "../lib/api";
-import { clearSession, clearSyncCursor, loadServerUrl, loadSession, saveServerUrl, saveSession } from "../lib/storage";
+import { clearSession, loadServerUrl, loadSession, saveServerUrl, saveSession } from "../lib/storage";
 
 const ready = ref(false);
 const busy = ref(false);
@@ -54,8 +54,7 @@ async function login(input: { serverUrl: string; username: string; password: str
     serverUrl.value = candidate.serverUrl;
     await Promise.all([
       saveServerUrl(serverUrl.value),
-      saveSession({ token: result.token, user: result.user }),
-      clearSyncCursor()
+      saveSession({ token: result.token, user: result.user })
     ]);
     return result.user;
   } catch (cause) {
@@ -96,8 +95,7 @@ async function pair(code: string) {
     serverUrl.value = candidate.serverUrl;
     await Promise.all([
       saveServerUrl(serverUrl.value),
-      saveSession({ token: redeemed.token, user: current.user }),
-      clearSyncCursor()
+      saveSession({ token: redeemed.token, user: current.user })
     ]);
     return current.user;
   } catch (cause) {
@@ -116,7 +114,8 @@ async function logout() {
 async function invalidate() {
   user.value = null;
   if (serverUrl.value) api = createApi(serverUrl.value);
-  await Promise.all([clearSession(), clearSyncCursor()]);
+  await clearSession();
+  window.dispatchEvent(new CustomEvent("aetherx:session-invalidated"));
   if (window.location.hash !== "#/login") window.location.hash = "#/login";
 }
 

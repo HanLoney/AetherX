@@ -1461,9 +1461,13 @@ async function refreshConversationHistory() {
   renderConversationHistory();
 }
 
-async function loadConversation(id) {
-  if (state.sending || id === state.conversationId) return;
-  await flushConversationSync();
+async function loadConversation(id, options = {}) {
+  if (state.sending || (!options.force && id === state.conversationId)) return;
+  if (options.fromSync) {
+    if (state.conversationSyncing || state.conversationSyncRequested) return;
+  } else {
+    await flushConversationSync();
+  }
   const result = await window.desktop.getConversation(id);
   state.restoringConversation = true;
   state.conversationId = id;
@@ -2395,9 +2399,54 @@ window.addEventListener("aether:gallery-updated", () => {
   );
 });
 
+const pendingRemoteEntityTypes = new Set();
+let remoteSyncTimer = null;
+
+function queueRemoteRefresh(changes) {
+  for (const change of Array.isArray(changes) ? changes : []) {
+    if (change?.entityType) pendingRemoteEntityTypes.add(change.entityType);
+  }
+  moduleFrame.contentWindow?.postMessage(
+    { type: "aether:sync-changes", changes: Array.isArray(changes) ? changes : [] },
+    "*"
+  );
+  clearTimeout(remoteSyncTimer);
+  remoteSyncTimer = setTimeout(flushRemoteRefresh, 180);
+}
+
+async function flushRemoteRefresh() {
+  const entityTypes = new Set(pendingRemoteEntityTypes);
+  pendingRemoteEntityTypes.clear();
+  const jobs = [];
+
+  if (["user_profiles", "assistant_profiles"].some((type) => entityTypes.has(type))) {
+    jobs.push(refreshProfiles());
+  }
+  if (["prompt_settings", "prompt_setting_versions"].some((type) => entityTypes.has(type))) {
+    jobs.push(refreshSystemPrompt());
+  }
+  if (["xuan_mood_events", "xuan_mood_state", "xuan_mood_displays"].some((type) => entityTypes.has(type))) {
+    jobs.push(refreshXuanMoodContext());
+  }
+  if (["conversations", "messages"].some((type) => entityTypes.has(type))) {
+    jobs.push((async () => {
+      await refreshConversationHistory();
+      if (state.conversationId) {
+        await loadConversation(state.conversationId, { force: true, fromSync: true });
+      }
+    })());
+  }
+
+  await Promise.allSettled(jobs);
+}
+
+const disposeRemoteSync = window.desktop.onSyncChanges(queueRemoteRefresh);
+
 window.addEventListener("xuan:modules-changed", syncModuleState);
 window.addEventListener("storage", syncModuleState);
 window.addEventListener("beforeunload", () => {
+  disposeRemoteSync?.();
+  clearTimeout(remoteSyncTimer);
   titlebarClock.stop();
   reminderEngine.stop();
   journalWriter.stop();

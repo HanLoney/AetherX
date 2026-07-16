@@ -680,6 +680,19 @@ document.querySelector("#homeBtn").addEventListener("click", () => {
   navigateHome();
 });
 
+let todoSyncRefreshTimer = null;
+window.addEventListener("message", (event) => {
+  if (event.data?.type !== "aether:sync-changes") return;
+  const changed = (event.data.changes || []).some(
+    (change) => change.entityType === "todos"
+  );
+  if (!changed) return;
+  clearTimeout(todoSyncRefreshTimer);
+  todoSyncRefreshTimer = setTimeout(() => {
+    refreshTodos().then(render).catch(() => undefined);
+  }, 160);
+});
+
 document.querySelector("#todayText").textContent = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
   month: "long",

@@ -9,12 +9,16 @@ export class SyncCoordinator {
   private retryAttempt = 0;
   private running = false;
 
-  constructor(private readonly api: AetherApi, private readonly onChanges: ChangeHandler) {}
+  constructor(
+    private readonly api: AetherApi,
+    private readonly onChanges: ChangeHandler,
+    private readonly cursorScope: string
+  ) {}
 
   async start() {
     if (this.running) return;
     this.running = true;
-    this.cursor = await loadSyncCursor();
+    this.cursor = await loadSyncCursor(this.cursorScope);
     try { await this.catchUp(); } catch { /* 长连接重试前会再次补拉 */ }
     void this.connect();
   }
@@ -31,7 +35,7 @@ export class SyncCoordinator {
       const page = await this.api.syncChanges(this.cursor);
       if (page.changes.length) await this.onChanges(page.changes);
       this.cursor = page.nextCursor;
-      await saveSyncCursor(this.cursor);
+      await saveSyncCursor(this.cursorScope, this.cursor);
       hasMore = page.hasMore;
     }
   }
@@ -56,7 +60,7 @@ export class SyncCoordinator {
           if (change.seq <= this.cursor) return;
           await this.onChanges([change]);
           this.cursor = change.seq;
-          await saveSyncCursor(this.cursor);
+          await saveSyncCursor(this.cursorScope, this.cursor);
         });
       } catch (error) {
         if (!this.running || (error as Error).name === "AbortError") return;

@@ -105,8 +105,8 @@ function formatDate(value) {
     : "长期有效";
 }
 
-async function loadAll() {
-  await window.desktop.consolidateMemories();
+async function loadAll(options = {}) {
+  if (options.consolidate !== false) await window.desktop.consolidateMemories();
   const [
     profile,
     assistantProfile,
@@ -806,7 +806,19 @@ $("#restorePromptVersion").addEventListener("click", async () => {
 window.addEventListener("message", (event) => {
   if (event.data?.type === "xuan:refresh-memory") {
     loadAll().catch((error) => showNotice(error.message, true));
+    return;
   }
+  if (event.data?.type !== "aether:sync-changes") return;
+  const relevant = new Set([
+    "memories", "shared_memories", "assistant_personality_events",
+    "user_profiles", "assistant_profiles", "user_preferences",
+    "memory_settings", "prompt_settings", "prompt_setting_versions"
+  ]);
+  if (!(event.data.changes || []).some((change) => relevant.has(change.entityType))) return;
+  clearTimeout(loadAll.syncTimer);
+  loadAll.syncTimer = setTimeout(() => {
+    loadAll({ consolidate: false }).catch((error) => showNotice(error.message, true));
+  }, 180);
 });
 
 function splitLines(value) {
