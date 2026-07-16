@@ -11,6 +11,15 @@ contextBridge.exposeInMainWorld("desktop", {
   register: (input) => ipcRenderer.invoke("auth:register", input),
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
   logout: () => ipcRenderer.invoke("auth:logout"),
+  createPairingSession: (input) =>
+    ipcRenderer.invoke("devices:pairing:create", input),
+  getPairingSession: (id) =>
+    ipcRenderer.invoke("devices:pairing:get", id),
+  approvePairingSession: (id) =>
+    ipcRenderer.invoke("devices:pairing:approve", id),
+  listDevices: () => ipcRenderer.invoke("devices:list"),
+  revokeDevice: (id) => ipcRenderer.invoke("devices:revoke", id),
+  listSyncChanges: (filters) => ipcRenderer.invoke("sync:changes", filters),
   showNotification: (notification) =>
     ipcRenderer.invoke("notification:show", notification),
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),

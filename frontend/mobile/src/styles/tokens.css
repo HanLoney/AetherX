@@ -1,0 +1,18 @@
+:root {
+  font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+  color: #343249;
+  background: #f8f7fc;
+  font-synthesis: none;
+  --ink: #343249;
+  --soft-ink: #706b82;
+  --muted: #9b96a8;
+  --pink: #dc91b7;
+  --pink-rgb: 220, 145, 183;
+  --blue: #79acd9;
+  --blue-rgb: 121, 172, 217;
+  --surface: rgba(255, 255, 255, .72);
+  --surface-strong: rgba(255, 255, 255, .91);
+  --line: rgba(103, 96, 132, .13);
+  --shadow: 0 22px 56px rgba(81, 76, 111, .12);
+  --nav-height: 70px;
+}

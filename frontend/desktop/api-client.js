@@ -91,6 +91,43 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/auth/logout");
   }
 
+  createPairingSession(input = {}) {
+    return this.request("POST", "/api/v1/pairing/sessions", input);
+  }
+
+  getPairingSession(id) {
+    return this.request(
+      "GET",
+      `/api/v1/pairing/sessions/${encodeURIComponent(id)}`
+    );
+  }
+
+  approvePairingSession(id) {
+    return this.request(
+      "POST",
+      `/api/v1/pairing/sessions/${encodeURIComponent(id)}/approve`,
+      {}
+    );
+  }
+
+  listDevices() {
+    return this.request("GET", "/api/v1/devices");
+  }
+
+  revokeDevice(id) {
+    return this.request("DELETE", `/api/v1/devices/${encodeURIComponent(id)}`);
+  }
+
+  listSyncChanges(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/sync/changes${query.size ? `?${query}` : ""}`
+    );
+  }
+
   getAiConfig() {
     return this.request("GET", "/api/v1/ai/config");
   }

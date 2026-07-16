@@ -2,9 +2,29 @@ node_modules/
 dist/
 .data/
 
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.jks
+*.keystore
+
+# Runtime databases and private backups
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+backups/
+aetherx-data*.zip
+aetherx-backend-deploy*.tar.gz
+
 .agents/
 .codex/
 .hbuilderx/
+.idea/
+.vscode/
 
 *.log
 .DS_Store
