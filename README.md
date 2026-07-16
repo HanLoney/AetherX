@@ -83,8 +83,7 @@ AetherX/
 ├─ backend/             Node.js Hub、SQLite、REST API 与 SSE
 ├─ frontend/
 │  ├─ desktop/          Electron 桌面客户端
-│  ├─ mobile/           Vue + Capacitor Android 客户端
-│  └─ uniapp/           旧版跨端原型，仅保留作参考
+│  └─ mobile/           Vue + Capacitor Android 客户端
 ├─ docs/
 │  ├─ architecture/     架构与边界
 │  ├─ adr/              已接受的架构决策
