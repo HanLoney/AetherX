@@ -22,6 +22,7 @@ AetherX 不建设官方数据云。每位用户拥有自己的 AetherX Hub，Hub
 │          ▼                                            │
 │ AetherX Hub（托盘常驻、可开机启动）                     │
 │   ├─ 身份认证与设备授权                                 │
+│   ├─ Agent Loop、工具与授权状态机                        │
 │   ├─ 业务 API                                          │
 │   ├─ 增量变更日志                                      │
 │   ├─ SSE 实时通知                                      │
@@ -35,6 +36,9 @@ AetherX 不建设官方数据云。每位用户拥有自己的 AetherX Hub，Hub
 ### 单写原则
 
 Hub 是数据的唯一权威来源。桌面端和手机端不直接打开数据库，也不通过 Syncthing、网盘或共享目录同步 `xuanai.db`。所有写入都经过业务 API。
+
+聊天也遵循相同原则：两端只调用 Agent API，提示词、记忆召回、工具循环和会话保存
+均由 Hub 统一完成。同一会话同时只处理一个活跃运行，避免多设备写入乱序。
 
 第一版手机端以在线客户端为主，可以保留只读缓存；离线写入、冲突合并和多主复制不属于第一阶段。
 
@@ -140,6 +144,9 @@ DELETE /api/v1/devices/:id
 
 GET    /api/v1/sync/changes?after=<seq>&limit=<n>
 GET    /api/v1/sync/events?after=<seq>
+
+POST   /api/v1/agent/chat
+POST   /api/v1/agent/runs/:id/approve
 ```
 
 设备令牌与普通会话令牌都使用 Bearer 认证。服务端从令牌解析 `user_id`，禁止客户端在业务请求中自行声明用户身份。

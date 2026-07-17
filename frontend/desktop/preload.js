@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld("desktop", {
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),
   saveAIConfig: (config) => ipcRenderer.invoke("ai:config:save", config),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),
+  agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
+  approveAgentRun: (id, approved) =>
+    ipcRenderer.invoke("agent:approve", id, approved),
   getAIImageConfig: () => ipcRenderer.invoke("ai:image-config:get"),
   saveAIImageConfig: (config) =>
     ipcRenderer.invoke("ai:image-config:save", config),

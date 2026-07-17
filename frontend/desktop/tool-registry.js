@@ -158,4 +158,7 @@
   }
 
   global.XuanToolRegistry = ToolRegistry;
-})(window);
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { ToolRegistry };
+  }
+})(typeof window === "undefined" ? globalThis : window);

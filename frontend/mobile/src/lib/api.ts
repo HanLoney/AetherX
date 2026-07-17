@@ -42,11 +42,48 @@ export interface Conversation {
   updatedAt: number;
 }
 
+export interface ChatToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ChatActivityItem {
+  id?: string;
+  content?: string;
+  title?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
 export interface ChatMessage {
   id?: string;
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool" | "memory";
+  content: string | null;
   createdAt?: number;
+  title?: string;
+  detail?: string;
+  risk?: "read" | "write" | "destructive";
+  status?: "queued" | "running" | "waiting" | "success" | "error" | "denied" | "skipped";
+  statusText?: string;
+  expanded?: boolean;
+  kind?: string;
+  items?: ChatActivityItem[];
+  journal?: {
+    action?: string;
+    items?: Array<{ title?: string; periodKey?: string; type?: string; mood?: string }>;
+  };
+  image?: {
+    source?: string;
+    description?: string;
+    selfie?: boolean;
+  };
+  tool_calls?: ChatToolCall[];
+  tool_call_id?: string;
+  name?: string;
 }
 
 export class ApiError extends Error {
@@ -91,7 +128,10 @@ export class AetherApi {
   async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const ownController = signal ? null : new AbortController();
     const activeSignal = signal || ownController?.signal;
-    const timeout = ownController ? window.setTimeout(() => ownController.abort(), 65_000) : 0;
+    const timeoutMs = path.includes("/ai/image-generations") || path.includes("/agent/")
+      ? 300_000
+      : 65_000;
+    const timeout = ownController ? window.setTimeout(() => ownController.abort(), timeoutMs) : 0;
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
@@ -144,10 +184,12 @@ export class AetherApi {
   profile() { return this.request<Record<string, unknown>>("GET", "/api/v1/profile"); }
   assistantProfile() { return this.request<Record<string, unknown>>("GET", "/api/v1/assistant/profile"); }
   aiConfig() { return this.request<{ hasApiKey: boolean; model?: string }>("GET", "/api/v1/ai/config"); }
-  promptSettings() { return this.request<{ compiledPrompt?: string }>("GET", "/api/v1/prompt-settings"); }
-  recallMemories(query: string) { return this.request<{ context?: string }>("POST", "/api/v1/memories/recall", { query }); }
-  extractMemories(input: Record<string, unknown>) { return this.request("POST", "/api/v1/memories/extract", input); }
-  requestAi(input: Record<string, unknown>) { return this.request<Record<string, unknown>>("POST", "/api/v1/ai/chat", input); }
+  agentChat(input: { conversationId?: string; content: string; runtime?: Record<string, unknown> }) {
+    return this.request<AgentChatResult>("POST", "/api/v1/agent/chat", input);
+  }
+  approveAgentRun(id: string, approved: boolean) {
+    return this.request<AgentChatResult>("POST", `/api/v1/agent/runs/${encodeURIComponent(id)}/approve`, { approved });
+  }
   listTodos(status = "all") { return this.request<Todo[]>("GET", `/api/v1/todos?status=${encodeURIComponent(status)}`); }
   createTodo(input: { text: string; startAt: number; endAt: number }) { return this.request<Todo>("POST", "/api/v1/todos", input); }
   updateTodo(id: string, input: Partial<Todo>) { return this.request<Todo>("PATCH", `/api/v1/todos/${encodeURIComponent(id)}`, input); }
@@ -156,12 +198,8 @@ export class AetherApi {
   confirmMemory(id: string) { return this.request<Memory>("POST", `/api/v1/memories/${encodeURIComponent(id)}/confirm`, {}); }
   deleteMemory(id: string) { return this.request<null>("DELETE", `/api/v1/memories/${encodeURIComponent(id)}`); }
   listConversations() { return this.request<Conversation[]>("GET", "/api/v1/conversations"); }
-  createConversation(title: string) { return this.request<Conversation>("POST", "/api/v1/conversations", { title }); }
   conversation(id: string) {
     return this.request<{ conversation: Conversation; displayMessages: ChatMessage[]; modelMessages: ChatMessage[] }>("GET", `/api/v1/conversations/${encodeURIComponent(id)}`);
-  }
-  saveMessages(id: string, messages: Array<Record<string, unknown>>) {
-    return this.request<{ saved: number }>("PUT", `/api/v1/conversations/${encodeURIComponent(id)}/messages`, { messages });
   }
   syncChanges(after: number, limit = 200) {
     return this.request<{ changes: SyncChange[]; nextCursor: number; hasMore: boolean }>("GET", `/api/v1/sync/changes?after=${after}&limit=${limit}`);
@@ -174,6 +212,15 @@ export interface SyncChange {
   entityId: string;
   operation: "upsert" | "delete";
   createdAt: number;
+}
+
+export interface AgentChatResult {
+  status: "completed" | "approval_required";
+  runId: string | null;
+  conversation: Conversation;
+  displayMessages: ChatMessage[];
+  toolMutated: boolean;
+  pendingApproval: { activityId: string } | null;
 }
 
 export function normalizeServerUrl(value: string) {

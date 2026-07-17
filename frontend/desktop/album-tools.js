@@ -218,4 +218,7 @@
   }
 
   global.registerAlbumTools = registerAlbumTools;
-})(window);
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { registerAlbumTools };
+  }
+})(typeof window === "undefined" ? globalThis : window);

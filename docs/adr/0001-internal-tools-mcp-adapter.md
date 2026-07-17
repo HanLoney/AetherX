@@ -1,6 +1,6 @@
 # ADR-0001：模块调用采用内部 Tool Registry，并预留 MCP Adapter
 
-- 状态：已接受
+- 状态：工具契约仍有效；客户端执行位置已由 [ADR-0003](0003-server-owned-agent-hub.md) 取代
 - 日期：2026-06-29
 
 ## 背景
@@ -9,7 +9,9 @@ AetherX 将逐步加入 Todo 之外的多个模块，并支持桌面端与移动
 
 ## 决策
 
-模块能力先注册到客户端内的 Tool Registry，并转换为 OpenAI 兼容 function tools。跨进程、跨设备或远程部署出现实际需求时，在相同工具契约外增加 MCP Adapter。Skill 只用于编排工具和沉淀工作流。
+模块能力先注册到内部 Tool Registry，并转换为 OpenAI 兼容 function tools。最初的
+实现位置在客户端；多端需求出现后已按 ADR-0003 移入 Hub。跨进程、跨设备或远程
+工具发现仍可在相同工具契约外增加 MCP Adapter。Skill 只用于编排工具和沉淀工作流。
 
 Tool Registry 统一负责：
 
@@ -28,7 +30,7 @@ Tool Registry 统一负责：
 
 ## 后果
 
-- 桌面端实现轻量工具注册表，各客户端通过相同的后端 API 与契约文档复用模块能力。
+- Hub 实现轻量工具注册表，各客户端通过相同的 Agent API 复用模块能力。
 - 所有写入操作都经过权限门，AI 不能直接修改本地存储。
 - 兼容端点若不支持 function tools，将明确提示能力不受支持。
 - 后续新增模块必须先定义工具契约，再接入 AI。

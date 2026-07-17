@@ -141,4 +141,7 @@
   }
 
   global.registerDreamTools = registerDreamTools;
-})(window);
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { registerDreamTools };
+  }
+})(typeof window === "undefined" ? globalThis : window);

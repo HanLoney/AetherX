@@ -24,6 +24,7 @@
 - [工具系统架构](architecture/tool-system.md)；
 - [ADR-0001：内部 Tool Registry 与 MCP Adapter](adr/0001-internal-tools-mcp-adapter.md)；
 - [ADR-0002：家庭节点单写与增量同步](adr/0002-home-hub-single-writer-sync.md)；
+- [ADR-0003：由后端统一托管 Agent Hub](adr/0003-server-owned-agent-hub.md)；
 - [Todo 工具契约](modules/todo-tools.md)；
 - [模块设置](modules/module-settings.md)；
 - [聊天 Markdown 约定](ui/chat-markdown.md)。

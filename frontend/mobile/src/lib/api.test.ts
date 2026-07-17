@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { normalizeServerUrl } from "./api";
-import { extractAssistantText } from "./chat";
 import { parsePairingCode } from "../stores/session";
 
 describe("normalizeServerUrl", () => {
@@ -20,15 +19,5 @@ describe("parsePairingCode", () => {
       id: "pair-1",
       secret: "a".repeat(32)
     });
-  });
-});
-
-describe("extractAssistantText", () => {
-  it("reads OpenAI-compatible chat completions", () => {
-    expect(extractAssistantText({ choices: [{ message: { content: "在呢喵~" } }] })).toBe("在呢喵~");
-  });
-
-  it("removes hidden reasoning blocks", () => {
-    expect(extractAssistantText({ choices: [{ message: { content: "<think>secret</think>看这里" } }] })).toBe("看这里");
   });
 });
