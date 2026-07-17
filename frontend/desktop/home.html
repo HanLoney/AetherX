@@ -159,7 +159,23 @@
         </section>
 
         <section class="composer-wrap">
+          <section id="emojiPicker" class="emoji-picker" aria-label="表情选择器" hidden></section>
           <div class="composer">
+            <button
+              id="emojiBtn"
+              class="emoji-button"
+              type="button"
+              aria-label="选择表情"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              title="选择表情"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5"></circle>
+                <path d="M8.5 14.2c.8 1.2 2 1.8 3.5 1.8s2.7-.6 3.5-1.8"></path>
+                <path d="M9 9.5h.01M15 9.5h.01"></path>
+              </svg>
+            </button>
             <textarea id="messageInput" rows="1" maxlength="4000" placeholder="给 AI 伙伴发消息…"></textarea>
             <button id="sendBtn" class="send-button" disabled>↑</button>
           </div>
@@ -341,6 +357,7 @@
     <script src="dream-writer.js"></script>
     <script src="markdown-renderer.js"></script>
     <script src="album-writer.js"></script>
+    <script src="emoji-picker.js"></script>
     <script src="home.js"></script>
   </body>
 </html>

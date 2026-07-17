@@ -45,6 +45,7 @@
       "app-shell.css",
       "clock.js",
       "device-manager.js",
+      "emoji-picker.js",
       "qr-code.js",
       "home.js",
       "ai-providers.js",
