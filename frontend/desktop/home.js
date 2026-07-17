@@ -56,6 +56,8 @@ const elements = {
   messageList: document.querySelector("#messageList"),
   conversation: document.querySelector("#conversation"),
   messageInput: document.querySelector("#messageInput"),
+  emojiBtn: document.querySelector("#emojiBtn"),
+  emojiPicker: document.querySelector("#emojiPicker"),
   sendBtn: document.querySelector("#sendBtn"),
   composerTip: document.querySelector("#composerTip"),
   settingsMask: document.querySelector("#settingsMask"),
@@ -89,6 +91,13 @@ const elements = {
   xuanMoodFullFocus: document.querySelector("#xuanMoodFullFocus"),
   xuanMoodRefreshBtn: document.querySelector("#xuanMoodRefreshBtn")
 };
+
+const emojiPicker = new window.AetherEmojiPicker({
+  root: elements.emojiPicker,
+  trigger: elements.emojiBtn,
+  input: elements.messageInput
+});
+emojiPicker.bind();
 
 const titlebarClock = new window.AetherClock({
   element: elements.titlebarClock,
@@ -1441,6 +1450,7 @@ async function sendMessage() {
     showTestResult("error", "请先完成 AI 配置并测试连接");
     return;
   }
+  emojiPicker.close();
   elements.messageInput.value = "";
   elements.sendBtn.disabled = true;
   state.sending = true;
