@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { History, Menu, Plus, SendHorizontal, X } from "@lucide/vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { History, Menu, Plus, SendHorizontal, Smile, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import ChatActivity from "../components/ChatActivity.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -11,12 +11,16 @@ import { MobileChat } from "../lib/hub-chat";
 import type { ChatMessage, Conversation } from "../lib/api";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
+import "emoji-picker-element";
 
 const data = useDataStore();
 const session = useSessionStore();
 const current = ref<Conversation | null>(null);
 const displayMessages = ref<ChatMessage[]>([]);
 const draft = ref("");
+const emojiOpen = ref(false);
+const emojiPanel = ref<HTMLElement | null>(null);
+const emojiButton = ref<HTMLButtonElement | null>(null);
 const sending = ref(false);
 const error = ref("");
 const historyOpen = ref(false);
@@ -28,9 +32,31 @@ const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
 const userAvatar = computed(() => String(data.profile.value.avatarDataUrl || ""));
 
+function handleEmojiClick(event: Event) {
+  const emojiEvent = event as CustomEvent<{ unicode: string }>;
+  const emoji = emojiEvent.detail?.unicode;
+
+  if (emoji) {
+    draft.value += emoji;
+  }
+}
+
+function closeEmojiOnOutsidePointer(event: PointerEvent) {
+  if (!emojiOpen.value) return;
+  const path = event.composedPath();
+  if (emojiPanel.value && path.includes(emojiPanel.value)) return;
+  if (emojiButton.value && path.includes(emojiButton.value)) return;
+  emojiOpen.value = false;
+}
+
 onMounted(async () => {
+  document.addEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
   if (!data.conversations.value.length) await data.refreshAll().catch(() => undefined);
   if (data.conversations.value[0]) await openConversation(data.conversations.value[0]);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
 });
 
 async function openConversation(conversation: Conversation) {
@@ -65,6 +91,7 @@ function newConversation() {
 async function send() {
   const content = draft.value.trim();
   if (!content || sending.value) return;
+  emojiOpen.value = false;
   sending.value = true;
   error.value = "";
   draft.value = "";
@@ -162,9 +189,27 @@ async function scrollToBottom() {
     </section>
 
     <p v-if="error" class="chat-error">{{ error }}</p>
+    <Transition name="fade">
+      <section v-if="emojiOpen" ref="emojiPanel" class="emoji-panel">
+        <emoji-picker
+          locale="zh"
+          @emoji-click="handleEmojiClick"
+        />
+      </section>
+    </Transition>
     <form class="chat-composer" @submit.prevent="send">
+      <button
+        ref="emojiButton"
+        type="button"
+        class="emoji-button"
+        aria-label="选择表情"
+        :class="{ active: emojiOpen }"
+        @click="emojiOpen = !emojiOpen"
+      >
+        <Smile :size="21" />
+      </button>
       <textarea v-model="draft" rows="1" :placeholder="`给 ${assistantName} 发消息…`" @keydown.enter.exact.prevent="send" />
-      <button type="submit" :disabled="!draft.trim() || sending" aria-label="发送"><SendHorizontal :size="20" /></button>
+      <button class="send-button" type="submit" :disabled="!draft.trim() || sending" aria-label="发送"><SendHorizontal :size="20" /></button>
     </form>
 
     <Transition name="fade">
@@ -193,11 +238,70 @@ async function scrollToBottom() {
 .assistant .message-bubble { white-space: normal; }
 .user .message-bubble { border: 0; border-radius: 19px 8px 19px 19px; color: #fff; background: linear-gradient(135deg,#cf8bad,#8e95c3 58%,#77a9d1); box-shadow: 0 11px 28px rgba(130,111,160,.18); }
 .typing { display:flex; gap:5px; padding:17px 18px; }.typing i{width:5px;height:5px;border-radius:50%;background:#aaa3b5;animation:pulse 1.2s infinite}.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}@keyframes pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
-.chat-composer { position: fixed; z-index: 25; left: 50%; bottom: calc(var(--nav-height) + 26px + env(safe-area-inset-bottom)); width: min(calc(100% - 34px), 650px); min-height: 62px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 8px 8px 8px 17px; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; background: rgba(255,255,255,.82); box-shadow: 0 16px 42px rgba(75,70,103,.14); backdrop-filter: blur(24px); }
+.chat-composer { position: fixed; z-index: 25; left: 50%; bottom: calc(var(--nav-height) + 26px + env(safe-area-inset-bottom)); width: min(calc(100% - 34px), 650px); min-height: 62px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 8px; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; background: rgba(255,255,255,.82); box-shadow: 0 16px 42px rgba(75,70,103,.14); backdrop-filter: blur(24px); }
 .chat-composer textarea { min-width:0; max-height:100px; flex:1; resize:none; border:0; outline:0; color:var(--ink); background:transparent; font-size:13px; line-height:1.55; }
-.chat-composer button { width:46px;height:46px;display:grid;place-items:center;flex:0 0 auto;border:0;border-radius:16px;color:#fff;background:linear-gradient(135deg,#cf8bad,#79a9d2);box-shadow:0 9px 22px rgba(133,111,160,.22)}.chat-composer button:disabled{opacity:.4}
 .chat-error { position:fixed;z-index:26;left:50%;bottom:calc(var(--nav-height) + 94px + env(safe-area-inset-bottom));width:min(calc(100% - 42px),620px);transform:translateX(-50%);padding:9px 12px;border-radius:12px;color:#b95770;background:rgba(255,241,246,.95);font-size:10px;text-align:center;box-shadow:0 8px 24px rgba(95,70,90,.1)}
 .history-backdrop { position:fixed;z-index:50;inset:0;display:flex;justify-content:flex-end;background:rgba(42,39,59,.22);backdrop-filter:blur(5px) }
 .history-drawer { width:min(88%,380px);height:100%;padding:max(30px,env(safe-area-inset-top)) 19px calc(20px + env(safe-area-inset-bottom));background:rgba(251,250,253,.96);box-shadow:-20px 0 60px rgba(62,57,88,.18) }
 .history-drawer header{display:flex;align-items:center;justify-content:space-between}.history-drawer h2{margin:5px 0 0;font-size:25px;letter-spacing:-.05em}.new-chat{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:8px;margin:25px 0 16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:12px;font-weight:700}.history-list{display:grid;gap:5px;max-height:calc(100dvh - 180px);overflow:auto}.history-list button{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 13px;border:0;border-radius:14px;color:#777183;background:transparent;text-align:left;font-size:11px}.history-list button.active{color:#5e7398;background:linear-gradient(135deg,rgba(235,160,191,.14),rgba(126,188,239,.18))}.history-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.emoji-panel {
+  position: fixed;
+  z-index: 31;
+  left: 50%;
+  bottom: calc(var(--nav-height) + 102px + env(safe-area-inset-bottom));
+  width: min(calc(100% - 34px), 520px);
+  height: 330px;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 48px rgba(75, 70, 103, 0.18);
+}
+
+emoji-picker {
+  width: 100%;
+  height: 100%;
+  --border-radius: 22px;
+  --background: rgba(255, 255, 255, 0.96);
+  --input-border-color: rgba(120, 110, 145, 0.15);
+  --input-font-color: #5d5868;
+  --outline-color: rgba(202, 136, 172, 0.35);
+}
+
+.chat-composer .emoji-button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  color: #938ba0;
+  background: rgba(118, 108, 143, 0.08);
+  box-shadow: none;
+}
+
+.chat-composer .emoji-button.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #cf8bad, #79a9d2);
+}
+
+.chat-composer .send-button {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #cf8bad, #79a9d2);
+  box-shadow: 0 9px 22px rgba(133, 111, 160, 0.22);
+}
+
+.chat-composer .send-button:disabled {
+  opacity: 0.4;
+}
 </style>
