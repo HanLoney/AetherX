@@ -1461,10 +1461,17 @@ button { color: inherit; cursor: pointer; }
   margin: 0;
   padding: 2px 11px 11px;
 }
+.image-activity.expanded > .activity-details {
+  max-height: none;
+  overflow: visible;
+}
 .image-activity-figure img {
   display: block;
-  width: 100%;
-  max-height: 460px;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(68vh, 680px);
+  margin: 0 auto;
   object-fit: contain;
   border-radius: 10px;
   background: rgba(119, 113, 144, .06);
