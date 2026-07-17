@@ -99,6 +99,58 @@ Accept: text/event-stream
 
 SSE 只通知实体类型、实体 ID、操作和游标。客户端收到通知后通过业务 API 重新读取数据。断线重连时必须继续使用最后确认的游标，不能只依赖在线事件。
 
+## Agent Hub 对话
+
+桌面端和手机端都应调用 Agent Hub，不应直接调用 `/ai/chat` 自行实现工具循环。
+
+发起消息：
+
+```http
+POST /api/v1/agent/chat
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "conversationId": "可选的现有会话 ID",
+  "content": "帮我看看今天的待办",
+  "runtime": {
+    "timeZone": "Asia/Shanghai",
+    "locale": "zh-CN"
+  }
+}
+```
+
+普通完成时 `status` 为 `completed`。写工具需要确认时，响应会包含：
+
+```json
+{
+  "status": "approval_required",
+  "runId": "短时运行 ID",
+  "pendingApproval": { "activityId": "工具卡片消息 ID" },
+  "conversation": {},
+  "displayMessages": []
+}
+```
+
+客户端先渲染 `displayMessages`，再将用户选择提交给：
+
+```http
+POST /api/v1/agent/runs/{runId}/approve
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "approved": true }
+```
+
+一次运行可能连续请求多个写工具，因此批准后仍可能再次返回
+`approval_required`。运行只在 Hub 内存中短时保存；收到
+`AGENT_RUN_NOT_FOUND` 时应让用户重新发送原消息。同一会话已有请求或授权等待时，
+并发消息会返回 `AGENT_CONVERSATION_BUSY`，客户端不应自动重试写入。
+
+`displayMessages` 是界面展示的权威消息流，包含 Markdown、记忆引用和工具卡片。
+模型上下文只保存在 Hub，不会随 Agent 响应下发给客户端；客户端不得自行拼接
+工具结果或模型历史。
+
 ## OpenAPI 使用
 
 可以把 `backend/openapi.yaml` 导入 Swagger Editor、Bruno、Postman 或其他支持 OpenAPI 3.1 的工具。当前契约用于说明稳定路径和认证边界；新增接口时应同时补充请求与响应 Schema。

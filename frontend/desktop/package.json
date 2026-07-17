@@ -48,18 +48,13 @@
       "qr-code.js",
       "home.js",
       "ai-providers.js",
-      "tool-registry.js",
-      "todo-tools.js",
       "module-settings.js",
       "xuan-mood.js",
       "reminder-composer.js",
       "reminder-engine.js",
       "journal-writer.js",
+      "journal-illustrator.js",
       "dream-writer.js",
-      "memory-tools.js",
-      "journal-tools.js",
-      "album-tools.js",
-      "dream-tools.js",
       "album-writer.js",
       "markdown-renderer.js",
       "modules.html",
@@ -99,6 +94,20 @@
           "scripts/ensure-adb-reverse.js",
           "package.json",
           "README.md"
+        ]
+      },
+      {
+        "from": ".",
+        "to": "agent-tools",
+        "filter": [
+          "tool-registry.js",
+          "todo-tools.js",
+          "memory-tools.js",
+          "journal-illustrator.js",
+          "journal-tools.js",
+          "album-tools.js",
+          "dream-tools.js",
+          "image-tools.js"
         ]
       }
     ],

@@ -195,4 +195,7 @@
   }
 
   global.registerTodoTools = registerTodoTools;
-})(window);
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { registerTodoTools };
+  }
+})(typeof window === "undefined" ? globalThis : window);

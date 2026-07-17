@@ -338,6 +338,44 @@ paths:
       summary: 增量写入或更新会话消息
       responses:
         "200": { description: 已保存的消息数量 }
+  /agent/chat:
+    post:
+      summary: 由 Agent Hub 处理一轮聊天、工具调用与会话保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                conversationId: { type: string }
+                content: { type: string, minLength: 1, maxLength: 30000 }
+                runtime:
+                  type: object
+                  properties:
+                    timeZone: { type: string }
+                    locale: { type: string }
+      responses:
+        "200": { description: 已完成，或暂停等待工具授权的服务端消息流 }
+        "409": { description: 同一会话已有活跃 Agent 运行 }
+  /agent/runs/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 允许或拒绝当前 Agent 运行中的写工具
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+      responses:
+        "200": { description: 运行已继续、完成或等待下一次授权 }
+        "404": { description: 运行不存在、已过期或不属于当前账号 }
   /prompt-settings:
     get:
       summary: 获取当前账号的提示词设置

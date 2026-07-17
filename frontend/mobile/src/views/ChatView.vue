@@ -2,9 +2,12 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { History, Menu, Plus, SendHorizontal, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
+import ChatActivity from "../components/ChatActivity.vue";
 import EmptyState from "../components/EmptyState.vue";
+import MarkdownMessage from "../components/MarkdownMessage.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
-import { MobileChat } from "../lib/chat";
+import { normalizeStoredDisplayMessages } from "../lib/chat-history";
+import { MobileChat } from "../lib/hub-chat";
 import type { ChatMessage, Conversation } from "../lib/api";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
@@ -13,13 +16,13 @@ const data = useDataStore();
 const session = useSessionStore();
 const current = ref<Conversation | null>(null);
 const displayMessages = ref<ChatMessage[]>([]);
-const modelMessages = ref<ChatMessage[]>([]);
 const draft = ref("");
 const sending = ref(false);
 const error = ref("");
 const historyOpen = ref(false);
 const messageList = ref<HTMLElement | null>(null);
 let conversationRefreshPending = false;
+const pendingApprovals = new Map<string, (approved: boolean) => void>();
 const assistantName = computed(() => String(data.assistant.value.name || "小玄"));
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
@@ -33,8 +36,7 @@ onMounted(async () => {
 async function openConversation(conversation: Conversation) {
   const result = await session.requireApi().conversation(conversation.id);
   current.value = result.conversation;
-  displayMessages.value = result.displayMessages;
-  modelMessages.value = result.modelMessages;
+  displayMessages.value = normalizeStoredDisplayMessages(result.displayMessages);
   historyOpen.value = false;
   await scrollToBottom();
 }
@@ -54,9 +56,9 @@ watch(() => data.conversationRevision.value, async () => {
 });
 
 function newConversation() {
+  resolveAllApprovals(false);
   current.value = null;
   displayMessages.value = [];
-  modelMessages.value = [];
   historyOpen.value = false;
 }
 
@@ -74,13 +76,15 @@ async function send() {
     const result = await chat.send({
       conversation: current.value,
       displayMessages: displayMessages.value.slice(0, -1),
-      modelMessages: modelMessages.value,
-      content
+      content,
+      onActivity: updateActivity,
+      requestApproval
     });
     current.value = result.conversation;
     displayMessages.value = result.displayMessages;
-    modelMessages.value = result.modelMessages;
+    if (result.toolMutated) await data.refreshAll().catch(() => undefined);
   } catch (cause) {
+    resolveAllApprovals(false);
     displayMessages.value = displayMessages.value.filter((message) => message !== optimistic);
     draft.value = content;
     error.value = cause instanceof Error ? cause.message : "消息没有发出去。";
@@ -93,6 +97,37 @@ async function send() {
     }
     await scrollToBottom();
   }
+}
+
+function updateActivity(activity: ChatMessage) {
+  const index = displayMessages.value.findIndex((message) => message.id === activity.id);
+  if (index >= 0) displayMessages.value.splice(index, 1, activity);
+  else displayMessages.value.push(activity);
+  void scrollToBottom();
+}
+
+function requestApproval(activity: ChatMessage) {
+  updateActivity(activity);
+  return new Promise<boolean>((resolve) => {
+    if (activity.id) pendingApprovals.set(activity.id, resolve);
+    else resolve(false);
+  });
+}
+
+function decideTool(activity: ChatMessage, approved: boolean) {
+  if (!activity.id) return;
+  const resolve = pendingApprovals.get(activity.id);
+  if (!resolve) return;
+  pendingApprovals.delete(activity.id);
+  activity.status = approved ? "running" : "denied";
+  activity.statusText = approved ? "已允许 · 执行中" : "已拒绝";
+  updateActivity({ ...activity });
+  resolve(approved);
+}
+
+function resolveAllApprovals(approved: boolean) {
+  for (const resolve of pendingApprovals.values()) resolve(approved);
+  pendingApprovals.clear();
 }
 
 async function scrollToBottom() {
@@ -109,11 +144,17 @@ async function scrollToBottom() {
 
     <section ref="messageList" class="message-list">
       <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="新的对话会从第一句话开始，慢慢留下只属于你们的上下文。" />
-      <article v-for="(message, index) in displayMessages" :key="message.id || index" class="message-row" :class="message.role">
-        <ProfileAvatar v-if="message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
-        <div class="message-bubble">{{ message.content }}</div>
-        <ProfileAvatar v-if="message.role === 'user'" :name="userName" :src="userAvatar" size="small" />
-      </article>
+      <template v-for="(message, index) in displayMessages" :key="message.id || index">
+        <ChatActivity v-if="message.role === 'tool' || message.role === 'memory'" :message="message" @decide="decideTool(message, $event)" />
+        <article v-else-if="message.role === 'assistant' || message.role === 'user'" class="message-row" :class="message.role">
+          <ProfileAvatar v-if="message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
+          <div class="message-bubble">
+            <MarkdownMessage v-if="message.role === 'assistant'" :content="message.content || ''" />
+            <template v-else>{{ message.content }}</template>
+          </div>
+          <ProfileAvatar v-if="message.role === 'user'" :name="userName" :src="userAvatar" size="small" />
+        </article>
+      </template>
       <article v-if="sending" class="message-row assistant">
         <ProfileAvatar :name="assistantName" :src="assistantAvatar" size="small" />
         <div class="message-bubble typing"><i /><i /><i /></div>
@@ -149,6 +190,7 @@ async function scrollToBottom() {
 .message-row { display: flex; align-items: flex-end; gap: 9px; margin: 0 0 18px; }
 .message-row.user { justify-content: flex-end; }
 .message-bubble { max-width: min(78%, 510px); padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px 19px 19px 19px; color: #4e495e; background: rgba(255,255,255,.76); box-shadow: 0 10px 28px rgba(73,69,96,.07); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant .message-bubble { white-space: normal; }
 .user .message-bubble { border: 0; border-radius: 19px 8px 19px 19px; color: #fff; background: linear-gradient(135deg,#cf8bad,#8e95c3 58%,#77a9d1); box-shadow: 0 11px 28px rgba(130,111,160,.18); }
 .typing { display:flex; gap:5px; padding:17px 18px; }.typing i{width:5px;height:5px;border-radius:50%;background:#aaa3b5;animation:pulse 1.2s infinite}.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}@keyframes pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
 .chat-composer { position: fixed; z-index: 25; left: 50%; bottom: calc(var(--nav-height) + 26px + env(safe-area-inset-bottom)); width: min(calc(100% - 34px), 650px); min-height: 62px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 8px 8px 8px 17px; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; background: rgba(255,255,255,.82); box-shadow: 0 16px 42px rgba(75,70,103,.14); backdrop-filter: blur(24px); }

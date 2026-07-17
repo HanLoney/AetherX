@@ -184,6 +184,10 @@ function registerIpcHandlers() {
     api.saveAiConfig(input)
   );
   ipcMain.handle("ai:chat", (_event, payload) => api.requestAi(payload));
+  ipcMain.handle("agent:chat", (_event, payload) => api.agentChat(payload));
+  ipcMain.handle("agent:approve", (_event, id, approved) =>
+    api.approveAgentRun(id, approved)
+  );
   ipcMain.handle("ai:image-config:get", () => api.getAiImageConfig());
   ipcMain.handle("ai:image-config:save", (_event, input) =>
     api.saveAiImageConfig(input)

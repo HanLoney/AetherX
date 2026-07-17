@@ -107,6 +107,9 @@ const { SyncRepository } = require("./modules/sync/sync-repository");
 const { SyncService } = require("./modules/sync/sync-service");
 const { SyncEventBroker } = require("./modules/sync/sync-event-broker");
 const { registerSyncRoutes } = require("./modules/sync/sync-routes");
+const { createAgentToolRuntime } = require("./modules/agent/agent-tool-runtime");
+const { AgentService } = require("./modules/agent/agent-service");
+const { registerAgentRoutes } = require("./modules/agent/agent-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -175,6 +178,26 @@ function createApp(config) {
     configRepository: aiConfigRepository,
     providerClient: aiProviderClient
   });
+  const agentServices = {
+    todoService,
+    aiConfigRepository,
+    providerClient: aiProviderClient,
+    profileService,
+    memoryService,
+    assistantMemoryService,
+    memoryIntelligenceService,
+    promptSettingsService,
+    timeAwarenessService,
+    journalService,
+    xuanMoodService,
+    albumService,
+    dreamService,
+    conversationService
+  };
+  const agentService = new AgentService(
+    agentServices,
+    createAgentToolRuntime(agentServices)
+  );
 
   router.add(
     "GET",
@@ -192,6 +215,7 @@ function createApp(config) {
     aiProviderClient,
     timeAwarenessService
   );
+  registerAgentRoutes(router, agentService);
   registerProfileRoutes(router, profileService);
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);
