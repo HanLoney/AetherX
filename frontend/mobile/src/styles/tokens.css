@@ -14,5 +14,6 @@
   --surface-strong: rgba(255, 255, 255, .91);
   --line: rgba(103, 96, 132, .13);
   --shadow: 0 22px 56px rgba(81, 76, 111, .12);
-  --nav-height: 70px;
+  --nav-height: 58px;
+  --bottom-dock-height: 64px;
 }
