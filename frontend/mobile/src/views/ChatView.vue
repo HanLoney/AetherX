@@ -164,7 +164,7 @@ async function scrollToBottom() {
 </script>
 
 <template>
-  <AppShell :title="assistantName" kicker="此刻，只聊你想聊的" quiet>
+  <AppShell :title="assistantName" kicker="此刻，只聊你想聊的" layout="focus" back-to="/home" quiet>
     <template #header>
       <button class="icon-button" aria-label="对话记录" @click="historyOpen = true"><History :size="19" /></button>
     </template>
@@ -188,29 +188,31 @@ async function scrollToBottom() {
       </article>
     </section>
 
-    <p v-if="error" class="chat-error">{{ error }}</p>
-    <Transition name="fade">
-      <section v-if="emojiOpen" ref="emojiPanel" class="emoji-panel">
-        <emoji-picker
-          locale="zh"
-          @emoji-click="handleEmojiClick"
-        />
-      </section>
-    </Transition>
-    <form class="chat-composer" @submit.prevent="send">
-      <button
-        ref="emojiButton"
-        type="button"
-        class="emoji-button"
-        aria-label="选择表情"
-        :class="{ active: emojiOpen }"
-        @click="emojiOpen = !emojiOpen"
-      >
-        <Smile :size="21" />
-      </button>
-      <textarea v-model="draft" rows="1" :placeholder="`给 ${assistantName} 发消息…`" @keydown.enter.exact.prevent="send" />
-      <button class="send-button" type="submit" :disabled="!draft.trim() || sending" aria-label="发送"><SendHorizontal :size="20" /></button>
-    </form>
+    <template #bottom-dock>
+      <p v-if="error" class="chat-error">{{ error }}</p>
+      <Transition name="fade">
+        <section v-if="emojiOpen" ref="emojiPanel" class="emoji-panel">
+          <emoji-picker
+            locale="zh"
+            @emoji-click="handleEmojiClick"
+          />
+        </section>
+      </Transition>
+      <form class="chat-composer" @submit.prevent="send">
+        <button
+          ref="emojiButton"
+          type="button"
+          class="emoji-button"
+          aria-label="选择表情"
+          :class="{ active: emojiOpen }"
+          @click="emojiOpen = !emojiOpen"
+        >
+          <Smile :size="21" />
+        </button>
+        <textarea v-model="draft" rows="1" :placeholder="`给 ${assistantName} 发消息…`" @keydown.enter.exact.prevent="send" />
+        <button class="send-button" type="submit" :disabled="!draft.trim() || sending" aria-label="发送"><SendHorizontal :size="20" /></button>
+      </form>
+    </template>
 
     <Transition name="fade">
       <div v-if="historyOpen" class="history-backdrop" @click.self="historyOpen = false">
@@ -229,8 +231,7 @@ async function scrollToBottom() {
 </template>
 
 <style scoped>
-:deep(.page-content) { height: calc(100dvh - 160px - env(safe-area-inset-top)); }
-.message-list { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 14px 0 122px; scrollbar-width: none; }
+.message-list { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 10px 0 calc(var(--bottom-dock-height) + 26px); scrollbar-width: none; }
 .message-list::-webkit-scrollbar { display: none; }
 .message-row { display: flex; align-items: flex-end; gap: 9px; margin: 0 0 18px; }
 .message-row.user { justify-content: flex-end; }
@@ -238,21 +239,20 @@ async function scrollToBottom() {
 .assistant .message-bubble { white-space: normal; }
 .user .message-bubble { border: 0; border-radius: 19px 8px 19px 19px; color: #fff; background: linear-gradient(135deg,#cf8bad,#8e95c3 58%,#77a9d1); box-shadow: 0 11px 28px rgba(130,111,160,.18); }
 .typing { display:flex; gap:5px; padding:17px 18px; }.typing i{width:5px;height:5px;border-radius:50%;background:#aaa3b5;animation:pulse 1.2s infinite}.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}@keyframes pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
-.chat-composer { position: fixed; z-index: 25; left: 50%; bottom: calc(var(--nav-height) + 26px + env(safe-area-inset-bottom)); width: min(calc(100% - 34px), 650px); min-height: 62px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 8px; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; background: rgba(255,255,255,.82); box-shadow: 0 16px 42px rgba(75,70,103,.14); backdrop-filter: blur(24px); }
+.chat-composer { width: 100%; min-height: var(--bottom-dock-height); display: flex; align-items: center; gap: 9px; padding: 8px; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; background: rgba(255,255,255,.84); box-shadow: 0 16px 42px rgba(75,70,103,.14); backdrop-filter: blur(24px) saturate(135%); }
 .chat-composer textarea { min-width:0; max-height:100px; flex:1; resize:none; border:0; outline:0; color:var(--ink); background:transparent; font-size:13px; line-height:1.55; }
-.chat-error { position:fixed;z-index:26;left:50%;bottom:calc(var(--nav-height) + 94px + env(safe-area-inset-bottom));width:min(calc(100% - 42px),620px);transform:translateX(-50%);padding:9px 12px;border-radius:12px;color:#b95770;background:rgba(255,241,246,.95);font-size:10px;text-align:center;box-shadow:0 8px 24px rgba(95,70,90,.1)}
+.chat-error { width:calc(100% - 14px);margin:0 auto 7px;padding:9px 12px;border-radius:12px;color:#b95770;background:rgba(255,241,246,.95);font-size:10px;text-align:center;box-shadow:0 8px 24px rgba(95,70,90,.1)}
 .history-backdrop { position:fixed;z-index:50;inset:0;display:flex;justify-content:flex-end;background:rgba(42,39,59,.22);backdrop-filter:blur(5px) }
 .history-drawer { width:min(88%,380px);height:100%;padding:max(30px,env(safe-area-inset-top)) 19px calc(20px + env(safe-area-inset-bottom));background:rgba(251,250,253,.96);box-shadow:-20px 0 60px rgba(62,57,88,.18) }
 .history-drawer header{display:flex;align-items:center;justify-content:space-between}.history-drawer h2{margin:5px 0 0;font-size:25px;letter-spacing:-.05em}.new-chat{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:8px;margin:25px 0 16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:12px;font-weight:700}.history-list{display:grid;gap:5px;max-height:calc(100dvh - 180px);overflow:auto}.history-list button{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 13px;border:0;border-radius:14px;color:#777183;background:transparent;text-align:left;font-size:11px}.history-list button.active{color:#5e7398;background:linear-gradient(135deg,rgba(235,160,191,.14),rgba(126,188,239,.18))}.history-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .emoji-panel {
-  position: fixed;
+  position: absolute;
   z-index: 31;
-  left: 50%;
-  bottom: calc(var(--nav-height) + 102px + env(safe-area-inset-bottom));
-  width: min(calc(100% - 34px), 520px);
-  height: 330px;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: 100%;
+  height: min(330px, calc(100dvh - 176px));
   overflow: hidden;
-  transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.88);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.96);
