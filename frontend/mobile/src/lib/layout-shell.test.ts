@@ -30,6 +30,8 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain("headerless");
     expect(chatSource).toContain('class="chat-floating-controls"');
     expect(chatSource).toContain("backdrop-filter:blur(26px) saturate(165%)");
+    expect(chatSource).toContain("border-radius:22px 22px 22px 7px");
+    expect(chatSource).toContain("border-radius:22px 22px 7px 22px");
     expect(chatSource).toContain('class="dock-scrim"');
     expect(chatSource).toContain("isolation:isolate");
     expect(chatSource).toContain('ref="composerInput"');
