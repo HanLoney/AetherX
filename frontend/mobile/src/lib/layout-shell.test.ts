@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 const shellSource = readFileSync(new URL("../components/AppShell.vue", import.meta.url), "utf8");
 const chatSource = readFileSync(new URL("../views/ChatView.vue", import.meta.url), "utf8");
 const homeSource = readFileSync(new URL("../views/HomeView.vue", import.meta.url), "utf8");
+const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.meta.url), "utf8");
+const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
 
@@ -55,6 +57,34 @@ describe("adaptive mobile shell", () => {
   it("uses the home hero as the single entry into chat", () => {
     expect(homeSource).toContain('class="chat-entry"');
     expect(homeSource).toContain("router.push('/chat')");
-    expect(homeSource).toContain("继续你们的对话");
+    expect(homeSource).toContain("开始聊天");
+    expect(homeSource).toContain("headerless");
+    expect(homeSource).toContain('class="space-index"');
+    expect(homeSource).toContain('class="journal-sheet"');
+    expect(homeSource).toContain('class="gallery-stack"');
+    expect(homeSource).toContain('class="gallery-photos"');
+    expect(homeSource).toContain("router.push('/journals')");
+    expect(homeSource).not.toContain("最近收集");
+    expect(homeSource).not.toContain('class="memory-window"');
+    expect(homeSource).toContain("--home-module-gap: 16px");
+    expect(homeSource).not.toContain("YOUR DIGITAL COMPANION");
+  });
+
+  it("opens all journals as a page-turning notebook", () => {
+    expect(routerSource).toContain('path: "/journals"');
+    expect(journalsSource).toContain('class="journal-page"');
+    expect(journalsSource).toContain('class="page-flow"');
+    expect(journalsSource).toContain('class="journal-filters"');
+    expect(journalsSource).toContain("@touchend.passive=\"handleTouchEnd\"");
+    expect(journalsSource).toContain('v-html="renderedJournal"');
+    expect(journalsSource).toContain("column-fill: auto");
+    expect(journalsSource).toContain("leafIndex.value < leafCount.value - 1");
+    expect(journalsSource).toContain('"leaving-forward"');
+    expect(journalsSource).toContain('"entering-forward"');
+    expect(journalsSource).toContain('"leaving-backward"');
+    expect(journalsSource).toContain('"entering-backward"');
+    expect(journalsSource).toContain("journalTurnInProgress.value");
+    expect(journalsSource).not.toContain("overflow-y: auto");
+    expect(journalsSource).toContain("左右滑动翻页");
   });
 });
