@@ -20,6 +20,7 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   padding: max(24px, env(safe-area-inset-top)) 20px 0;
 }
+.mobile-shell.headerless { padding: 0 14px; }
 .ambient { position: fixed; z-index: -1; width: 280px; height: 280px; border-radius: 50%; filter: blur(55px); pointer-events: none; opacity: .28; }
 .ambient-pink { top: -135px; left: -155px; background: #eeb1d0; }
 .ambient-blue { right: -165px; bottom: 4%; background: #a6d1ef; }
@@ -54,6 +55,7 @@ a { color: inherit; text-decoration: none; }
 .page-content::-webkit-scrollbar { display: none; }
 .layout-browse .page-content { padding-bottom: calc(var(--nav-height) + 34px + env(safe-area-inset-bottom)); }
 .layout-focus .page-content { overflow: hidden; }
+.headerless .page-content { max-width: none; }
 .header-compact .page-header,
 .layout-focus .page-header {
   min-height: 52px;
