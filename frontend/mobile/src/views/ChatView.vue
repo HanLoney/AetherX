@@ -9,6 +9,7 @@ import MarkdownMessage from "../components/MarkdownMessage.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
 import { normalizeStoredDisplayMessages } from "../lib/chat-history";
 import { MobileChat } from "../lib/hub-chat";
+import { NATIVE_BACK_EVENT } from "../lib/native-back";
 import type { ChatMessage, Conversation } from "../lib/api";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
@@ -95,8 +96,21 @@ function closeEmojiOnOutsidePointer(event: PointerEvent) {
   emojiOpen.value = false;
 }
 
+function handleNativeBack(event: Event) {
+  if (historyOpen.value) {
+    historyOpen.value = false;
+    event.preventDefault();
+    return;
+  }
+  if (emojiOpen.value) {
+    emojiOpen.value = false;
+    event.preventDefault();
+  }
+}
+
 onMounted(async () => {
   document.addEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
+  window.addEventListener(NATIVE_BACK_EVENT, handleNativeBack);
   await prepareCompactEmojiPicker();
   if (!data.conversations.value.length) await data.refreshAll().catch(() => undefined);
   if (data.conversations.value[0]) await openConversation(data.conversations.value[0]);
@@ -104,6 +118,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
+  window.removeEventListener(NATIVE_BACK_EVENT, handleNativeBack);
 });
 
 async function openConversation(conversation: Conversation) {
