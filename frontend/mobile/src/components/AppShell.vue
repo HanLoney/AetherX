@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   quiet?: boolean;
   layout?: "browse" | "focus";
   backTo?: string;
+  headerless?: boolean;
 }>(), {
   layout: "browse",
   backTo: "/home"
@@ -83,6 +84,7 @@ onBeforeUnmount(() => {
       `layout-${props.layout}`,
       {
         quiet,
+        headerless,
         'header-compact': headerCompact,
         'nav-hidden': navHidden,
         'keyboard-open': keyboardOpen
@@ -94,7 +96,7 @@ onBeforeUnmount(() => {
     <div class="ambient ambient-pink" />
     <div class="ambient ambient-blue" />
 
-    <header class="page-header">
+    <header v-if="!props.headerless" class="page-header">
       <RouterLink
         v-if="props.layout === 'focus'"
         class="icon-button focus-back-button"

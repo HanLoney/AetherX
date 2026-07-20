@@ -27,6 +27,24 @@ describe("adaptive mobile shell", () => {
   it("moves chat into focus layout without stacking it above the main navigation", () => {
     expect(chatSource).toContain('layout="focus"');
     expect(chatSource).toContain('back-to="/home"');
+    expect(chatSource).toContain("headerless");
+    expect(chatSource).toContain('class="chat-floating-controls"');
+    expect(chatSource).toContain("backdrop-filter:blur(26px) saturate(165%)");
+    expect(chatSource).toContain('class="dock-scrim"');
+    expect(chatSource).toContain("isolation:isolate");
+    expect(chatSource).toContain('ref="composerInput"');
+    expect(chatSource).toContain('<Transition name="emoji-reveal">');
+    expect(chatSource).toContain("transform-origin: top center");
+    expect(chatSource).toContain('class="composer-stack"');
+    expect(chatSource).toContain("translate3d(0,calc(-1 * var(--emoji-tray-height) - 8px),0)");
+    expect(chatSource).toContain('v-show="emojiOpen"');
+    expect(chatSource).toContain("prepareCompactEmojiPicker");
+    expect(chatSource).toContain(".search-row,");
+    expect(chatSource).toContain(".favorites {");
+    expect(chatSource).toContain(".tabpanel {");
+    expect(chatSource).toContain("order: 3;");
+    expect(chatSource).not.toContain("transition:height");
+    expect(chatSource).toContain("background: linear-gradient(145deg,#fcfbfd,#f3f6fb)");
     expect(chatSource).toContain("<template #bottom-dock>");
     expect(chatSource).not.toMatch(/bottom:\s*calc\(var\(--nav-height\)/);
     expect(chatSource).not.toMatch(/position:\s*fixed[^}]*chat-composer/);
