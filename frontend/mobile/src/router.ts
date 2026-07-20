@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: "/login", component: () => import("./views/LoginView.vue"), meta: { public: true } },
     { path: "/home", component: () => import("./views/HomeView.vue") },
     { path: "/chat", component: () => import("./views/ChatView.vue") },
+    { path: "/journals", component: () => import("./views/JournalsView.vue") },
     { path: "/todos", component: () => import("./views/TodosView.vue") },
     { path: "/memories", component: () => import("./views/MemoriesView.vue") },
     { path: "/settings", component: () => import("./views/SettingsView.vue") }

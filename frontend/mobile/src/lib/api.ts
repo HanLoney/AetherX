@@ -42,6 +42,32 @@ export interface Conversation {
   updatedAt: number;
 }
 
+export interface GalleryImage {
+  id: string;
+  source: string;
+  description: string;
+  origin: "chat" | "journal";
+  refId: string;
+  refTitle?: string;
+  refType?: string;
+  selfie?: boolean;
+  createdAt: number;
+}
+
+export interface Journal {
+  id: string;
+  type: "daily" | "weekly";
+  periodKey: string;
+  title: string;
+  content: string;
+  mood: string;
+  sourceFrom: number;
+  sourceTo: number;
+  sourceMessageCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ChatToolCall {
   id: string;
   type: "function";
@@ -183,6 +209,18 @@ export class AetherApi {
   }
   profile() { return this.request<Record<string, unknown>>("GET", "/api/v1/profile"); }
   assistantProfile() { return this.request<Record<string, unknown>>("GET", "/api/v1/assistant/profile"); }
+  gallerySummary(limit = 3) {
+    return this.request<{ total: number; items: GalleryImage[] }>(
+      "GET",
+      `/api/v1/assistant/gallery/summary?limit=${encodeURIComponent(limit)}`
+    );
+  }
+  listJournals(limit = 1) {
+    return this.request<Journal[]>(
+      "GET",
+      `/api/v1/assistant/journals?limit=${encodeURIComponent(limit)}`
+    );
+  }
   aiConfig() { return this.request<{ hasApiKey: boolean; model?: string }>("GET", "/api/v1/ai/config"); }
   agentChat(input: { conversationId?: string; content: string; runtime?: Record<string, unknown> }) {
     return this.request<AgentChatResult>("POST", "/api/v1/agent/chat", input);
