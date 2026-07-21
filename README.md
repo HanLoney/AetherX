@@ -17,7 +17,7 @@
   <p>
     <a href="docs/getting-started.md">快速上手</a> ·
     <a href="docs/README.md">文档中心</a> ·
-    <a href="docs/deployment/self-hosted.md">自托管部署</a> ·
+    <a href="#部署独立-hub">自托管部署</a> ·
     <a href="CONTRIBUTING.md">参与贡献</a>
   </p>
 </div>
@@ -98,9 +98,29 @@ Android 客户端支持账号注册、登录和一次性电脑配对。真机调
 
 ### 部署独立 Hub
 
-生产环境应使用独立数据目录、固定主密钥和 HTTPS 反向代理。不要把 `4318` 端口直接暴露到公网；私有实例建议使用邀请制或关闭后续注册。
+Hub 只依赖 Node.js 和内置 SQLite，**Windows 与 Linux 都可以运行**。如果只在 Windows 桌面端本机使用，不需要手动部署：桌面端会自动启动内置 Hub。
 
-完整部署与运维步骤见[自托管部署指南](docs/deployment/self-hosted.md)。
+需要让 Hub 独立运行时，在 Windows PowerShell 中执行：
+
+```powershell
+git clone https://github.com/HanLoney/AetherX.git
+cd AetherX\backend
+npm ci
+npm start
+```
+
+然后验证服务：
+
+```powershell
+curl.exe http://127.0.0.1:4318/health
+```
+
+默认数据保存在 `backend\.data`，首次运行会自动生成数据库和本地主密钥。请备份整个 `.data` 目录；关闭 PowerShell 窗口会停止这个独立 Hub。
+
+用于长期运行时，应配置独立数据目录、稳定主密钥、开机常驻和备份。其他设备从公网连接时，还必须使用 HTTPS 反向代理，**不要直接暴露 `4318` 端口**。
+
+- [Windows Hub 部署指南](docs/deployment/windows.md)：前台运行、计划任务常驻、局域网接入、更新与备份；
+- [Linux Hub 部署指南](docs/deployment/self-hosted.md)：Ubuntu、systemd、Caddy、HTTPS、更新与回滚。
 
 ## 核心模块
 
@@ -155,7 +175,7 @@ npm run build
 ## 文档导航
 
 - 使用：[快速上手](docs/getting-started.md) · [常见问题与排障](docs/troubleshooting.md)
-- 部署：[自托管部署](docs/deployment/self-hosted.md) · [数据、备份与恢复](docs/data-and-backup.md)
+- 部署：[Windows Hub](docs/deployment/windows.md) · [Linux Hub](docs/deployment/self-hosted.md) · [数据、备份与恢复](docs/data-and-backup.md)
 - 开发：[开发者指南](docs/development.md) · [API 文档](docs/api.md)
 - 项目：[安全策略](SECURITY.md) · [隐私说明](PRIVACY.md) · [变更记录](CHANGELOG.md)
 - 社区：[贡献指南](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md) · [获取帮助](SUPPORT.md)
