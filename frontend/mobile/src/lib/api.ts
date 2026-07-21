@@ -215,6 +215,12 @@ export class AetherApi {
       `/api/v1/assistant/gallery/summary?limit=${encodeURIComponent(limit)}`
     );
   }
+  galleryPage(offset = 0, limit = 24) {
+    return this.request<{ items: GalleryImage[]; total: number; offset: number; limit: number; hasMore: boolean }>(
+      "GET",
+      `/api/v1/assistant/gallery/page?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`
+    );
+  }
   listJournals(limit = 1) {
     return this.request<Journal[]>(
       "GET",

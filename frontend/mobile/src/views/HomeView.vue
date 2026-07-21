@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { ArrowRight, MessageCircle } from "@lucide/vue";
+import { ArrowRight, BookOpenText, Images, MessageCircle, Sprout } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
@@ -54,6 +54,21 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
         </div>
       </div>
     </section>
+
+    <nav class="home-portals" aria-label="陪伴空间入口">
+      <button type="button" @click="router.push('/journals')">
+        <i><BookOpenText :size="17" /></i>
+        <span><strong>手记</strong><small>她写下的日常</small></span>
+      </button>
+      <button type="button" @click="router.push('/gallery')">
+        <i><Images :size="17" /></i>
+        <span><strong>相册</strong><small>一起收藏的画面</small></span>
+      </button>
+      <button type="button" @click="router.push('/memories')">
+        <i><Sprout :size="17" /></i>
+        <span><strong>成长</strong><small>慢慢成为的她</small></span>
+      </button>
+    </nav>
 
     <div class="home-mosaic">
       <button class="journal-sheet" type="button" aria-label="浏览全部手记" @click="router.push('/journals')">
@@ -262,6 +277,77 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
 
   .chat-entry {
     padding-inline: 8px;
+  }
+}
+
+.home-portals {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px;
+  margin-top: var(--home-module-gap);
+}
+
+.home-portals button {
+  min-width: 0;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 9px;
+  border: 1px solid rgba(255,255,255,.78);
+  border-radius: 19px 19px 19px 8px;
+  color: #716b80;
+  background: linear-gradient(145deg,rgba(255,255,255,.65),rgba(248,247,252,.42));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.86),0 10px 24px rgba(74,68,98,.07);
+  text-align: left;
+  backdrop-filter: blur(14px);
+}
+
+.home-portals button:nth-child(2) {
+  border-radius: 19px;
+}
+
+.home-portals button:nth-child(3) {
+  border-radius: 19px 19px 8px 19px;
+}
+
+.home-portals i {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #9a7294;
+  background: linear-gradient(135deg,rgba(var(--pink-rgb),.16),rgba(var(--blue-rgb),.17));
+}
+
+.home-portals span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.home-portals strong {
+  font-size: 11px;
+}
+
+.home-portals small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 370px) {
+  .home-portals button {
+    justify-content: center;
+    padding-inline: 5px;
+  }
+
+  .home-portals small {
+    display: none;
   }
 }
 
