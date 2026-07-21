@@ -7,6 +7,7 @@ const homeSource = readFileSync(new URL("../views/HomeView.vue", import.meta.url
 const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.meta.url), "utf8");
 const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.meta.url), "utf8");
 const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.meta.url), "utf8");
+const settingsSource = readFileSync(new URL("../views/SettingsView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
@@ -26,6 +27,22 @@ describe("adaptive mobile shell", () => {
     expect(baseStyles).toContain(".nav-hidden .floating-nav");
     expect(baseStyles).toContain(".keyboard-open .floating-nav");
     expect(baseStyles).toContain(".layout-focus.keyboard-open .page-header");
+    expect(shellSource).toContain('{ to: "/settings", label: "我的"');
+  });
+
+  it("merges the personal profile with mobile settings", () => {
+    expect(settingsSource).toContain('class="profile-hero"');
+    expect(settingsSource).not.toContain('class="space-overview"');
+    expect(settingsSource).toContain("border-radius:26px");
+    expect(settingsSource).toContain("编辑个人资料");
+    expect(settingsSource).toContain("data.updateProfile");
+    expect(settingsSource).toContain('ref="avatarInput"');
+    expect(settingsSource).toContain('class="avatar-cropper"');
+    expect(settingsSource).toContain('@pointermove="moveCrop"');
+    expect(settingsSource).toContain('type="range"');
+    expect(settingsSource).toContain("avatarDataUrl");
+    expect(settingsSource).toContain('class="settings-list"');
+    expect(settingsSource).toContain("退出这个账号");
   });
 
   it("moves chat into focus layout without stacking it above the main navigation", () => {
@@ -58,6 +75,13 @@ describe("adaptive mobile shell", () => {
 
   it("uses the home hero as the single entry into chat", () => {
     expect(homeSource).toContain('class="chat-entry"');
+    expect(homeSource).toContain(".avatar-orbit :deep(.avatar-large)");
+    expect(homeSource).toContain("border-radius: 26px");
+    expect(homeSource).toContain("data.updateAssistantProfile({ avatarDataUrl })");
+    expect(homeSource).toContain("<AvatarCropper");
+    expect(homeSource).toContain("assistantCropper?.choose()");
+    expect(homeSource).not.toContain(".avatar-orbit > i");
+    expect(homeSource).not.toContain(".avatar-orbit::before");
     expect(homeSource).toContain("router.push('/chat')");
     expect(homeSource).toContain("开始聊天");
     expect(homeSource).toContain("headerless");

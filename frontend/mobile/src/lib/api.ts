@@ -208,7 +208,13 @@ export class AetherApi {
     return this.request<{ token: string; device: { id: string; name: string } }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/redeem`, { secret });
   }
   profile() { return this.request<Record<string, unknown>>("GET", "/api/v1/profile"); }
+  updateProfile(input: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("PATCH", "/api/v1/profile", input);
+  }
   assistantProfile() { return this.request<Record<string, unknown>>("GET", "/api/v1/assistant/profile"); }
+  updateAssistantProfile(input: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("PATCH", "/api/v1/assistant/profile", input);
+  }
   gallerySummary(limit = 3) {
     return this.request<{ total: number; items: GalleryImage[] }>(
       "GET",

@@ -155,6 +155,16 @@ async function removeMemory(id: string) {
   memories.value = memories.value.filter((item) => item.id !== id);
 }
 
+async function updateProfile(input: Record<string, unknown>) {
+  profile.value = await useSessionStore().requireApi().updateProfile(input);
+  lastUpdatedAt.value = Date.now();
+}
+
+async function updateAssistantProfile(input: Record<string, unknown>) {
+  assistant.value = await useSessionStore().requireApi().updateAssistantProfile(input);
+  lastUpdatedAt.value = Date.now();
+}
+
 export function useDataStore() {
   return {
     todos: readonly(todos),
@@ -178,6 +188,8 @@ export function useDataStore() {
     addTodo,
     removeTodo,
     confirmMemory,
-    removeMemory
+    removeMemory,
+    updateProfile,
+    updateAssistantProfile
   };
 }
