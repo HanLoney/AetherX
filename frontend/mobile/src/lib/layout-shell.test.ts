@@ -59,7 +59,7 @@ describe("adaptive mobile shell", () => {
     expect(homeSource).toContain("router.push('/chat')");
     expect(homeSource).toContain("开始聊天");
     expect(homeSource).toContain("headerless");
-    expect(homeSource).toContain('class="space-index"');
+    expect(homeSource).not.toContain('class="space-index"');
     expect(homeSource).toContain('class="journal-sheet"');
     expect(homeSource).toContain('class="gallery-stack"');
     expect(homeSource).toContain('class="gallery-photos"');
