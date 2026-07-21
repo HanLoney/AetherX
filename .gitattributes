@@ -1,0 +1,19 @@
+* text=auto eol=lf
+
+# Windows command scripts are conventionally checked out with CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never be line-ending normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.zip binary
+*.gz binary
+*.db binary
+*.sqlite binary
+*.jks binary
+*.keystore binary
