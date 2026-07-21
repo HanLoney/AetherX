@@ -26,6 +26,13 @@ cd AetherX
 git switch -c feature/short-description
 ```
 
+如果不希望提交历史公开个人邮箱，请在第一次提交前使用 GitHub 提供的
+`<GitHub用户名>@users.noreply.github.com` 地址：
+
+```powershell
+git config user.email "你的GitHub用户名@users.noreply.github.com"
+```
+
 完成修改后：
 
 ```powershell
