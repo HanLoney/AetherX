@@ -5,6 +5,7 @@ const shellSource = readFileSync(new URL("../components/AppShell.vue", import.me
 const chatSource = readFileSync(new URL("../views/ChatView.vue", import.meta.url), "utf8");
 const homeSource = readFileSync(new URL("../views/HomeView.vue", import.meta.url), "utf8");
 const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.meta.url), "utf8");
+const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
@@ -64,10 +65,32 @@ describe("adaptive mobile shell", () => {
     expect(homeSource).toContain('class="gallery-stack"');
     expect(homeSource).toContain('class="gallery-photos"');
     expect(homeSource).toContain("router.push('/journals')");
+    expect(homeSource).toContain("router.push('/gallery')");
+    expect(homeSource).toContain("router.push('/memories')");
+    expect(homeSource).toContain('class="home-portals"');
     expect(homeSource).not.toContain("最近收集");
     expect(homeSource).not.toContain('class="memory-window"');
     expect(homeSource).toContain("--home-module-gap: 16px");
     expect(homeSource).not.toContain("YOUR DIGITAL COMPANION");
+  });
+
+  it("opens the complete companion gallery from home", () => {
+    expect(routerSource).toContain('path: "/gallery"');
+    expect(gallerySource).toContain("galleryPage(images.value.length, 24)");
+    expect(gallerySource).toContain("while (hasMore.value)");
+    expect(gallerySource).toContain('class="gallery-grid"');
+    expect(gallerySource).toContain('class="album-shell"');
+    expect(gallerySource).toContain('class="gallery-month"');
+    expect(gallerySource).toContain('class="gallery-tabs"');
+    expect(gallerySource).toContain("const pageSize = 4");
+    expect(gallerySource).toContain("pageIndex.value * pageSize");
+    expect(gallerySource).toContain('@touchstart.passive="handleTouchStart"');
+    expect(gallerySource).toContain('@touchend.passive="handleTouchEnd"');
+    expect(gallerySource).toContain("bottom:18px");
+    expect(gallerySource).toContain('<AppShell title="" headerless>');
+    expect(gallerySource).toContain("height:550px");
+    expect(gallerySource).not.toContain("@media (min-width:560px)");
+    expect(gallerySource).toContain('class="gallery-lightbox"');
   });
 
   it("opens all journals as a page-turning notebook", () => {
