@@ -1,6 +1,8 @@
-# 自托管部署指南
+# Linux Hub 部署指南
 
 本指南以 Ubuntu 24.04、systemd 和 Caddy 为例，将 AetherX Hub 部署到私人服务器。最终只有 Caddy 的 80/443 端口对公网开放，Node 后端继续监听回环地址。
+
+需要在 Windows 上独立运行或配置开机常驻时，请阅读 [Windows Hub 部署指南](windows.md)。
 
 > [!CAUTION]
 > 部署前先备份现有数据库和 `AETHERX_MASTER_KEY`。更换主密钥会导致已经保存的 AI Provider 凭证无法解密。

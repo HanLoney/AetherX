@@ -5,7 +5,8 @@
 ## 使用与部署
 
 - [快速上手](getting-started.md)：安装桌面端、创建账号、配置 AI 和连接手机；
-- [自托管部署](deployment/self-hosted.md)：Ubuntu、systemd、Caddy、HTTPS、更新与回滚；
+- [Windows Hub 部署](deployment/windows.md)：前台运行、计划任务常驻、局域网接入、更新与备份；
+- [Linux Hub 部署](deployment/self-hosted.md)：Ubuntu、systemd、Caddy、HTTPS、更新与回滚；
 - [数据、备份与恢复](data-and-backup.md)：数据位置、主密钥、停机备份和迁移；
 - [常见问题与排障](troubleshooting.md)：连接、注册、AI 凭证、同步和 Android 调试。
 
