@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ArrowRight, BookOpenText, Images, MessageCircle, Sprout } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
+import AvatarCropper from "../components/AvatarCropper.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
 import { useDataStore } from "../stores/data";
 
 const router = useRouter();
 const data = useDataStore();
+const assistantCropper = ref<{ choose: () => void; complete: () => void } | null>(null);
+const avatarSaving = ref(false);
+const avatarError = ref("");
 const assistantName = computed(() => String(data.assistant.value.name || "小玄"));
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const relationship = computed(() => String(
@@ -25,6 +29,20 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
   .replace(/\s+/g, " ")
   .trim());
 
+async function saveAssistantAvatar(avatarDataUrl: string) {
+  if (avatarSaving.value) return;
+  avatarSaving.value = true;
+  avatarError.value = "";
+  try {
+    await data.updateAssistantProfile({ avatarDataUrl });
+    assistantCropper.value?.complete();
+  } catch (reason) {
+    avatarError.value = (reason as Error).message || "头像暂时没有保存成功。";
+  } finally {
+    avatarSaving.value = false;
+  }
+}
+
 </script>
 
 <template>
@@ -37,10 +55,9 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
       </div>
 
       <div class="companion-profile">
-        <div class="avatar-orbit">
+        <button class="avatar-orbit" type="button" aria-label="更换小玄头像" :disabled="avatarSaving" @click="assistantCropper?.choose()">
           <ProfileAvatar :name="assistantName" :src="assistantAvatar" size="large" />
-          <i aria-hidden="true" />
-        </div>
+        </button>
         <div class="hero-copy">
           <h1>{{ assistantName }}</h1>
           <p>{{ relationship }}</p>
@@ -109,6 +126,14 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
       </section>
 
     </div>
+    <AvatarCropper
+      ref="assistantCropper"
+      subject="小玄头像"
+      :saving="avatarSaving"
+      :error="avatarError"
+      @clear-error="avatarError = ''"
+      @confirm="saveAssistantAvatar"
+    />
   </AppShell>
 </template>
 
@@ -187,28 +212,21 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
 
 .avatar-orbit {
   position: relative;
-  padding: 5px;
-}
-
-.avatar-orbit::before {
-  content: "";
-  position: absolute;
-  inset: -3px;
+  display: block;
+  padding: 4px;
   border: 1px solid rgba(var(--pink-rgb),.22);
-  border-radius: 40% 60% 55% 45% / 48% 43% 57% 52%;
-  transform: rotate(-8deg);
+  border-radius: 30px;
+  background: rgba(255,255,255,.46);
+  box-shadow: inset 0 1px rgba(255,255,255,.82),0 11px 25px rgba(93,78,116,.12);
 }
 
-.avatar-orbit > i {
-  position: absolute;
-  right: 2px;
-  bottom: 7px;
-  width: 13px;
-  height: 13px;
-  border: 3px solid #fff;
-  border-radius: 50%;
-  background: #71c3a3;
-  box-shadow: 0 3px 9px rgba(72,153,124,.28);
+.avatar-orbit:disabled { opacity: .65; }
+
+.avatar-orbit :deep(.avatar-large) {
+  width: 82px;
+  height: 82px;
+  border-radius: 26px;
+  box-shadow: none;
 }
 
 .hero-copy {

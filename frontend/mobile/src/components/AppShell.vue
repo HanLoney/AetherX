@@ -5,8 +5,8 @@ import {
   ArrowLeft,
   BrainCircuit,
   CalendarDays,
+  CircleUserRound,
   Home,
-  SlidersHorizontal
 } from "@lucide/vue";
 import { useDataStore } from "../stores/data";
 
@@ -34,7 +34,7 @@ const items = [
   { to: "/home", label: "主页", icon: Home },
   { to: "/todos", label: "待办", icon: CalendarDays },
   { to: "/memories", label: "记忆", icon: BrainCircuit },
-  { to: "/settings", label: "设置", icon: SlidersHorizontal }
+  { to: "/settings", label: "我的", icon: CircleUserRound }
 ];
 
 function handlePageScroll() {
