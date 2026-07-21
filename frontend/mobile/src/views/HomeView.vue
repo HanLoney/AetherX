@@ -29,13 +29,12 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
 
 <template>
   <AppShell :title="assistantName" headerless quiet>
-    <div class="home-topbar">
-      <ConnectionPill />
-    </div>
-
     <section class="companion-stage">
       <i class="stage-orbit stage-orbit-pink" aria-hidden="true" />
       <i class="stage-orbit stage-orbit-blue" aria-hidden="true" />
+      <div class="card-sync">
+        <ConnectionPill />
+      </div>
 
       <div class="companion-profile">
         <div class="avatar-orbit">
@@ -45,28 +44,14 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
         <div class="hero-copy">
           <h1>{{ assistantName }}</h1>
           <p>{{ relationship }}</p>
+          <div class="hero-actions">
+            <button class="chat-entry" aria-label="进入聊天" @click="router.push('/chat')">
+              <MessageCircle :size="14" />
+              <strong>开始聊天</strong>
+              <ArrowRight :size="14" />
+            </button>
+          </div>
         </div>
-      </div>
-
-      <button class="chat-entry" aria-label="进入聊天" @click="router.push('/chat')">
-        <i><MessageCircle :size="20" /></i>
-        <strong>开始聊天</strong>
-        <ArrowRight :size="20" />
-      </button>
-    </section>
-
-    <section class="space-index" aria-label="空间概览">
-      <div>
-        <strong>{{ data.galleryTotal.value }}</strong>
-        <span>画面</span>
-      </div>
-      <div>
-        <strong>{{ data.memories.value.length }}</strong>
-        <span>记忆</span>
-      </div>
-      <div>
-        <strong>{{ data.conversations.value.length }}</strong>
-        <span>对话</span>
       </div>
     </section>
 
@@ -118,19 +103,12 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
   --home-module-padding: 18px;
 }
 
-.home-topbar {
-  min-height: calc(env(safe-area-inset-top) + 52px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding: env(safe-area-inset-top) 2px 8px;
-}
-
 .companion-stage {
   position: relative;
-  min-height: 220px;
+  min-height: 168px;
   overflow: hidden;
-  padding: 24px 20px 18px;
+  margin-top: calc(env(safe-area-inset-top) + 14px);
+  padding: 22px 18px;
   border: 1px solid rgba(255,255,255,.9);
   border-radius: 36px 36px 36px 14px;
   background:
@@ -166,13 +144,30 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
   box-shadow: 0 0 0 25px rgba(var(--blue-rgb),.035);
 }
 
+.card-sync {
+  position: absolute;
+  z-index: 2;
+  top: 15px;
+  right: 17px;
+}
+
+.card-sync :deep(.connection-pill) {
+  min-height: 25px;
+  gap: 4px;
+  padding: 0 8px;
+  border-color: rgba(132,126,158,.1);
+  background: rgba(255,255,255,.48);
+  font-size: 8px;
+  backdrop-filter: blur(10px);
+}
+
 .companion-profile {
   position: relative;
   z-index: 1;
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
 }
 
 .avatar-orbit {
@@ -206,14 +201,23 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
 }
 
 .hero-copy h1 {
+  overflow: hidden;
   margin: 0;
-  font-size: 34px;
+  font-size: 32px;
   letter-spacing: -.07em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 13px;
 }
 
 .hero-copy p {
   overflow: hidden;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--soft-ink);
   font-size: 11px;
   line-height: 1.55;
@@ -222,76 +226,43 @@ const recentJournalExcerpt = computed(() => String(recentJournal.value?.content 
 }
 
 .chat-entry {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  min-height: 54px;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  flex: 0 0 auto;
+  width: fit-content;
+  min-height: 33px;
+  display: inline-flex;
   align-items: center;
-  gap: 11px;
-  margin-top: 22px;
-  padding: 7px 15px 7px 8px;
-  border: 1px solid rgba(255,255,255,.26);
-  border-radius: 19px;
-  color: #fff;
+  gap: 6px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(132,126,158,.11);
+  border-radius: 12px;
+  color: #716b83;
   text-align: left;
-  background: linear-gradient(116deg,#c786ad,#8e93c0 56%,#72a7cf);
-  box-shadow: 0 16px 34px rgba(112,96,147,.22);
-}
-
-.chat-entry > i {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 14px;
-  background: rgba(255,255,255,.1);
+  background: linear-gradient(125deg,rgba(var(--pink-rgb),.13),rgba(var(--blue-rgb),.16));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.72),0 8px 18px rgba(92,84,123,.08);
 }
 
 .chat-entry strong {
-  font-size: 13px;
+  font-size: 9px;
   letter-spacing: .02em;
 }
 
-.space-index {
-  display: grid;
-  grid-template-columns: repeat(3,1fr);
-  margin: var(--home-module-gap) 4px 0;
-}
+@media (max-width: 350px) {
+  .companion-stage {
+    padding-inline: 15px;
+  }
 
-.space-index > div {
-  position: relative;
-  min-height: 66px;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  color: var(--ink);
-  background: transparent;
-}
+  .companion-profile {
+    gap: 12px;
+  }
 
-.space-index > div:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 21px;
-  right: 0;
-  width: 1px;
-  height: 26px;
-  background: linear-gradient(transparent,rgba(118,109,141,.16),transparent);
-}
+  .hero-copy h1 {
+    font-size: 28px;
+  }
 
-.space-index strong {
-  font-family: Georgia,serif;
-  font-size: 27px;
-  font-weight: 500;
-}
-
-.space-index span {
-  color: var(--muted);
-  font-size: 9px;
+  .chat-entry {
+    padding-inline: 8px;
+  }
 }
 
 .home-mosaic {
