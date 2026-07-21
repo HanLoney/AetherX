@@ -6,6 +6,7 @@ const chatSource = readFileSync(new URL("../views/ChatView.vue", import.meta.url
 const homeSource = readFileSync(new URL("../views/HomeView.vue", import.meta.url), "utf8");
 const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.meta.url), "utf8");
 const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.meta.url), "utf8");
+const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
@@ -109,5 +110,18 @@ describe("adaptive mobile shell", () => {
     expect(journalsSource).toContain("journalTurnInProgress.value");
     expect(journalsSource).not.toContain("overflow-y: auto");
     expect(journalsSource).toContain("左右滑动翻页");
+  });
+
+  it("presents memories as a searchable mobile review flow", () => {
+    expect(memoriesSource).toContain('<AppShell title="" headerless>');
+    expect(memoriesSource).toContain('class="memory-overview"');
+    expect(memoriesSource).toContain('class="memory-search"');
+    expect(memoriesSource).toContain('class="memory-tabs"');
+    expect(memoriesSource).toContain('class="memory-stream"');
+    expect(memoriesSource).toContain("确认珍藏");
+    expect(memoriesSource).toContain("当时的原话");
+    expect(memoriesSource).toContain("记忆可靠度");
+    expect(memoriesSource).toContain("data.confirmMemory(memory.id)");
+    expect(memoriesSource).toContain("data.removeMemory(memory.id)");
   });
 });
