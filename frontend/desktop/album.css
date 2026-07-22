@@ -51,7 +51,7 @@
 .album-heading p {
   margin: 0 0 7px;
   color: #a17f9c;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .22em;
 }
@@ -59,7 +59,7 @@
 .album-heading h1 {
   margin: 0;
   color: #332e40;
-  font-size: clamp(25px, 3vw, 34px);
+  font-size: calc(clamp(25px, 3vw, 34px) * var(--font-scale, 1));
   line-height: 1.12;
   letter-spacing: -.045em;
 }
@@ -68,7 +68,7 @@
   display: block;
   margin-top: 8px;
   color: #9992a2;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   line-height: 1.6;
 }
 
@@ -114,7 +114,7 @@
   color: #4d4658;
   background: transparent;
   font: inherit;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .album-search input::placeholder {
@@ -128,7 +128,7 @@
   border-radius: 999px;
   color: #6e80a0;
   background: rgba(226, 237, 249, .7);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
   cursor: pointer;
   transition: transform .18s ease, background .18s ease;
@@ -149,7 +149,7 @@
   border-radius: 13px;
   color: #9d96a8;
   background: rgba(255, 255, 255, .42);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   line-height: 1.6;
 }
 
@@ -218,14 +218,14 @@
 
 .album-index-title span {
   margin-bottom: 4px;
-  font-size: 7px;
+  font-size: calc(7px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .2em;
   opacity: .62;
 }
 
 .album-index-title strong {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   letter-spacing: .04em;
 }
 
@@ -260,7 +260,7 @@
 
 .album-stats span {
   margin-top: 3px;
-  font-size: 7px;
+  font-size: calc(7px * var(--font-scale, 1));
   opacity: .68;
 }
 
@@ -269,7 +269,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   opacity: .72;
 }
 
@@ -446,7 +446,7 @@
 
 .moment-leaf-label {
   color: #a39ba7;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .18em;
 }
@@ -474,14 +474,14 @@
 .moment-date small {
   display: block;
   color: #8d8492;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
 }
 
 .moment-date small {
   margin-top: 3px;
   color: #aaa2ac;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .moment-keepsake {
@@ -516,13 +516,13 @@
 
 .moment-keepsake-symbol {
   color: rgba(154, 110, 145, .56);
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale, 1));
 }
 
 .moment-keepsake small {
   margin-top: 13px;
   color: #9b6e87;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .14em;
 }
@@ -530,7 +530,7 @@
 .moment-keepsake blockquote {
   margin: 12px 0 0;
   color: #514a59;
-  font-size: clamp(12px, 1.35vw, 15px);
+  font-size: calc(clamp(12px, 1.35vw, 15px) * var(--font-scale, 1));
   font-weight: 700;
   line-height: 1.9;
 }
@@ -547,7 +547,7 @@
   border-radius: 999px 999px 999px 4px;
   color: #817287;
   background: rgba(246, 229, 237, .62);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 700;
 }
 
@@ -575,7 +575,7 @@
   display: block;
   max-width: calc(100% - 75px);
   color: #9b718a;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 800;
   line-height: 1.6;
   letter-spacing: .08em;
@@ -585,7 +585,7 @@
   max-width: 92%;
   margin: 12px 0 0;
   color: #3d3748;
-  font-size: clamp(22px, 2.8vw, 32px);
+  font-size: calc(clamp(22px, 2.8vw, 32px) * var(--font-scale, 1));
   line-height: 1.28;
   letter-spacing: -.05em;
 }
@@ -594,7 +594,7 @@
   display: block;
   margin-top: 12px;
   color: #a29aa6;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .moment-detail {
@@ -602,7 +602,7 @@
   z-index: 1;
   margin: 28px 0 0;
   color: #655e6c;
-  font-size: clamp(10px, 1.08vw, 12px);
+  font-size: calc(clamp(10px, 1.08vw, 12px) * var(--font-scale, 1));
   line-height: 2.05;
   white-space: pre-wrap;
 }
@@ -630,13 +630,13 @@
 }
 
 .moment-source-toggle > span {
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 750;
 }
 
 .moment-source-toggle small {
   color: #9aa4b4;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .moment-source-toggle i {
@@ -686,7 +686,7 @@
   border-radius: 3px 9px 9px 3px;
   color: #756d7b;
   background: rgba(249, 244, 244, .82);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   line-height: 1.65;
 }
 
@@ -697,7 +697,7 @@
 
 .source-item strong {
   color: #966f84;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .moment-signature {
@@ -707,7 +707,7 @@
   margin-top: auto;
   padding-top: 28px;
   color: #aaa2ac;
-  font-size: 7px;
+  font-size: calc(7px * var(--font-scale, 1));
   letter-spacing: .08em;
 }
 
@@ -741,7 +741,7 @@
 .moment-empty-page small {
   margin-top: 18px;
   color: #a38c9d;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .2em;
 }
@@ -750,7 +750,7 @@
   max-width: 360px;
   margin: 14px 0 0;
   color: #8f8796;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   line-height: 1.8;
 }
 
@@ -777,7 +777,7 @@
 }
 
 .album-turn small {
-  font-size: 7px;
+  font-size: calc(7px * var(--font-scale, 1));
 }
 
 .album-turn:not(:disabled):hover {
@@ -810,7 +810,7 @@
 }
 
 .album-reader-footer small {
-  font-size: 6px;
+  font-size: calc(6px * var(--font-scale, 1));
   letter-spacing: .16em;
   opacity: .62;
 }
@@ -825,7 +825,7 @@
   color: #39745c;
   background: rgba(221, 244, 234, .94);
   box-shadow: 0 16px 36px rgba(85, 83, 122, .12);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .notice.error {
@@ -1028,7 +1028,7 @@ body.embedded .album-board {
   }
 
   .moment-date > strong {
-    font-size: 46px;
+    font-size: calc(46px * var(--font-scale, 1));
   }
 
   .moment-keepsake {

@@ -43,6 +43,7 @@
       "home.html",
       "home.css",
       "app-shell.css",
+      "interface-settings.js",
       "clock.js",
       "device-manager.js",
       "emoji-picker.js",
