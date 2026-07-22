@@ -375,14 +375,14 @@ onBeforeUnmount(() => {
 
 .reader-identity strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .reader-identity span {
   color: var(--muted);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .journal-filters {
@@ -401,7 +401,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   color: #938c9a;
   background: transparent;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
 }
 
 .journal-filters button.active {
@@ -506,7 +506,7 @@ onBeforeUnmount(() => {
   right: 19px;
   color: rgba(223,166,194,.14);
   font-family: Georgia, serif;
-  font-size: 88px;
+  font-size: calc(88px * var(--font-scale, 1));
   line-height: 1;
   pointer-events: none;
 }
@@ -529,7 +529,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-bottom: 8px;
   color: #a08fa5;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 800;
   letter-spacing: .15em;
 }
@@ -537,7 +537,7 @@ onBeforeUnmount(() => {
 .paper-heading h1 {
   margin: 0;
   color: #383342;
-  font-size: clamp(21px, 6.4vw, 27px);
+  font-size: calc(clamp(21px, 6.4vw, 27px) * var(--font-scale, 1));
   line-height: 1.22;
   letter-spacing: -.045em;
 }
@@ -545,7 +545,7 @@ onBeforeUnmount(() => {
 .paper-heading time {
   flex: 0 0 auto;
   color: #a19aa8;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   white-space: nowrap;
 }
 
@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   margin-top: 28px;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   line-height: 2.15;
 }
 
@@ -569,10 +569,10 @@ onBeforeUnmount(() => {
   line-height: 1.38;
   break-after: avoid;
 }
-.journal-content :deep(h1) { font-size: 18px; }
-.journal-content :deep(h2) { font-size: 16px; }
+.journal-content :deep(h1) { font-size: calc(18px * var(--font-scale, 1)); }
+.journal-content :deep(h2) { font-size: calc(16px * var(--font-scale, 1)); }
 .journal-content :deep(h3),
-.journal-content :deep(h4) { font-size: 14px; }
+.journal-content :deep(h4) { font-size: calc(14px * var(--font-scale, 1)); }
 .journal-content :deep(ul),
 .journal-content :deep(ol) { margin: 8px 0 13px; padding-left: 21px; }
 .journal-content :deep(blockquote) {
@@ -612,7 +612,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   margin-top: 20px;
   color: #9b94a1;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   break-inside: avoid;
 }
 
@@ -645,13 +645,13 @@ onBeforeUnmount(() => {
 .journal-empty strong {
   margin-top: 5px;
   color: #5e5868;
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale, 1));
 }
 
 .journal-empty p {
   max-width: 230px;
   margin: 0;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   line-height: 1.65;
 }
 
@@ -681,13 +681,13 @@ onBeforeUnmount(() => {
 
 .reader-controls strong {
   font-family: Georgia, serif;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
   font-weight: 500;
 }
 
 .reader-controls span {
   color: var(--muted);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 @media (max-width: 370px) {

@@ -41,6 +41,12 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain('@pointermove="moveCrop"');
     expect(settingsSource).toContain('type="range"');
     expect(settingsSource).toContain("avatarDataUrl");
+    expect(settingsSource).toContain('class="interface-settings-entry"');
+    expect(settingsSource).toContain('class="interface-settings-sheet"');
+    expect(settingsSource).toContain("全局字体大小");
+    expect(settingsSource).toContain('min="85"');
+    expect(settingsSource).toContain('max="125"');
+    expect(settingsSource).toContain("interfaceSettings.applyFontScale");
     expect(settingsSource).toContain('class="settings-list"');
     expect(settingsSource).toContain("退出这个账号");
   });
