@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const shellSource = readFileSync(new URL("../components/AppShell.vue", import.meta.url), "utf8");
+const primaryNavSource = readFileSync(new URL("../components/PrimaryNav.vue", import.meta.url), "utf8");
+const primaryDeckSource = readFileSync(new URL("../components/PrimaryPageDeck.vue", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../App.vue", import.meta.url), "utf8");
 const chatSource = readFileSync(new URL("../views/ChatView.vue", import.meta.url), "utf8");
 const homeSource = readFileSync(new URL("../views/HomeView.vue", import.meta.url), "utf8");
 const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.meta.url), "utf8");
@@ -15,19 +18,47 @@ const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "u
 describe("adaptive mobile shell", () => {
   it("keeps chat as a secondary page outside the primary navigation", () => {
     expect(shellSource).toContain('layout?: "browse" | "focus"');
-    expect(shellSource).toContain("v-if=\"props.layout === 'browse'\"");
     expect(shellSource).toContain("v-if=\"$slots['bottom-dock']\"");
-    expect(shellSource).not.toContain('{ to: "/chat"');
+    expect(primaryNavSource).not.toContain('{ to: "/chat"');
+    expect(routerSource).not.toMatch(/path: "\/chat"[^\n]+primaryNav/);
     expect(shellSource).toContain('aria-label="返回主页"');
     expect(shellSource).toContain(':to="props.backTo"');
   });
 
   it("uses a compact dock and hides browse navigation during input", () => {
     expect(tokens).toContain("--nav-height: 58px");
-    expect(baseStyles).toContain(".nav-hidden .floating-nav");
-    expect(baseStyles).toContain(".keyboard-open .floating-nav");
+    expect(baseStyles).toContain(".floating-nav.is-hidden");
     expect(baseStyles).toContain(".layout-focus.keyboard-open .page-header");
-    expect(shellSource).toContain('{ to: "/settings", label: "我的"');
+    expect(primaryNavSource).toContain('{ to: "/settings", label: "我的"');
+    expect(shellSource).toContain("setNavHidden(true)");
+  });
+
+  it("keeps primary navigation mounted and animates directional page changes", () => {
+    expect(appSource).toContain("<PrimaryNav />");
+    expect(appSource).toContain('<Transition :name="transitionName">');
+    expect(primaryNavSource).toContain('class="nav-active-pill"');
+    expect(primaryNavSource).toContain("--nav-index");
+    expect(routerSource).toContain('primaryNav: true, navIndex: 0');
+    expect(routerSource).toContain('primaryNav: true, navIndex: 3');
+    expect(routerSource).toContain('"primary-forward" : "primary-backward"');
+    expect(baseStyles).toContain("cubic-bezier(.34,1.56,.64,1)");
+    expect(baseStyles).toContain(".primary-forward-enter-from");
+    expect(baseStyles).toContain(".primary-backward-enter-from");
+  });
+
+  it("switches primary pages with guarded horizontal swipe gestures", () => {
+    expect(appSource).toContain('<PrimaryPageDeck v-if="isPrimaryRoute"');
+    expect(primaryDeckSource).toContain('@touchstart.passive="handleTouchStart"');
+    expect(primaryDeckSource).toContain('@touchmove="handleTouchMove"');
+    expect(primaryDeckSource).toContain("event.preventDefault()");
+    expect(primaryDeckSource).toContain("dragX.value = (atStart || atEnd) ? deltaX * .24 : deltaX");
+    expect(primaryDeckSource).toContain("window.innerWidth * .2");
+    expect(primaryDeckSource).toContain("Math.abs(velocityX) >= .52");
+    expect(primaryDeckSource).toContain("void router.push(target)");
+    expect(primaryDeckSource).toContain("[role='slider']");
+    expect(primaryDeckSource).toContain(":inert=\"index !== currentIndex\"");
+    expect(baseStyles).toContain("touch-action: pan-y");
+    expect(baseStyles).toContain(".primary-page-deck.is-dragging .primary-page-track { transition: none; }");
   });
 
   it("merges the personal profile with mobile settings", () => {
