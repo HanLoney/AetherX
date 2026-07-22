@@ -15,6 +15,7 @@ const { AuthStore } = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
 const { DesktopSyncCoordinator } = require("./sync-runtime");
 const { generatePairingQrDataUrl } = require("./qr-code");
+const { createDesktopControlServer } = require("./desktop-control");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const defaultServerUrl =
@@ -29,6 +30,9 @@ let tray = null;
 let isQuitting = false;
 let hubShutdownComplete = false;
 let hubShutdownPromise = null;
+let desktopControlServer = null;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 const api = new XuanApiClient({
   baseUrl: defaultServerUrl,
   onUnauthorized: () => {
@@ -397,6 +401,31 @@ function showMainWindow() {
   }
 }
 
+async function startDesktopControl() {
+  desktopControlServer = await createDesktopControlServer(async (command) => {
+    if (command === "status") {
+      return {
+        component: "desktop",
+        pid: process.pid,
+        version: app.getVersion(),
+        healthy: Boolean(mainWindow && !mainWindow.isDestroyed())
+      };
+    }
+    if (command === "focus") {
+      setImmediate(showMainWindow);
+      return { focused: true };
+    }
+    if (command === "stop") {
+      setImmediate(() => {
+        isQuitting = true;
+        app.quit();
+      });
+      return { stopping: true };
+    }
+    throw new Error("不支持的桌面端控制指令");
+  });
+}
+
 function createTray() {
   tray = new Tray(appIcon);
   tray.setToolTip("AetherX");
@@ -444,7 +473,7 @@ function openPage(sender, file) {
   });
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
   const storedAuth = authStore.load();
   if (storedAuth.serverUrl) api.setBaseUrl(storedAuth.serverUrl);
@@ -464,12 +493,15 @@ app.whenReady().then(async () => {
     );
   }
   registerIpcHandlers();
+  await startDesktopControl();
   createTray();
   createWindow();
   app.on("activate", () => {
     showMainWindow();
   });
 });
+
+app.on("second-instance", showMainWindow);
 
 app.on("before-quit", (event) => {
   isQuitting = true;
@@ -485,4 +517,9 @@ app.on("before-quit", (event) => {
         app.quit();
       });
   }
+});
+
+app.on("will-quit", () => {
+  if (desktopControlServer) desktopControlServer.close();
+  desktopControlServer = null;
 });
