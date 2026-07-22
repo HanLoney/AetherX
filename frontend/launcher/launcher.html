@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AetherX 启动器</title>
+    <link rel="stylesheet" href="launcher.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+    <main class="app-shell">
+      <header class="titlebar">
+        <div class="brand"><span class="brand-glyph" aria-hidden="true">✦</span><span>AetherX</span><small>启动器</small></div>
+        <div class="window-actions">
+          <button type="button" data-window="minimize" aria-label="最小化">—</button>
+          <button type="button" data-window="maximize" aria-label="最大化">□</button>
+          <button type="button" data-window="close" aria-label="关闭">×</button>
+        </div>
+      </header>
+
+      <section class="content">
+        <section class="hero-card">
+          <div class="hero-copy">
+            <p class="eyebrow">AETHERX CONTROL CENTER</p>
+            <h1>让她安稳地运行在这里</h1>
+            <p class="hero-description">部署、启动与照看所有核心组件。启动器会持续确认桌面端和 Hub 是否真正健康。</p>
+            <div class="hero-actions">
+              <button class="primary-action" data-action="deploy-all">
+                <span class="button-icon">✦</span><span data-primary-label>一键安装并启动</span>
+              </button>
+              <button class="soft-action" data-action="stop-all">全部停止</button>
+            </div>
+          </div>
+          <div class="health-orbit" data-overall="attention">
+            <div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div>
+            <div class="health-core"><span class="health-spark">✦</span><strong data-overall-label>正在检查</strong><small>系统健康状态</small></div>
+          </div>
+        </section>
+
+        <div class="section-heading">
+          <div><p class="eyebrow">CORE COMPONENTS</p><h2>核心组件</h2></div>
+          <div class="live-indicator"><span></span>实时监控中 · <b data-last-check>准备连接</b></div>
+        </div>
+
+        <section class="component-grid">
+          <article class="component-card" data-component="hub">
+            <div class="card-topline"><div class="component-icon hub-icon">⌁</div><span class="status-pill" data-status-pill>未安装</span></div>
+            <div class="component-title"><div><p>数据与智能中枢</p><h3>AetherX Hub</h3></div><span class="version" data-version>—</span></div>
+            <p class="component-description">保存账号、对话、记忆与模型配置，为桌面端和移动端提供统一服务。</p>
+            <div class="health-details">
+              <div><span>接口健康</span><strong data-health>等待检测</strong></div>
+              <div><span>响应延迟</span><strong data-latency>—</strong></div>
+              <div><span>本地地址</span><strong>127.0.0.1:4318</strong></div>
+            </div>
+            <div class="card-actions">
+              <button class="component-primary" data-component-action="hub">安装 Hub</button>
+              <button class="icon-action" data-folder="hub-data" title="打开数据目录">⌕</button>
+            </div>
+          </article>
+
+          <article class="component-card" data-component="desktop">
+            <div class="card-topline"><div class="component-icon desktop-icon">◫</div><span class="status-pill" data-status-pill>未安装</span></div>
+            <div class="component-title"><div><p>你的日常陪伴空间</p><h3>AetherX 桌面端</h3></div><span class="version" data-version>—</span></div>
+            <p class="component-description">承载聊天、记忆、手记与相册，并与本机 Hub 保持实时协作。</p>
+            <div class="health-details">
+              <div><span>进程状态</span><strong data-health>等待检测</strong></div>
+              <div><span>控制通道</span><strong data-control>—</strong></div>
+              <div><span>Hub 联动</span><strong data-link>—</strong></div>
+            </div>
+            <div class="card-actions">
+              <button class="component-primary" data-component-action="desktop">安装桌面端</button>
+              <button class="icon-action" data-folder="desktop" title="打开安装目录">⌕</button>
+            </div>
+          </article>
+
+          <article class="component-card future-card">
+            <div class="future-mark">＋</div>
+            <p class="eyebrow">COMING NEXT</p>
+            <h3>更多能力会住进这里</h3>
+            <p>模型服务、扩展组件和诊断工具都可以继续接入，而不用重新设计启动流程。</p>
+          </article>
+        </section>
+      </section>
+
+      <footer class="status-bar">
+        <div class="activity"><span class="activity-dot"></span><span data-activity>启动器已就绪</span></div>
+        <span>所有检测仅在本机进行</span>
+      </footer>
+    </main>
+    <div class="toast" data-toast role="status"></div>
+    <script src="launcher.js"></script>
+  </body>
+</html>
