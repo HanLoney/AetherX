@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import {
-  ArrowLeft,
-  BrainCircuit,
-  CalendarDays,
-  CircleUserRound,
-  Home,
-} from "@lucide/vue";
-import { useDataStore } from "../stores/data";
+import { ArrowLeft } from "@lucide/vue";
+import { usePrimaryNavigation } from "../lib/primary-navigation";
+import { ensureMobileDataStarted } from "../lib/mobile-data-bootstrap";
 
 const props = withDefaults(defineProps<{
   title: string;
@@ -22,27 +17,19 @@ const props = withDefaults(defineProps<{
   backTo: "/home"
 });
 
-const data = useDataStore();
+const { hidden: navHidden, setHidden: setNavHidden } = usePrimaryNavigation();
 const pageContent = ref<HTMLElement | null>(null);
 const headerCompact = ref(false);
-const navHidden = ref(false);
 const keyboardOpen = ref(false);
 let lastScrollTop = 0;
 let focusTimer: ReturnType<typeof setTimeout> | undefined;
-
-const items = [
-  { to: "/home", label: "主页", icon: Home },
-  { to: "/todos", label: "待办", icon: CalendarDays },
-  { to: "/memories", label: "记忆", icon: BrainCircuit },
-  { to: "/settings", label: "我的", icon: CircleUserRound }
-];
 
 function handlePageScroll() {
   if (props.layout !== "browse") return;
   const scrollTop = pageContent.value?.scrollTop || 0;
   headerCompact.value = scrollTop > 18;
-  if (scrollTop < 24 || scrollTop < lastScrollTop - 4) navHidden.value = false;
-  else if (scrollTop > 72 && scrollTop > lastScrollTop + 4) navHidden.value = true;
+  if (scrollTop < 24 || scrollTop < lastScrollTop - 4) setNavHidden(false);
+  else if (scrollTop > 72 && scrollTop > lastScrollTop + 4) setNavHidden(true);
   lastScrollTop = scrollTop;
 }
 
@@ -55,7 +42,7 @@ function handleFocusIn(event: FocusEvent) {
   if (focusTimer) clearTimeout(focusTimer);
   if (isTextControl(event.target)) {
     keyboardOpen.value = true;
-    navHidden.value = true;
+    setNavHidden(true);
   }
 }
 
@@ -63,17 +50,15 @@ function handleFocusOut() {
   if (focusTimer) clearTimeout(focusTimer);
   focusTimer = setTimeout(() => {
     keyboardOpen.value = isTextControl(document.activeElement);
-    if (!keyboardOpen.value) navHidden.value = false;
+    if (!keyboardOpen.value) setNavHidden(false);
   }, 0);
 }
 
-onMounted(async () => {
-  if (!data.lastUpdatedAt.value) await data.refreshAll().catch(() => undefined);
-  await data.startSync();
-});
+onMounted(() => ensureMobileDataStarted());
 
 onBeforeUnmount(() => {
   if (focusTimer) clearTimeout(focusTimer);
+  setNavHidden(false);
 });
 </script>
 
@@ -122,11 +107,5 @@ onBeforeUnmount(() => {
       <slot name="bottom-dock" />
     </div>
 
-    <nav v-if="props.layout === 'browse'" class="floating-nav" aria-label="主要导航">
-      <RouterLink v-for="item in items" :key="item.to" :to="item.to" :aria-label="item.label">
-        <component :is="item.icon" :size="20" :stroke-width="1.8" />
-        <span>{{ item.label }}</span>
-      </RouterLink>
-    </nav>
   </div>
 </template>
