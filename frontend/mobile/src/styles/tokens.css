@@ -1,4 +1,5 @@
 :root {
+  --font-scale: 1;
   font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
   color: #343249;
   background: #f8f7fc;

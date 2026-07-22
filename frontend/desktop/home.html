@@ -7,6 +7,7 @@
     <title>AetherX</title>
     <link rel="stylesheet" href="app-shell.css" />
     <link rel="stylesheet" href="home.css" />
+    <script src="interface-settings.js"></script>
   </head>
   <body>
     <div class="ambient ambient-a"></div>
@@ -56,6 +57,7 @@
             <span id="systemNavLabel" class="nav-group-label">系统</span>
             <div class="nav-group-items">
               <button id="moduleSettingsBtn" class="nav-item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><rect x="13.5" y="13.5" width="6" height="6" rx="1.5"/></svg></i><span>模块中心</span></button>
+              <button id="interfaceSettingsBtn" class="nav-item"><i aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2.1-.7a6 6 0 0 0-.7-1.7l1-2-2.1-2.1-2 1a6 6 0 0 0-1.7-.7L10.5 2h-3l-.7 2.1a6 6 0 0 0-1.7.7l-2-1L1 5.9l1 2a6 6 0 0 0-.7 1.7L0 10.5v3l2.1.7a6 6 0 0 0 .7 1.7l-1 2L3.9 20l2-1a6 6 0 0 0 1.7.7l.9 2.3h3l.7-2.1a6 6 0 0 0 1.7-.7l2 1 2.1-2.1-1-2a6 6 0 0 0 .7-1.7l2.3-.9Z" transform="translate(2 0) scale(.83)"/></svg></i><span>设置</span></button>
             </div>
           </section>
         </nav>
@@ -256,6 +258,45 @@
             </div>
             <div id="deviceList" class="device-list" aria-live="polite"></div>
           </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="interfaceSettingsMask" class="modal-mask hidden">
+      <section class="interface-settings-panel" role="dialog" aria-modal="true" aria-labelledby="interfaceSettingsTitle">
+        <header class="interface-settings-head">
+          <div>
+            <p>APP SETTINGS</p>
+            <h2 id="interfaceSettingsTitle">应用设置</h2>
+            <span>调整整个桌面端的阅读体验，修改会立即作用于所有页面。</span>
+          </div>
+          <button id="closeInterfaceSettingsBtn" class="close-button" type="button" aria-label="关闭设置">×</button>
+        </header>
+
+        <article class="desktop-font-setting">
+          <div class="desktop-font-setting-head">
+            <i aria-hidden="true">Aa</i>
+            <div><strong>全局字体大小</strong><span>只调整文字，不改变卡片、按钮和页面比例</span></div>
+            <b id="desktopFontScaleValue">100%</b>
+          </div>
+          <div class="desktop-font-preview" aria-hidden="true">
+            <span>阅读预览</span>
+            <strong>让每一段文字都刚刚好</strong>
+            <small>清晰舒适，也保留界面的呼吸感。</small>
+          </div>
+          <label class="desktop-font-range">
+            <span>小</span>
+            <input id="desktopFontScaleRange" type="range" min="85" max="125" step="5" value="100" aria-label="全局字体大小" />
+            <span>大</span>
+          </label>
+          <footer>
+            <small>设置会保存在这台电脑上。</small>
+            <button id="resetDesktopFontScaleBtn" type="button">恢复默认</button>
+          </footer>
+        </article>
+
+        <div class="interface-settings-actions">
+          <button id="doneInterfaceSettingsBtn" class="save-button" type="button">完成</button>
         </div>
       </section>
     </div>

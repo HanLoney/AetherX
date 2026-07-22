@@ -46,7 +46,7 @@ button { color: inherit; cursor: pointer; }
   padding-left: 16px;
   -webkit-app-region: drag;
 }
-.drag-title { color: #9a94a4; font-size: 10px; letter-spacing: .4px; }
+.drag-title { color: #9a94a4; font-size: calc(10px * var(--font-scale, 1)); letter-spacing: .4px; }
 .window-actions { height: 100%; display: flex; -webkit-app-region: no-drag; }
 .window-btn {
   width: 46px;
@@ -75,14 +75,14 @@ button { color: inherit; cursor: pointer; }
 .result-panel header p {
   margin: 0 0 7px;
   color: #9f98a9;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 1.4px;
 }
 .page-head h1,
 .result-panel h2 { margin: 0; }
-.page-head h1 { font-size: 28px; }
-.result-panel h2 { font-size: 18px; }
+.page-head h1 { font-size: calc(28px * var(--font-scale, 1)); }
+.result-panel h2 { font-size: calc(18px * var(--font-scale, 1)); }
 
 .status-pill {
   height: 31px;
@@ -94,7 +94,7 @@ button { color: inherit; cursor: pointer; }
   border-radius: 20px;
   color: #8f8799;
   background: rgba(255, 255, 255, .64);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
 }
 .status-pill i {
   width: 6px;
@@ -137,7 +137,7 @@ button { color: inherit; cursor: pointer; }
 }
 .panel-block header strong {
   color: #5c5669;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .provider-grid {
@@ -170,7 +170,7 @@ button { color: inherit; cursor: pointer; }
   border-radius: 11px;
   color: #fff;
   background: linear-gradient(135deg, #df91b1, #75aee0);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-style: normal;
   font-weight: 700;
 }
@@ -181,8 +181,8 @@ button { color: inherit; cursor: pointer; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.provider-option strong { color: #575264; font-size: 10px; }
-.provider-option small { margin-top: 3px; color: #aaa3b2; font-size: 7px; }
+.provider-option strong { color: #575264; font-size: calc(10px * var(--font-scale, 1)); }
+.provider-option small { margin-top: 3px; color: #aaa3b2; font-size: calc(7px * var(--font-scale, 1)); }
 
 .field {
   display: block;
@@ -192,7 +192,7 @@ button { color: inherit; cursor: pointer; }
   display: block;
   margin-bottom: 7px;
   color: #625d70;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   font-weight: 700;
 }
 input, textarea, select {
@@ -204,7 +204,7 @@ input, textarea, select {
   outline: 0;
   color: #4e495c;
   background: rgba(247, 246, 250, .86);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 textarea {
   resize: vertical;
@@ -225,7 +225,7 @@ input:focus, textarea:focus, select:focus {
 .primary-button {
   border: 0;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   font-weight: 600;
 }
 .text-button {
@@ -252,7 +252,7 @@ input:focus, textarea:focus, select:focus {
   min-height: 22px;
   margin: 12px 0 0;
   color: #8f8798;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   line-height: 1.5;
 }
 .message-line.error { color: #bd6475; }
@@ -288,7 +288,7 @@ input:focus, textarea:focus, select:focus {
   font-style: normal;
   font-weight: 700;
 }
-.empty-state strong { font-size: 12px; }
+.empty-state strong { font-size: calc(12px * var(--font-scale, 1)); }
 
 .image-card {
   overflow: hidden;
@@ -315,14 +315,14 @@ input:focus, textarea:focus, select:focus {
   min-width: 0;
   overflow: hidden;
   color: #9690a0;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .image-card a {
   flex: 0 0 auto;
   color: #6282a9;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   text-decoration: none;
 }
 

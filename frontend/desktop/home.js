@@ -60,6 +60,9 @@ const elements = {
   emojiPicker: document.querySelector("#emojiPicker"),
   sendBtn: document.querySelector("#sendBtn"),
   composerTip: document.querySelector("#composerTip"),
+  interfaceSettingsMask: document.querySelector("#interfaceSettingsMask"),
+  desktopFontScaleRange: document.querySelector("#desktopFontScaleRange"),
+  desktopFontScaleValue: document.querySelector("#desktopFontScaleValue"),
   settingsMask: document.querySelector("#settingsMask"),
   providerGrid: document.querySelector("#providerGrid"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
@@ -625,6 +628,27 @@ function openSettings() {
 
 function closeSettings() {
   elements.settingsMask.classList.add("hidden");
+}
+
+function syncFontScaleControls(value = window.AetherInterfaceSettings.readFontScale()) {
+  const normalized = window.AetherInterfaceSettings.normalizeFontScale(value);
+  elements.desktopFontScaleRange.value = String(normalized);
+  elements.desktopFontScaleValue.textContent = `${normalized}%`;
+}
+
+function applyDesktopFontScale(value) {
+  const normalized = window.AetherInterfaceSettings.applyFontScale(value);
+  syncFontScaleControls(normalized);
+  moduleFrame.contentWindow?.postMessage({ type: "aether:font-scale", value: normalized }, "*");
+}
+
+function openInterfaceSettings() {
+  syncFontScaleControls();
+  elements.interfaceSettingsMask.classList.remove("hidden");
+}
+
+function closeInterfaceSettings() {
+  elements.interfaceSettingsMask.classList.add("hidden");
 }
 
 function createMessage(role, content, error = false) {
@@ -1587,6 +1611,7 @@ document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
     document.querySelector("#moduleSettingsBtn")
   );
 });
+document.querySelector("#interfaceSettingsBtn").addEventListener("click", openInterfaceSettings);
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
 elements.accountBtn.addEventListener("click", () => {
@@ -1656,6 +1681,20 @@ document.querySelectorAll(".suggestion").forEach((button) => {
 });
 elements.settingsMask.addEventListener("click", (event) => {
   if (event.target === elements.settingsMask) closeSettings();
+});
+elements.interfaceSettingsMask.addEventListener("click", (event) => {
+  if (event.target === elements.interfaceSettingsMask) closeInterfaceSettings();
+});
+document.querySelector("#closeInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
+document.querySelector("#doneInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
+document.querySelector("#resetDesktopFontScaleBtn").addEventListener("click", () => {
+  applyDesktopFontScale(window.AetherInterfaceSettings.defaultFontScale);
+});
+elements.desktopFontScaleRange.addEventListener("input", (event) => {
+  applyDesktopFontScale(event.target.value);
+});
+window.addEventListener("aether:font-scale-changed", (event) => {
+  syncFontScaleControls(event.detail?.value);
 });
 
 async function initialize() {

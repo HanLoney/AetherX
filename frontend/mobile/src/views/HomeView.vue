@@ -197,7 +197,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   padding: 0 8px;
   border-color: rgba(132,126,158,.1);
   background: rgba(255,255,255,.48);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   backdrop-filter: blur(10px);
 }
 
@@ -236,7 +236,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 .hero-copy h1 {
   overflow: hidden;
   margin: 0;
-  font-size: 32px;
+  font-size: calc(32px * var(--font-scale, 1));
   letter-spacing: -.07em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -252,7 +252,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   overflow: hidden;
   margin: 6px 0 0;
   color: var(--soft-ink);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   line-height: 1.55;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -276,7 +276,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 }
 
 .chat-entry strong {
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   letter-spacing: .02em;
 }
 
@@ -290,7 +290,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   }
 
   .hero-copy h1 {
-    font-size: 28px;
+    font-size: calc(28px * var(--font-scale, 1));
   }
 
   .chat-entry {
@@ -347,13 +347,13 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 }
 
 .home-portals strong {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .home-portals small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 7px;
+  font-size: calc(7px * var(--font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -413,14 +413,14 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 
 .journal-sheet small {
   color: #a17c97;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
 }
 
 .journal-sheet h2 {
   overflow: hidden;
   margin: 5px 0 0;
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale, 1));
   letter-spacing: -.04em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -433,7 +433,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   border-radius: 999px;
   color: #9b7897;
   background: rgba(var(--pink-rgb),.1);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .journal-sheet > p {
@@ -443,7 +443,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   -webkit-line-clamp: 3;
   margin: 15px 0 0;
   color: #696273;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   line-height: 1.85;
 }
 
@@ -457,7 +457,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   justify-content: space-between;
   margin-top: 12px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .journal-sheet footer i {
@@ -486,19 +486,19 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 
 .gallery-stack small {
   color: #a17c97;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
 }
 
 .gallery-stack h2 {
   margin: 5px 0 0;
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale, 1));
   letter-spacing: -.04em;
 }
 
 .gallery-stack header > span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
 }
 
 .gallery-photos {
@@ -578,7 +578,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
   position: absolute;
   bottom: 2px;
   margin: 0;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
 }
 
 </style>

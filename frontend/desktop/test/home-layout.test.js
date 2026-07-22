@@ -27,3 +27,13 @@ test("functional navigation uses one consistent SVG icon system", () => {
   assert.match(css, /\.nav-item i svg\s*\{[^}]*stroke-width:\s*1\.7;/s);
   assert.doesNotMatch(javascript, /<i>[◈◇☾▣]<\/i>/);
 });
+
+test("desktop exposes a polished global font size setting", () => {
+  assert.match(html, /id="interfaceSettingsBtn"/);
+  assert.match(html, /id="desktopFontScaleRange"[^>]*min="85"[^>]*max="125"/);
+  assert.match(html, /全局字体大小/);
+  assert.match(javascript, /applyDesktopFontScale/);
+  assert.match(javascript, /aether:font-scale/);
+  assert.match(css, /\.interface-settings-panel\s*\{/);
+  assert.match(css, /--font-scale/);
+});

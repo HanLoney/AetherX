@@ -36,7 +36,7 @@
 .dream-topbar p {
   margin: 0 0 5px;
   color: #a19aaa;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 1.5px;
 }
@@ -44,7 +44,7 @@
 .dream-topbar h1 {
   margin: 0;
   color: #343246;
-  font-size: 25px;
+  font-size: calc(25px * var(--font-scale, 1));
   line-height: 1.25;
   letter-spacing: 0;
 }
@@ -54,7 +54,7 @@
   max-width: 560px;
   margin-top: 7px;
   color: #a09aaa;
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   line-height: 1.6;
 }
 
@@ -74,7 +74,7 @@
   outline: 0;
   color: #403a4b;
   background: rgba(255, 255, 255, .72);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .dream-actions input:focus {
@@ -88,7 +88,7 @@
   border-radius: 10px;
   color: #657da3;
   background: rgba(220, 235, 250, .68);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   font-weight: 600;
 }
 
@@ -112,7 +112,7 @@
   border-radius: 13px;
   color: #9d96a8;
   background: rgba(255, 255, 255, .42);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   line-height: 1.6;
 }
 
@@ -155,7 +155,7 @@
 .dream-stats strong {
   overflow: hidden;
   color: #687fa2;
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale, 1));
   line-height: 1.12;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -164,7 +164,7 @@
 .dream-stats span {
   margin-top: 4px;
   color: #9d96a8;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .dream-list {
@@ -199,7 +199,7 @@
   overflow: hidden;
   margin-bottom: 5px;
   color: #9a7190;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 700;
   line-height: 1.5;
   text-overflow: ellipsis;
@@ -215,7 +215,7 @@
 .dream-card h2 {
   margin: 0;
   color: #514b60;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
   line-height: 1.38;
   letter-spacing: 0;
 }
@@ -223,14 +223,14 @@
 .dream-date {
   margin-top: 4px;
   color: #9992a3;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 600;
 }
 
 .dream-content {
   margin: 10px 0 0;
   color: #4f4a5c;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   line-height: 1.75;
   white-space: pre-wrap;
 }
@@ -238,7 +238,7 @@
 .dream-note {
   margin: 9px 0 0;
   color: #7d7180;
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   line-height: 1.65;
 }
 
@@ -254,7 +254,7 @@
   border-radius: 8px;
   color: #667f9f;
   background: rgba(218, 233, 247, .62);
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
   font-weight: 600;
 }
 
@@ -279,13 +279,13 @@
   border-radius: 10px;
   color: #777084;
   background: rgba(244, 247, 252, .72);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   line-height: 1.6;
 }
 
 .dream-source strong {
   color: #61779b;
-  font-size: 8px;
+  font-size: calc(8px * var(--font-scale, 1));
 }
 
 .empty {
@@ -294,7 +294,7 @@
   border-radius: 16px;
   color: #9a94a3;
   background: rgba(239, 245, 251, .45);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   text-align: center;
 }
 
@@ -308,7 +308,7 @@
   color: #39745c;
   background: rgba(221, 244, 234, .94);
   box-shadow: 0 16px 36px rgba(85, 83, 122, .12);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .notice.error {

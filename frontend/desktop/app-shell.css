@@ -57,7 +57,7 @@ button { color: inherit; cursor: pointer; }
 .drag-title {
   padding-left: 18px;
   color: rgba(95, 90, 112, .45);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 1px;
 }
@@ -115,14 +115,14 @@ button { color: inherit; cursor: pointer; }
   color: #fff;
   background: linear-gradient(135deg, #e89fbe, #78b8e8);
   box-shadow: 0 9px 22px rgba(113, 157, 210, .25);
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale, 1));
   font-weight: 700;
 }
 
 .brand strong,
 .brand span { display: block; }
-.brand strong { font-size: 17px; }
-.brand span { margin-top: 3px; color: #a09aab; font-size: 9px; }
+.brand strong { font-size: calc(17px * var(--font-scale, 1)); }
+.brand span { margin-top: 3px; color: #a09aab; font-size: calc(9px * var(--font-scale, 1)); }
 
 .nav-list {
   display: grid;
@@ -140,7 +140,7 @@ button { color: inherit; cursor: pointer; }
   border-radius: 13px;
   color: #898395;
   background: transparent;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   font-weight: 600;
   text-align: left;
 }
