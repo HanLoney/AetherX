@@ -1,0 +1,95 @@
+{
+  "name": "aetherx-launcher",
+  "version": "0.1.1",
+  "description": "AetherX Windows deployment and health control center",
+  "main": "main.js",
+  "author": "Xuanxiaotech",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HanLoney/AetherX.git",
+    "directory": "frontend/launcher"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "smoke:hub": "node scripts/smoke-hub.js",
+    "build:desktop": "npm --prefix ../desktop run dist:dir",
+    "prepare:payload": "node scripts/prepare-payload.js",
+    "dist": "npm run build:desktop && npm run prepare:payload && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.xuanxiaotech.aetherx.launcher",
+    "productName": "AetherX 启动器",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "component-manager.js",
+      "control-channel.js",
+      "hub-host.js",
+      "launcher.html",
+      "launcher.css",
+      "launcher.js",
+      {
+        "from": "../desktop/app-icon-rounded.png",
+        "to": "app-icon-rounded.png"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "../desktop/dist/win-unpacked",
+        "to": "payload/desktop"
+      },
+      {
+        "from": "../../backend",
+        "to": "backend",
+        "filter": [
+          "src/**/*",
+          "package.json",
+          "README.md"
+        ]
+      },
+      {
+        "from": "../desktop",
+        "to": "agent-tools",
+        "filter": [
+          "tool-registry.js",
+          "todo-tools.js",
+          "memory-tools.js",
+          "journal-illustrator.js",
+          "journal-tools.js",
+          "album-tools.js",
+          "dream-tools.js",
+          "image-tools.js"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "../desktop/app-icon-rounded.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AetherX-启动器-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AetherX 启动器"
+    }
+  }
+}
