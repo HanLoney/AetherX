@@ -2,6 +2,12 @@ import type { AetherApi, SyncChange } from "./api";
 import { loadSyncCursor, saveSyncCursor } from "./storage";
 
 type ChangeHandler = (changes: SyncChange[]) => void | Promise<void>;
+export interface SyncConnectionStatus {
+  connected: boolean;
+  cursor: number;
+  state: "connecting" | "online" | "retrying" | "stopped";
+}
+type StatusHandler = (status: SyncConnectionStatus) => void;
 
 export class SyncCoordinator {
   private controller: AbortController | null = null;
@@ -12,13 +18,16 @@ export class SyncCoordinator {
   constructor(
     private readonly api: AetherApi,
     private readonly onChanges: ChangeHandler,
-    private readonly cursorScope: string
+    private readonly cursorScope: string,
+    private readonly onStatus: StatusHandler = () => undefined,
+    private readonly clientId = ""
   ) {}
 
   async start() {
     if (this.running) return;
     this.running = true;
     this.cursor = await loadSyncCursor(this.cursorScope);
+    this.notify(false, "connecting");
     try { await this.catchUp(); } catch { /* 长连接重试前会再次补拉 */ }
     void this.connect();
   }
@@ -27,6 +36,7 @@ export class SyncCoordinator {
     this.running = false;
     this.controller?.abort();
     this.controller = null;
+    this.notify(false, "stopped");
   }
 
   private async catchUp() {
@@ -36,6 +46,7 @@ export class SyncCoordinator {
       if (page.changes.length) await this.onChanges(page.changes);
       this.cursor = page.nextCursor;
       await saveSyncCursor(this.cursorScope, this.cursor);
+      this.notify(false, "connecting");
       hasMore = page.hasMore;
     }
   }
@@ -44,7 +55,9 @@ export class SyncCoordinator {
     while (this.running) {
       this.controller = new AbortController();
       try {
-        const response = await fetch(`${this.api.serverUrl}/api/v1/sync/events?after=${this.cursor}`, {
+        const query = new URLSearchParams({ after: String(this.cursor) });
+        if (this.clientId) query.set("client_id", this.clientId);
+        const response = await fetch(`${this.api.serverUrl}/api/v1/sync/events?${query}`, {
           headers: { Authorization: `Bearer ${this.api.accessToken}` },
           signal: this.controller.signal
         });
@@ -54,6 +67,7 @@ export class SyncCoordinator {
         }
         if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
         this.retryAttempt = 0;
+        this.notify(true, "online");
         await parseEventStream(response.body, async (event) => {
           if (event.event !== "change") return;
           const change = JSON.parse(event.data) as SyncChange;
@@ -61,9 +75,11 @@ export class SyncCoordinator {
           await this.onChanges([change]);
           this.cursor = change.seq;
           await saveSyncCursor(this.cursorScope, this.cursor);
+          this.notify(true, "online");
         });
       } catch (error) {
         if (!this.running || (error as Error).name === "AbortError") return;
+        this.notify(false, "retrying");
       }
       if (!this.running) return;
       const delay = Math.min(30_000, 1_000 * 2 ** this.retryAttempt) + Math.floor(Math.random() * 400);
@@ -71,6 +87,10 @@ export class SyncCoordinator {
       await wait(delay);
       try { await this.catchUp(); } catch { /* 下一轮继续重试 */ }
     }
+  }
+
+  private notify(connected: boolean, state: SyncConnectionStatus["state"]) {
+    this.onStatus({ connected, cursor: this.cursor, state });
   }
 }
 

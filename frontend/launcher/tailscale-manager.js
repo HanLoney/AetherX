@@ -152,7 +152,8 @@ class TailscaleManager {
           dnsName: "",
           tailnet: "",
           ip: "",
-          error: ""
+          error: "",
+          peers: []
         },
         remote: this.remoteStatus("missing")
       };
@@ -172,7 +173,8 @@ class TailscaleManager {
           dnsName: "",
           tailnet: "",
           ip: "",
-          error: error.message
+          error: error.message,
+          peers: []
         },
         remote: this.remoteStatus("unavailable")
       };
@@ -189,7 +191,8 @@ class TailscaleManager {
       dnsName,
       tailnet: statusPayload.CurrentTailnet?.Name || statusPayload.MagicDNSSuffix || "",
       ip: statusPayload.TailscaleIPs?.[0] || "",
-      error: ""
+      error: "",
+      peers: parseTailscalePeers(statusPayload.Peer)
     };
     if (!connected) return { tailscale, remote: this.remoteStatus(tailscale.state) };
 
@@ -307,6 +310,20 @@ class TailscaleManager {
   }
 }
 
+function parseTailscalePeers(value) {
+  const peers = value && typeof value === "object" ? Object.values(value) : [];
+  return peers.map((peer) => ({
+    id: String(peer?.ID || peer?.PublicKey || ""),
+    name: String(peer?.HostName || normalizeDnsName(peer?.DNSName) || "Tailscale 设备"),
+    dnsName: normalizeDnsName(peer?.DNSName),
+    os: String(peer?.OS || "").toLocaleLowerCase(),
+    online: peer?.Online === true,
+    lastSeenAt: peer?.LastSeen ? Date.parse(peer.LastSeen) || null : null,
+    ip: peer?.TailscaleIPs?.[0] || "",
+    mobile: ["android", "ios"].includes(String(peer?.OS || "").toLocaleLowerCase())
+  }));
+}
+
 module.exports = {
   AETHERX_HUB_TARGET,
   REMOTE_HTTPS_PORT,
@@ -315,5 +332,6 @@ module.exports = {
   findTailscaleExecutable,
   inspectServeConfiguration,
   normalizeDnsName,
+  parseTailscalePeers,
   tailscaleServeConsentUrl
 };
