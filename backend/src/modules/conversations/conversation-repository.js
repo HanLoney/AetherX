@@ -9,10 +9,29 @@ class ConversationRepository {
     return this.database
       .prepare(
         `SELECT id, title, summary, created_at, updated_at
-         FROM conversations WHERE user_id = ? ORDER BY updated_at DESC`
+         FROM conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`
       )
       .all(userId)
       .map(mapConversation);
+  }
+
+  page(userId, offset, limit) {
+    const items = this.database
+      .prepare(
+        `SELECT id, title, summary, created_at, updated_at
+         FROM conversations
+         WHERE user_id = ?
+         ORDER BY updated_at DESC, id DESC
+         LIMIT ? OFFSET ?`
+      )
+      .all(userId, limit, offset)
+      .map(mapConversation);
+    const total = Number(
+      this.database
+        .prepare("SELECT COUNT(*) AS count FROM conversations WHERE user_id = ?")
+        .get(userId)?.count || 0
+    );
+    return { items, total };
   }
 
   find(userId, id) {

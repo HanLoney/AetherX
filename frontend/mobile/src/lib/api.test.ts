@@ -41,3 +41,9 @@ describe("mobile health api", () => {
     expect(AetherApi.prototype.deviceHeartbeat).toBeTypeOf("function");
   });
 });
+
+describe("conversation pagination api", () => {
+  it("exposes a paged conversation method", () => {
+    expect(AetherApi.prototype.conversationPage).toBeTypeOf("function");
+  });
+});

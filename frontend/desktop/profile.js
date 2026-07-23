@@ -23,6 +23,7 @@ let galleryLoading = kind === "assistant";
 let galleryLoadError = "";
 let galleryLoadPromise = null;
 let galleryFilter = "all";
+let galleryLightboxLoadId = 0;
 let assistantView = "overview";
 const assistantContentState = {
   growth: { loading: kind === "assistant", error: "" },
@@ -451,15 +452,30 @@ function openLightbox(image) {
   const lightbox = $("#galleryLightbox");
   const img = $("#galleryLightboxImage");
   const caption = $("#galleryLightboxCaption");
-  img.src = image.source;
+  const loadId = ++galleryLightboxLoadId;
+  const previewSource = image.source || image.originalSource || "";
+  const originalSource = image.originalSource || previewSource;
+  img.src = previewSource;
   img.alt = image.origin === "journal" ? "手记里的留影" : "对话里的留影";
   const originLabel = image.origin === "journal" ? "手记" : "对话";
   const recordedAt = window.XuanGalleryLayout.formatGalleryDate(image.createdAt);
   caption.textContent = `${recordedAt} · 来自${originLabel}`;
   lightbox.classList.remove("hidden");
+
+  if (!originalSource || originalSource === previewSource) return;
+  const original = new Image();
+  original.onload = () => {
+    if (loadId !== galleryLightboxLoadId || lightbox.classList.contains("hidden")) return;
+    img.src = originalSource;
+  };
+  original.onerror = () => {
+    if (loadId === galleryLightboxLoadId) img.src = previewSource;
+  };
+  original.src = originalSource;
 }
 
 function closeLightbox() {
+  galleryLightboxLoadId += 1;
   $("#galleryLightbox").classList.add("hidden");
 }
 

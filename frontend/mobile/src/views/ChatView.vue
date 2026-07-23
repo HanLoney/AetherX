@@ -111,9 +111,14 @@ function handleNativeBack(event: Event) {
 onMounted(async () => {
   document.addEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
   window.addEventListener(NATIVE_BACK_EVENT, handleNativeBack);
-  await prepareCompactEmojiPicker();
-  if (!data.conversations.value.length) await data.refreshAll().catch(() => undefined);
-  if (data.conversations.value[0]) await openConversation(data.conversations.value[0]);
+  void prepareCompactEmojiPicker();
+  await data.refreshConversationPage(true).catch(() => undefined);
+  void data.loadRemainingConversations();
+  if (data.conversations.value[0]) {
+    await openConversation(data.conversations.value[0]).catch((cause) => {
+      error.value = cause instanceof Error ? cause.message : "最新对话暂时没有打开。";
+    });
+  }
 });
 
 onBeforeUnmount(() => {
@@ -302,6 +307,9 @@ async function scrollToBottom() {
             <button v-for="conversation in data.conversations.value" :key="conversation.id" :class="{ active: current?.id === conversation.id }" @click="openConversation(conversation)">
               <Menu :size="15" /><span>{{ conversation.title || '未命名对话' }}</span>
             </button>
+            <p v-if="data.conversationPageLoading.value || data.conversationHasMore.value" class="history-loading">
+              正在继续加载更早的对话…
+            </p>
           </div>
         </aside>
       </div>
@@ -339,7 +347,7 @@ async function scrollToBottom() {
 .history-backdrop { position:fixed;z-index:50;inset:0;display:flex;align-items:flex-end;background:rgba(42,39,59,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px) }
 .history-drawer { width:100%;height:min(76dvh,650px);padding:16px 19px calc(20px + env(safe-area-inset-bottom));border:1px solid rgba(255,255,255,.72);border-radius:32px 32px 0 0;background:linear-gradient(145deg,rgba(255,255,255,.83),rgba(247,247,253,.66));box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 -24px 70px rgba(62,57,88,.18);backdrop-filter:blur(34px) saturate(175%);-webkit-backdrop-filter:blur(34px) saturate(175%) }
 .history-drawer::before { content:""; display:block; width:38px; height:4px; margin:0 auto 17px; border-radius:99px; background:rgba(100,92,119,.16); }
-.history-drawer header{display:flex;align-items:center;justify-content:space-between}.history-drawer h2{margin:5px 0 0;font-size: calc(25px * var(--font-scale, 1));letter-spacing:-.05em}.new-chat{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:8px;margin:25px 0 16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size: calc(12px * var(--font-scale, 1));font-weight:700}.history-list{display:grid;gap:5px;max-height:calc(100dvh - 180px);overflow:auto}.history-list button{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 13px;border:0;border-radius:14px;color:#777183;background:transparent;text-align:left;font-size: calc(11px * var(--font-scale, 1))}.history-list button.active{color:#5e7398;background:linear-gradient(135deg,rgba(235,160,191,.14),rgba(126,188,239,.18))}.history-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-drawer header{display:flex;align-items:center;justify-content:space-between}.history-drawer h2{margin:5px 0 0;font-size: calc(25px * var(--font-scale, 1));letter-spacing:-.05em}.new-chat{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:8px;margin:25px 0 16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size: calc(12px * var(--font-scale, 1));font-weight:700}.history-list{display:grid;gap:5px;max-height:calc(100dvh - 180px);overflow:auto}.history-list button{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 13px;border:0;border-radius:14px;color:#777183;background:transparent;text-align:left;font-size: calc(11px * var(--font-scale, 1))}.history-list button.active{color:#5e7398;background:linear-gradient(135deg,rgba(235,160,191,.14),rgba(126,188,239,.18))}.history-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-loading{margin:8px 0 2px;color:#9b95a5;font-size:calc(9px * var(--font-scale, 1));text-align:center}
 .emoji-panel {
   position: absolute;
   z-index: 1;

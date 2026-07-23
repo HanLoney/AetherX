@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from "vue";
-import type { Conversation, GalleryImage, Journal, Memory, SyncChange, Todo } from "../lib/api";
+import type { Conversation, ConversationPage, GalleryImage, Journal, Memory, SyncChange, Todo } from "../lib/api";
 import {
   clearMobileDataCache,
   createMobileDataSnapshot,
@@ -15,6 +15,9 @@ import { useSessionStore } from "./session";
 const todos = ref<Todo[]>([]);
 const memories = ref<Memory[]>([]);
 const conversations = ref<Conversation[]>([]);
+const conversationTotal = ref(0);
+const conversationHasMore = ref(false);
+const conversationPageLoading = ref(false);
 const profile = ref<Record<string, unknown>>({});
 const assistant = ref<Record<string, unknown>>({});
 const galleryImages = ref<GalleryImage[]>([]);
@@ -33,7 +36,9 @@ let syncCursor = 0;
 let sseConnected = false;
 let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
+let conversationPagePromise: Promise<ConversationPage> | null = null;
 let activeCacheScope = "";
+const CONVERSATION_PAGE_SIZE = 12;
 
 function currentCacheScope() {
   const session = useSessionStore();
@@ -77,6 +82,8 @@ async function restoreCache() {
     todos.value = cached.todos || [];
     memories.value = cached.memories || [];
     conversations.value = cached.conversations || [];
+    conversationTotal.value = conversations.value.length;
+    conversationHasMore.value = conversations.value.length > 0;
     profile.value = cached.profile || {};
     assistant.value = cached.assistant || {};
     galleryImages.value = cached.galleryImages || [];
@@ -100,7 +107,7 @@ async function refreshAll() {
     const [todoResult, memoryResult, conversationResult, profileResult, assistantResult, galleryResult, journalResult] = await Promise.all([
       api.listTodos(),
       api.listMemories(),
-      api.listConversations(),
+      api.conversationPage(0, CONVERSATION_PAGE_SIZE),
       api.profile(),
       api.assistantProfile(),
       api.gallerySummary(3).catch(() => ({ total: 0, items: [] })),
@@ -108,8 +115,7 @@ async function refreshAll() {
     ]);
     todos.value = todoResult;
     memories.value = memoryResult;
-    conversations.value = conversationResult;
-    conversationRevision.value += 1;
+    mergeConversationHead(conversationResult);
     profile.value = profileResult;
     assistant.value = assistantResult;
     galleryImages.value = galleryResult.items;
@@ -131,10 +137,9 @@ async function refreshGroups(groups: Set<string>) {
   const jobs: Promise<void>[] = [];
   if (groups.has("todos")) jobs.push(api.listTodos().then((value) => { todos.value = value; }));
   if (groups.has("memories")) jobs.push(api.listMemories().then((value) => { memories.value = value; }));
-  if (groups.has("conversations")) jobs.push(api.listConversations().then((value) => {
-    conversations.value = value;
-    conversationRevision.value += 1;
-  }));
+  if (groups.has("conversations")) jobs.push(
+    api.conversationPage(0, CONVERSATION_PAGE_SIZE).then(mergeConversationHead)
+  );
   if (groups.has("profile")) jobs.push(api.profile().then((value) => { profile.value = value; }));
   if (groups.has("assistant")) jobs.push(api.assistantProfile().then((value) => { assistant.value = value; }));
   if (groups.has("gallery")) jobs.push(api.gallerySummary(3).then((value) => {
@@ -179,6 +184,62 @@ async function preloadGallery() {
     }
   })().finally(() => { galleryPromise = null; });
   return galleryPromise;
+}
+
+function mergeConversationHead(page: ConversationPage) {
+  const headIds = new Set(page.items.map((item) => item.id));
+  conversations.value = [...page.items, ...conversations.value.filter((item) => !headIds.has(item.id))]
+    .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+  conversationTotal.value = page.total;
+  conversationHasMore.value = conversations.value.length < page.total;
+  conversationRevision.value += 1;
+}
+
+async function refreshConversationPage(reset = false, limit = CONVERSATION_PAGE_SIZE) {
+  if (conversationPagePromise) return conversationPagePromise;
+  const offset = reset ? 0 : conversations.value.length;
+  conversationPageLoading.value = true;
+  const api = useSessionStore().requireApi();
+  conversationPagePromise = api.conversationPage(offset, limit).then((page) => {
+    if (reset) {
+      conversations.value = page.items;
+    } else {
+      const known = new Set(conversations.value.map((item) => item.id));
+      conversations.value = [...conversations.value, ...page.items.filter((item) => !known.has(item.id))]
+        .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+    }
+    conversationTotal.value = page.total;
+    conversationHasMore.value = conversations.value.length < page.total && page.items.length > 0;
+    conversationRevision.value += 1;
+    lastUpdatedAt.value = Date.now();
+    void persistCache().catch(() => undefined);
+    return page;
+  }).finally(() => {
+    conversationPageLoading.value = false;
+    conversationPagePromise = null;
+  });
+  return conversationPagePromise;
+}
+
+async function loadRemainingConversations() {
+  while (conversationHasMore.value) {
+    await waitForConversationIdle();
+    const before = conversations.value.length;
+    try {
+      await refreshConversationPage(false);
+    } catch {
+      return;
+    }
+    if (conversations.value.length <= before) return;
+  }
+}
+
+function waitForConversationIdle() {
+  return new Promise<void>((resolve) => {
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") idle(() => resolve(), { timeout: 800 });
+    else window.setTimeout(resolve, 180);
+  });
 }
 
 function changeGroups(changes: SyncChange[]) {
@@ -251,6 +312,9 @@ function resetData(clearCache: boolean) {
   todos.value = [];
   memories.value = [];
   conversations.value = [];
+  conversationTotal.value = 0;
+  conversationHasMore.value = false;
+  conversationPageLoading.value = false;
   profile.value = {};
   assistant.value = {};
   galleryImages.value = [];
@@ -266,6 +330,7 @@ function resetData(clearCache: boolean) {
   activeCacheScope = "";
   restorePromise = null;
   galleryPromise = null;
+  conversationPagePromise = null;
   if (clearCache && scope) void clearMobileDataCache(scope);
 }
 
@@ -329,6 +394,9 @@ export function useDataStore() {
     todos: readonly(todos),
     memories: readonly(memories),
     conversations: readonly(conversations),
+    conversationTotal: readonly(conversationTotal),
+    conversationHasMore: readonly(conversationHasMore),
+    conversationPageLoading: readonly(conversationPageLoading),
     profile: readonly(profile),
     assistant: readonly(assistant),
     galleryImages: readonly(galleryImages),
@@ -344,6 +412,8 @@ export function useDataStore() {
     activeTodos: computed(() => todos.value.filter((todo) => !todo.completed)),
     pendingMemories: computed(() => memories.value.filter((memory) => memory.status === "candidate")),
     refreshAll,
+    refreshConversationPage,
+    loadRemainingConversations,
     restoreCache,
     preloadGallery,
     startSync,

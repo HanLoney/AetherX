@@ -42,6 +42,14 @@ export interface Conversation {
   updatedAt: number;
 }
 
+export interface ConversationPage {
+  items: Conversation[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export interface GalleryImage {
   id: string;
   source: string;
@@ -272,6 +280,12 @@ export class AetherApi {
   confirmMemory(id: string) { return this.request<Memory>("POST", `/api/v1/memories/${encodeURIComponent(id)}/confirm`, {}); }
   deleteMemory(id: string) { return this.request<null>("DELETE", `/api/v1/memories/${encodeURIComponent(id)}`); }
   listConversations() { return this.request<Conversation[]>("GET", "/api/v1/conversations"); }
+  conversationPage(offset = 0, limit = 12) {
+    return this.request<ConversationPage>(
+      "GET",
+      `/api/v1/conversations/page?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`
+    );
+  }
   conversation(id: string) {
     return this.request<{ conversation: Conversation; displayMessages: ChatMessage[]; modelMessages: ChatMessage[] }>("GET", `/api/v1/conversations/${encodeURIComponent(id)}`);
   }

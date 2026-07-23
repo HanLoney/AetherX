@@ -69,6 +69,13 @@ test("overview gallery never exposes image generation descriptions as tooltips",
   assert.match(javascript, /button\.title\s*=\s*previewLabel/);
 });
 
+test("gallery lightbox upgrades the thumbnail to the original image", () => {
+  assert.match(javascript, /const originalSource = image\.originalSource \|\| previewSource/);
+  assert.match(javascript, /const original = new Image\(\)/);
+  assert.match(javascript, /img\.src = originalSource/);
+  assert.match(javascript, /original\.onerror[\s\S]*img\.src = previewSource/);
+});
+
 test("AI profile loads core content independently and paginates gallery images", () => {
   assert.match(html, /id="galleryLoadMore"/);
   assert.match(javascript, /Promise\.allSettled\(/);

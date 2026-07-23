@@ -2,6 +2,9 @@ function registerConversationRoutes(router, service) {
   router.add("GET", "/api/v1/conversations", ({ userId }) => ({
     data: service.list(userId)
   }));
+  router.add("GET", "/api/v1/conversations/page", ({ userId, query }) => ({
+    data: service.page(userId, query)
+  }));
   router.add("POST", "/api/v1/conversations", ({ userId, body }) => ({
     status: 201,
     data: service.create(userId, body)
