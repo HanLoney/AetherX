@@ -658,6 +658,27 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_sync_changes_user_seq
       ON sync_changes(user_id, seq);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS media_assets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      file_name TEXT NOT NULL UNIQUE,
+      byte_size INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, content_hash)
+    );
+    CREATE INDEX IF NOT EXISTS idx_media_assets_user_created
+      ON media_assets(user_id, created_at DESC);
+  `,
+  `
+    ALTER TABLE media_assets
+      ADD COLUMN preview_file_name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE media_assets
+      ADD COLUMN preview_byte_size INTEGER NOT NULL DEFAULT 0;
   `
 ];
 

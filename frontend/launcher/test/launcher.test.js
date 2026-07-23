@@ -5,6 +5,14 @@ const path = require("node:path");
 const test = require("node:test");
 const { createControlServer, getControlPipe, requestControl } = require("../control-channel");
 const { probeHub, waitFor } = require("../component-manager");
+const {
+  AETHERX_HUB_TARGET,
+  REMOTE_HTTPS_PORT,
+  TailscaleManager,
+  inspectServeConfiguration,
+  normalizeDnsName,
+  tailscaleServeConsentUrl
+} = require("../tailscale-manager");
 
 const launcherDir = path.resolve(__dirname, "..");
 
@@ -62,8 +70,104 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(html, /data-action="stop-all"/);
   assert.match(html, /data-component="hub"/);
   assert.match(html, /data-component="desktop"/);
+  assert.match(html, /data-component="remote"/);
+  assert.match(html, /data-remote-qr/);
   assert.match(script, /\$\{name\}-stop/);
   assert.match(main, /"hub-stop"/);
   assert.match(main, /"desktop-stop"/);
   assert.match(script, /onStatus/);
+  assert.match(main, /"remote-enable"/);
+  assert.match(main, /"remote-disable"/);
+});
+
+test("Tailscale Serve 状态只识别属于 AetherX 的 HTTPS 转发", () => {
+  const endpoint = "aetherx-home.example.ts.net:4318";
+  const matched = inspectServeConfiguration({
+    TCP: { [REMOTE_HTTPS_PORT]: { HTTPS: true } },
+    Web: {
+      [endpoint]: { Handlers: { "/": { Proxy: AETHERX_HUB_TARGET } } }
+    }
+  });
+  assert.deepEqual(matched, {
+    enabled: true,
+    conflict: false,
+    url: `https://${endpoint}`
+  });
+
+  const conflict = inspectServeConfiguration({
+    TCP: { [REMOTE_HTTPS_PORT]: { HTTPS: true } },
+    Web: {
+      [endpoint]: { Handlers: { "/": { Proxy: "http://127.0.0.1:9000" } } }
+    }
+  });
+  assert.equal(conflict.enabled, false);
+  assert.equal(conflict.conflict, true);
+});
+
+test("Tailscale DNS 名称会移除状态输出里的末尾点号", () => {
+  assert.equal(normalizeDnsName("aetherx-home.example.ts.net."), "aetherx-home.example.ts.net");
+});
+
+test("Tailscale Serve 未授权时可以提取官方授权地址", () => {
+  const url = "https://login.tailscale.com/f/serve?node=nNp54bsieM11CNTRL";
+  assert.equal(
+    tailscaleServeConsentUrl(`Serve is not enabled on your tailnet. To enable, visit: ${url}`),
+    url
+  );
+  assert.equal(tailscaleServeConsentUrl("permission denied"), "");
+});
+
+test("Tailscale 管理器可以开启、检测并关闭 AetherX 私有入口", async () => {
+  let serveEnabled = false;
+  const calls = [];
+  const endpoint = "aetherx-home.example.ts.net:4318";
+  const execFileImpl = async (_executable, args) => {
+    calls.push(args);
+    if (args[0] === "version") return { stdout: JSON.stringify({ short: "1.90.0" }) };
+    if (args[0] === "status") {
+      return {
+        stdout: JSON.stringify({
+          BackendState: "Running",
+          Self: { Online: true, DNSName: "aetherx-home.example.ts.net." },
+          CurrentTailnet: { Name: "private-example" },
+          TailscaleIPs: ["100.64.0.10"]
+        })
+      };
+    }
+    if (args[0] === "serve" && args[1] === "status") {
+      return {
+        stdout: JSON.stringify(serveEnabled ? {
+          TCP: { [REMOTE_HTTPS_PORT]: { HTTPS: true } },
+          Web: { [endpoint]: { Handlers: { "/": { Proxy: AETHERX_HUB_TARGET } } } }
+        } : {})
+      };
+    }
+    if (args[0] === "serve" && args.includes("--bg")) {
+      serveEnabled = true;
+      return { stdout: "" };
+    }
+    if (args[0] === "serve" && args.includes("off")) {
+      serveEnabled = false;
+      return { stdout: "" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  const manager = new TailscaleManager({
+    executable: "tailscale.exe",
+    execFileImpl,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ data: { service: "aetherx-backend" } })
+    })
+  });
+
+  const enabled = await manager.enable();
+  assert.equal(enabled.remote.enabled, true);
+  assert.equal(enabled.remote.healthy, true);
+  assert.equal(enabled.remote.url, `https://${endpoint}`);
+  assert.ok(calls.some((args) => args.join(" ") === `serve --bg --yes --https=${REMOTE_HTTPS_PORT} ${AETHERX_HUB_TARGET}`));
+
+  const disabled = await manager.disable();
+  assert.equal(disabled.remote.enabled, false);
+  assert.ok(calls.some((args) => args.join(" ") === `serve --https=${REMOTE_HTTPS_PORT} off`));
 });

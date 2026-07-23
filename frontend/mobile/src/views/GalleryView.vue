@@ -188,7 +188,7 @@ watch(pageCount, (count) => {
       <div v-if="selected" class="gallery-lightbox" role="dialog" aria-modal="true" @click.self="selected = null">
         <button type="button" aria-label="关闭大图" @click="selected = null"><X :size="20" /></button>
         <figure>
-          <img :src="selected.source" :alt="`${originLabel(selected)}留影`" />
+          <img :src="selected.originalSource || selected.source" :alt="`${originLabel(selected)}留影`" />
           <figcaption>{{ originLabel(selected) }}留影 · {{ formatDate(selected.createdAt) }}</figcaption>
         </figure>
       </div>

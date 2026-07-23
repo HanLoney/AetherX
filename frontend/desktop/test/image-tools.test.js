@@ -51,6 +51,7 @@ test("generates an anime image and returns the source separately from model text
     .execute({ description: "黄昏的天空", selfie: false });
 
   assert.equal(result.ok, true);
+  assert.equal(payloads[0].size, "1440x2560");
   assert.match(payloads[0].prompt, /二次元/);
   assert.equal(payloads[0].image, undefined);
   assert.match(result.content, /黄昏的天空/);

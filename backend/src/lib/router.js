@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { gzipSync } = require("node:zlib");
 const { HttpError } = require("./http-error");
 
 function compilePath(path) {
@@ -36,7 +37,13 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
   const routes = [];
 
   function add(method, path, handler, options = {}) {
-    routes.push({ method, ...compilePath(path), handler, public: options.public === true });
+    routes.push({
+      method,
+      ...compilePath(path),
+      handler,
+      public: options.public === true,
+      queryAuth: options.queryAuth === true
+    });
   }
 
   async function handle(request, response) {
@@ -72,9 +79,10 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
       const params = Object.fromEntries(
         route.keys.map((key, index) => [key, decodeURIComponent(match[index + 1])])
       );
-      const auth = route.public
-        ? null
-        : authenticate?.(request.headers.authorization);
+      const queryToken = route.queryAuth ? url.searchParams.get("access_token") : "";
+      const authorization = request.headers.authorization ||
+        (queryToken ? `Bearer ${queryToken}` : "");
+      const auth = route.public ? null : authenticate?.(authorization);
       if (!route.public && !auth) {
         throw new HttpError(401, "AUTH_REQUIRED", "请先登录。");
       }
@@ -93,17 +101,18 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
       const result = await route.handler(context);
       if (result?.handled) return;
       const status = result?.status || 200;
-      response.writeHead(status);
-      response.end(
-        status === 204
-          ? undefined
-          : JSON.stringify({ data: result?.data ?? result ?? null, requestId })
-      );
+      if (status === 204) {
+        response.writeHead(status);
+        response.end();
+      } else {
+        sendJson(request, response, status, {
+          data: result?.data ?? result ?? null,
+          requestId
+        });
+      }
     } catch (error) {
       const status = error.status || 500;
-      response.writeHead(status);
-      response.end(
-        JSON.stringify({
+      sendJson(request, response, status, {
           error: {
             code: error.code || "INTERNAL_ERROR",
             message:
@@ -111,13 +120,31 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
             ...(error.details ? { details: error.details } : {})
           },
           requestId
-        })
-      );
+        });
       if (status === 500) console.error(`[${requestId}]`, error);
     }
   }
 
   return { add, handle };
+}
+
+function sendJson(request, response, status, payload) {
+  const bytes = Buffer.from(JSON.stringify(payload));
+  const acceptsGzip = /(?:^|,)\s*gzip\s*(?:,|$)/i.test(
+    String(request.headers["accept-encoding"] || "")
+  );
+  if (acceptsGzip && bytes.length >= 1024) {
+    const compressed = gzipSync(bytes);
+    response.setHeader("Content-Encoding", "gzip");
+    response.setHeader("Vary", "Accept-Encoding");
+    response.setHeader("Content-Length", compressed.length);
+    response.writeHead(status);
+    response.end(compressed);
+    return;
+  }
+  response.setHeader("Content-Length", bytes.length);
+  response.writeHead(status);
+  response.end(bytes);
 }
 
 module.exports = { createRouter };

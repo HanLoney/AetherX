@@ -7,7 +7,7 @@
   });
   const stringField = (description) => ({ type: "string", description });
 
-  const DEFAULT_SIZE = "1440x1920";
+  const DEFAULT_SIZE = "1440x2560";
 
   function registerImageTools(registry, options = {}) {
     const generateImage = options.generateImage;

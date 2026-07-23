@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeServerUrl } from "./api";
+import { hydrateMediaSources, normalizeServerUrl } from "./api";
 import { parsePairingCode } from "../stores/session";
 
 describe("normalizeServerUrl", () => {
@@ -18,6 +18,20 @@ describe("parsePairingCode", () => {
       serverUrl: "https://hub.example.com",
       id: "pair-1",
       secret: "a".repeat(32)
+    });
+  });
+});
+
+describe("hydrateMediaSources", () => {
+  it("turns compact media references into authenticated cacheable urls", () => {
+    const payload = {
+      displayMessages: [{ image: { mediaId: "image one", description: "test" } }]
+    };
+    hydrateMediaSources(payload, "https://hub.example.com", "session token");
+    expect(payload.displayMessages[0].image).toMatchObject({
+      mediaId: "image one",
+      source: "https://hub.example.com/api/v1/media/image%20one?variant=preview&access_token=session%20token",
+      originalSource: "https://hub.example.com/api/v1/media/image%20one?access_token=session%20token"
     });
   });
 });

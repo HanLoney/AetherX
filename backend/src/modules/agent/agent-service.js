@@ -243,7 +243,13 @@ class AgentService {
       result.ok ? "success" : "error",
       result.ok ? "执行成功" : "执行失败"
     );
-    decorateActivity(activity, tool.name, result);
+    decorateActivity(
+      activity,
+      tool.name,
+      result,
+      this.services.mediaService,
+      run.userId
+    );
     if (result.ok && tool.risk !== "read") run.toolMutated = true;
     return result;
   }
@@ -598,7 +604,7 @@ function finishActivity(activity, result, status, statusText) {
   if (!result.image) activity.detail = `${activity.detail || ""}\n\n结果：${result.content}`.trim();
 }
 
-function decorateActivity(activity, toolName, result) {
+function decorateActivity(activity, toolName, result, mediaService, userId) {
   if (!result.ok) return;
   if (toolName.startsWith("journal.") && result.data) {
     const journals = (Array.isArray(result.data) ? result.data : [result.data]).filter(Boolean);
@@ -614,8 +620,11 @@ function decorateActivity(activity, toolName, result) {
   }
   if (result.image) {
     const data = result.data || {};
+    const asset = mediaService?.storeDataUrl(userId, result.image);
     activity.image = {
-      source: result.image,
+      ...(asset
+        ? { mediaId: asset.id, mimeType: asset.mimeType }
+        : { source: result.image }),
       description: String(data.description || ""),
       selfie: Boolean(data.selfie)
     };

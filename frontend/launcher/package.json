@@ -38,6 +38,8 @@
       "launcher.html",
       "launcher.css",
       "launcher.js",
+      "tailscale-manager.js",
+      "qr-code.js",
       {
         "from": "../desktop/app-icon-rounded.png",
         "to": "app-icon-rounded.png"
@@ -53,6 +55,7 @@
         "to": "backend",
         "filter": [
           "src/**/*",
+          "node_modules/jpeg-js/**/*",
           "package.json",
           "README.md"
         ]
@@ -91,5 +94,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "AetherX 启动器"
     }
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

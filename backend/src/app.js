@@ -110,6 +110,9 @@ const { registerSyncRoutes } = require("./modules/sync/sync-routes");
 const { createAgentToolRuntime } = require("./modules/agent/agent-tool-runtime");
 const { AgentService } = require("./modules/agent/agent-service");
 const { registerAgentRoutes } = require("./modules/agent/agent-routes");
+const { MediaRepository } = require("./modules/media/media-repository");
+const { MediaService } = require("./modules/media/media-service");
+const { registerMediaRoutes } = require("./modules/media/media-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -168,6 +171,11 @@ function createApp(config) {
   const albumService = new AlbumService(new AlbumRepository(database));
   const dreamService = new DreamService(new DreamRepository(database));
   const galleryService = new GalleryService(new GalleryRepository(database));
+  const mediaService = new MediaService(
+    new MediaRepository(database),
+    config.dataDir
+  );
+  mediaService.migrateLegacyConversationImages();
   const memoryIntelligenceService = new MemoryIntelligenceService({
     profileService,
     preferenceService,
@@ -192,7 +200,8 @@ function createApp(config) {
     xuanMoodService,
     albumService,
     dreamService,
-    conversationService
+    conversationService,
+    mediaService
   };
   const agentService = new AgentService(
     agentServices,
@@ -231,6 +240,7 @@ function createApp(config) {
   registerAlbumRoutes(router, albumService);
   registerDreamRoutes(router, dreamService);
   registerGalleryRoutes(router, galleryService);
+  registerMediaRoutes(router, mediaService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);

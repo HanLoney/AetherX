@@ -95,6 +95,7 @@
         "to": "backend",
         "filter": [
           "src/**/*",
+          "node_modules/jpeg-js/**/*",
           "scripts/ensure-adb-reverse.js",
           "package.json",
           "README.md"

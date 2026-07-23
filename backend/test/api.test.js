@@ -20,6 +20,8 @@ const {
   normalizeCurrentTimeClaims,
   registerAiRoutes
 } = require("../src/modules/ai/ai-routes");
+const { MediaRepository } = require("../src/modules/media/media-repository");
+const { MediaService } = require("../src/modules/media/media-service");
 
 const authTokens = new Map();
 
@@ -288,6 +290,33 @@ test("time-related questions always use model wording with authoritative runtime
     response.data.data.choices[0].message.content,
     /以系统刚刚读取的.*时间为准/
   );
+});
+
+test("media endpoint streams authenticated images and supports browser caching", async () => {
+  await withServer(async (baseUrl, dataDir, app) => {
+    const session = await request(baseUrl, "GET", "/api/v1/auth/session");
+    const service = new MediaService(new MediaRepository(app.database), dataDir);
+    const source = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const asset = service.storeDataUrl(session.payload.data.user.id, source);
+    const token = authTokens.get(baseUrl);
+    const url = `${baseUrl}/api/v1/media/${asset.id}?access_token=${encodeURIComponent(token)}`;
+
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.match(response.headers.get("cache-control"), /private/);
+    assert.equal((await response.arrayBuffer()).byteLength, asset.byteSize);
+
+    const cached = await fetch(url, {
+      headers: { "If-None-Match": response.headers.get("etag") }
+    });
+    assert.equal(cached.status, 304);
+
+    const unauthenticated = await fetch(
+      `${baseUrl}/api/v1/media/${asset.id}`
+    );
+    assert.equal(unauthenticated.status, 401);
+  });
 });
 
 test("phone pairing requires desktop approval and creates a revocable device token", async () => {

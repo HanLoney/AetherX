@@ -11,6 +11,7 @@ const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.
 const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.meta.url), "utf8");
 const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.meta.url), "utf8");
 const settingsSource = readFileSync(new URL("../views/SettingsView.vue", import.meta.url), "utf8");
+const loginSource = readFileSync(new URL("../views/LoginView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
@@ -80,6 +81,13 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("interfaceSettings.applyFontScale");
     expect(settingsSource).toContain('class="settings-list"');
     expect(settingsSource).toContain("退出这个账号");
+  });
+
+  it("accepts a remote HTTPS Hub QR code during mobile sign in", () => {
+    expect(loginSource).toContain("CapacitorBarcodeScanner.scanBarcode");
+    expect(loginSource).toContain("/^https?:\\/\\//i.test(code)");
+    expect(loginSource).toContain('mode.value = "login"');
+    expect(loginSource).toContain("await inspectServer()");
   });
 
   it("moves chat into focus layout without stacking it above the main navigation", () => {

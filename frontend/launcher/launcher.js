@@ -1,4 +1,5 @@
-const state = { status: null, busy: false };
+const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
+const state = { status: null, busy: false, qrValue: "", qrRequest: 0 };
 const selectors = {
   overall: document.querySelector(".health-orbit"),
   overallLabel: document.querySelector("[data-overall-label]"),
@@ -8,12 +9,109 @@ const selectors = {
   primaryLabel: document.querySelector("[data-primary-label]"),
   primaryAction: document.querySelector(".primary-action"),
   stopAllAction: document.querySelector('[data-action="stop-all"]'),
+  remoteCard: document.querySelector('[data-component="remote"]'),
+  remotePill: document.querySelector("[data-remote-pill]"),
+  tailscaleVersion: document.querySelector("[data-tailscale-version]"),
+  tailscaleState: document.querySelector("[data-tailscale-state]"),
+  remoteHealth: document.querySelector("[data-remote-health]"),
+  remoteUrl: document.querySelector("[data-remote-url]"),
+  remoteGuideTitle: document.querySelector("[data-remote-guide-title]"),
+  remoteGuide: document.querySelector("[data-remote-guide]"),
+  remoteQr: document.querySelector("[data-remote-qr]"),
+  remoteQrWrap: document.querySelector(".remote-qr"),
+  remoteQrLoading: document.querySelector("[data-remote-qr-loading]"),
+  remoteAction: document.querySelector("[data-remote-action]"),
+  copyRemote: document.querySelector("[data-copy-remote]"),
   toast: document.querySelector("[data-toast]")
 };
 let toastTimer;
 
 function componentCard(name) {
   return document.querySelector(`[data-component="${name}"]`);
+}
+
+async function renderQr(value) {
+  if (!value || state.qrValue === value) return;
+  state.qrValue = value;
+  const request = ++state.qrRequest;
+  selectors.remoteQrWrap.classList.remove("ready");
+  selectors.remoteQrLoading.textContent = "正在生成";
+  try {
+    const dataUrl = await window.launcher.generateQr(value);
+    if (request !== state.qrRequest) return;
+    selectors.remoteQr.src = dataUrl;
+    selectors.remoteQrWrap.classList.add("ready");
+  } catch {
+    if (request === state.qrRequest) selectors.remoteQrLoading.textContent = "生成失败";
+  }
+}
+
+function renderRemote(status) {
+  const tailscale = status.tailscale || {};
+  const remote = status.remote || {};
+  selectors.tailscaleVersion.textContent = tailscale.version ? `v${tailscale.version}` : "—";
+  selectors.remoteAction.disabled = state.busy;
+  selectors.copyRemote.disabled = state.busy || !remote.url;
+  selectors.remoteUrl.textContent = remote.url || "—";
+  selectors.remoteUrl.title = remote.url || "";
+  selectors.remoteHealth.className = remote.healthy ? "healthy" : remote.enabled ? "warning" : "";
+
+  let qrValue = TAILSCALE_DOWNLOAD_URL;
+  if (!tailscale.installed) {
+    selectors.remotePill.textContent = "需要安装";
+    selectors.remotePill.dataset.state = "missing";
+    selectors.tailscaleState.textContent = "电脑端未安装";
+    selectors.remoteHealth.textContent = "尚未开启";
+    selectors.remoteGuideTitle.textContent = "先让两台设备认识彼此";
+    selectors.remoteGuide.textContent = "手机扫描这里安装 Tailscale；电脑端点击下方按钮安装。";
+    selectors.remoteAction.textContent = "安装 Tailscale";
+    selectors.remoteAction.dataset.nextAction = "tailscale-download";
+    selectors.remoteAction.dataset.mode = "install";
+  } else if (!tailscale.connected) {
+    selectors.remotePill.textContent = tailscale.state === "needs-login" ? "等待登录" : "等待连接";
+    selectors.remotePill.dataset.state = "stopped";
+    selectors.tailscaleState.textContent = tailscale.state === "needs-login" ? "需要登录" : "当前未连接";
+    selectors.remoteHealth.textContent = "等待 Tailscale";
+    selectors.remoteGuideTitle.textContent = "登录同一个 Tailscale 账号";
+    selectors.remoteGuide.textContent = "手机扫描二维码安装后，与这台电脑登录同一个私人网络。";
+    selectors.remoteAction.textContent = "打开 Tailscale";
+    selectors.remoteAction.dataset.nextAction = "tailscale-open";
+    selectors.remoteAction.dataset.mode = "start";
+  } else if (remote.conflict) {
+    selectors.remotePill.textContent = "端口冲突";
+    selectors.remotePill.dataset.state = "stopped";
+    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.remoteHealth.textContent = "端口已被占用";
+    selectors.remoteGuideTitle.textContent = "需要释放远程端口";
+    selectors.remoteGuide.textContent = "Tailscale 的 4318 端口正由其他服务使用，AetherX 不会覆盖它。";
+    selectors.remoteAction.textContent = "无法开启";
+    selectors.remoteAction.dataset.nextAction = "";
+    selectors.remoteAction.disabled = true;
+  } else if (!remote.enabled) {
+    selectors.remotePill.textContent = "可以开启";
+    selectors.remotePill.dataset.state = "stopped";
+    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.remoteHealth.textContent = "尚未开启";
+    selectors.remoteGuideTitle.textContent = "手机端也准备好了吗？";
+    selectors.remoteGuide.textContent = "扫描二维码安装并登录 Tailscale，然后开启 AetherX 远程入口。";
+    selectors.remoteAction.textContent = "开启远程访问";
+    selectors.remoteAction.dataset.nextAction = "remote-enable";
+    selectors.remoteAction.dataset.mode = "start";
+  } else {
+    qrValue = remote.url;
+    selectors.remotePill.textContent = remote.healthy ? "远程可用" : "等待 Hub";
+    selectors.remotePill.dataset.state = remote.healthy ? "running" : "stopped";
+    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.remoteHealth.textContent = remote.healthy
+      ? `响应正常${remote.latencyMs == null ? "" : ` · ${remote.latencyMs} ms`}`
+      : "入口已开，等待 Hub";
+    selectors.remoteGuideTitle.textContent = "用手机连接 AetherX";
+    selectors.remoteGuide.textContent = "在手机端登录页选择“配对电脑”并扫码，自动读取 HTTPS Hub 地址。";
+    selectors.remoteAction.textContent = "关闭远程访问";
+    selectors.remoteAction.dataset.nextAction = "remote-disable";
+    selectors.remoteAction.dataset.mode = "stop";
+  }
+  void renderQr(qrValue);
 }
 
 function setText(root, selector, text) {
@@ -78,6 +176,7 @@ function render(status) {
   selectors.lastCheck.textContent = "刚刚更新";
   renderComponent("hub", status.hub, status.hub.healthy);
   renderComponent("desktop", status.desktop, status.hub.healthy && status.desktop.healthy);
+  renderRemote(status);
   const allInstalled = status.hub.installed && status.desktop.installed;
   const allRunning = status.hub.running && status.desktop.running;
   selectors.primaryLabel.textContent = allRunning
@@ -117,6 +216,12 @@ document.addEventListener("click", (event) => {
   if (globalAction) run(globalAction.dataset.action);
   const componentAction = event.target.closest("[data-component-action]");
   if (componentAction) run(componentAction.dataset.nextAction);
+  const remoteAction = event.target.closest("[data-remote-action]");
+  if (remoteAction) run(remoteAction.dataset.nextAction);
+  const copyRemote = event.target.closest("[data-copy-remote]");
+  if (copyRemote && state.status?.remote?.url) {
+    window.launcher.copyText(state.status.remote.url).then(() => showToast("远程地址已复制"));
+  }
   const folder = event.target.closest("[data-folder]");
   if (folder) window.launcher.openFolder(folder.dataset.folder);
 });
@@ -128,7 +233,7 @@ window.launcher.onProgress((progress) => {
 window.launcher.onBusy(({ busy }) => {
   state.busy = busy;
   selectors.activityDot.classList.toggle("busy", busy);
-  document.querySelectorAll("button[data-action], button[data-component-action]").forEach((button) => {
+  document.querySelectorAll("button[data-action], button[data-component-action], button[data-remote-action]").forEach((button) => {
     button.disabled = busy;
   });
   if (!busy && state.status) render(state.status);

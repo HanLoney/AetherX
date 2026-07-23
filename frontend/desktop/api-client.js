@@ -59,7 +59,7 @@ class XuanApiClient {
         }
         throw error;
       }
-      return payload.data;
+      return hydrateMediaSources(payload.data, this.baseUrl, this.token);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if (error.name === "AbortError") {
@@ -574,6 +574,22 @@ class XuanApiClient {
       `/api/v1/conversations/${encodeURIComponent(id)}`
     );
   }
+}
+
+function hydrateMediaSources(value, baseUrl, token) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => hydrateMediaSources(item, baseUrl, token));
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  if (typeof value.mediaId === "string" && value.mediaId) {
+    const mediaUrl = `${baseUrl}/api/v1/media/${encodeURIComponent(value.mediaId)}`;
+    const auth = token ? `&access_token=${encodeURIComponent(token)}` : "";
+    value.source = `${mediaUrl}?variant=preview${auth}`;
+    value.originalSource = `${mediaUrl}${token ? `?access_token=${encodeURIComponent(token)}` : ""}`;
+  }
+  Object.values(value).forEach((item) => hydrateMediaSources(item, baseUrl, token));
+  return value;
 }
 
 module.exports = { XuanApiClient, ApiError };

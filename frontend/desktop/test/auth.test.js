@@ -30,6 +30,33 @@ test("API client authenticates with a bearer token and never sends a user id hea
   }
 });
 
+test("API client expands compact media references without embedding image bytes", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response(JSON.stringify({
+    data: { image: { mediaId: "media one", description: "tiny" } }
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+  try {
+    const client = new XuanApiClient({
+      baseUrl: "https://aether.example.com",
+      token: "secret token"
+    });
+    const result = await client.request("GET", "/api/v1/example");
+    assert.equal(
+      result.image.source,
+      "https://aether.example.com/api/v1/media/media%20one?variant=preview&access_token=secret%20token"
+    );
+    assert.equal(
+      result.image.originalSource,
+      "https://aether.example.com/api/v1/media/media%20one?access_token=secret%20token"
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("auth store encrypts the session token before writing it to disk", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aether-auth-store-"));
   const filePath = path.join(directory, "auth.json");

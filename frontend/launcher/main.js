@@ -1,8 +1,10 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, clipboard, ipcMain, shell } = require("electron");
 const path = require("node:path");
 const { ComponentManager } = require("./component-manager");
 const { getControlPipe } = require("./control-channel");
 const { runHubHost } = require("./hub-host");
+const { generateQrDataUrl } = require("./qr-code");
+const { TAILSCALE_DOWNLOAD_URL } = require("./tailscale-manager");
 
 const isHubMode = process.argv.includes("--aetherx-hub");
 const iconPath = app.isPackaged
@@ -96,6 +98,11 @@ if (isHubMode) {
     });
     ipcMain.on("window:close", () => mainWindow?.close());
     ipcMain.handle("launcher:status:get", () => refreshStatus());
+    ipcMain.handle("launcher:qr:create", (_event, value) => generateQrDataUrl(value));
+    ipcMain.handle("launcher:clipboard:write", (_event, value) => {
+      clipboard.writeText(String(value || ""));
+      return true;
+    });
     ipcMain.handle("launcher:folder:open", async (_event, kind) => {
       const target = kind === "hub-data" ? manager.paths.hubData : manager.paths.desktopInstall;
       return shell.openPath(target);
@@ -110,7 +117,14 @@ if (isHubMode) {
         "hub-stop": () => manager.stopHub(),
         "desktop-install": () => manager.installDesktop(),
         "desktop-start": () => manager.startDesktop(),
-        "desktop-stop": () => manager.stopDesktop()
+        "desktop-stop": () => manager.stopDesktop(),
+        "tailscale-download": async () => {
+          await shell.openExternal(TAILSCALE_DOWNLOAD_URL);
+          return manager.getStatus();
+        },
+        "tailscale-open": () => manager.openTailscale(),
+        "remote-enable": () => manager.enableRemoteAccess(),
+        "remote-disable": () => manager.disableRemoteAccess()
       };
       if (!actions[action]) throw new Error("未知的启动器操作");
       if (runningAction) throw new Error("另一个操作正在进行，请稍候");
@@ -120,6 +134,9 @@ if (isHubMode) {
         const status = await actions[action]();
         send("launcher:status", status);
         return status;
+      } catch (error) {
+        if (error?.actionUrl) await shell.openExternal(error.actionUrl);
+        throw error;
       } finally {
         runningAction = null;
         send("launcher:busy", { busy: false, action });

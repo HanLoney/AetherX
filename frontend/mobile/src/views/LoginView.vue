@@ -90,7 +90,7 @@ async function scanPairingCode() {
       hint: CapacitorBarcodeScannerTypeHint.QR_CODE,
       cameraDirection: CapacitorBarcodeScannerCameraDirection.BACK,
       scanOrientation: CapacitorBarcodeScannerScanOrientation.ADAPTIVE,
-      scanInstructions: "扫描电脑端显示的 AetherX 配对二维码",
+      scanInstructions: "扫描 AetherX 配对二维码或远程 Hub 地址",
       scanButton: false,
       cancelButtonAccessibilityLabel: "取消扫描",
       torchButtonOnAccessibilityLabel: "关闭手电筒",
@@ -99,6 +99,13 @@ async function scanPairingCode() {
     });
     const code = String(result.ScanResult || "").trim();
     if (!code) return;
+    if (/^https?:\/\//i.test(code)) {
+      serverUrl.value = code.replace(/\/+$/, "");
+      mode.value = "login";
+      pairingCode.value = "";
+      await inspectServer();
+      return;
+    }
     await connectWithPairingCode(code);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "没有识别到有效的配对二维码。";

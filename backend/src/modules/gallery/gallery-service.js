@@ -92,10 +92,13 @@ class GalleryService {
       }
       const image = payload && payload.image;
       const source = image && String(image.source || "").trim();
-      if (!source || !source.startsWith("data:image/")) continue;
+      const mediaId = image && String(image.mediaId || "").trim();
+      if (!mediaId && (!source || !source.startsWith("data:image/"))) continue;
       images.push({
         id: `chat:${row.id}`,
-        source,
+        ...(mediaId
+          ? { mediaId, mimeType: String(image.mimeType || "") }
+          : { source }),
         description: String(image.description || "").trim(),
         selfie: Boolean(image.selfie),
         origin: "chat",
