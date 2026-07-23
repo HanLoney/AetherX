@@ -234,12 +234,20 @@ async function startSync() {
 }
 
 function stopSync() {
+  stopSyncTransport();
+  resetData(true);
+}
+
+function stopSyncTransport() {
   sync?.stop();
   sync = null;
   healthReporter?.stop();
   healthReporter = null;
   syncCursor = 0;
   sseConnected = false;
+}
+
+function resetData(clearCache: boolean) {
   todos.value = [];
   memories.value = [];
   conversations.value = [];
@@ -256,7 +264,20 @@ function stopSync() {
   syncState.value = "idle";
   const scope = activeCacheScope;
   activeCacheScope = "";
-  if (scope) void clearMobileDataCache(scope);
+  restorePromise = null;
+  galleryPromise = null;
+  if (clearCache && scope) void clearMobileDataCache(scope);
+}
+
+async function reconnectHub() {
+  stopSyncTransport();
+  resetData(false);
+  const restored = await restoreCache();
+  void refreshAll().catch(() => {
+    if (!restored) syncState.value = "error";
+  });
+  void preloadGallery().catch(() => undefined);
+  void startSync().catch(() => { syncState.value = "error"; });
 }
 
 window.addEventListener("aetherx:session-invalidated", stopSync);
@@ -327,6 +348,7 @@ export function useDataStore() {
     preloadGallery,
     startSync,
     stopSync,
+    reconnectHub,
     toggleTodo,
     addTodo,
     removeTodo,
