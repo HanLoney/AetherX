@@ -6,7 +6,9 @@ export function ensureMobileDataStarted() {
   if (!startPromise) {
     const data = useDataStore();
     startPromise = (async () => {
-      if (!data.lastUpdatedAt.value) await data.refreshAll().catch(() => undefined);
+      const restored = await data.restoreCache();
+      if (!restored) await data.refreshAll().catch(() => undefined);
+      void data.preloadGallery().catch(() => undefined);
       await data.startSync();
     })().finally(() => {
       startPromise = null;

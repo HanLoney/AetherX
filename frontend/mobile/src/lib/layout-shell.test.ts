@@ -146,8 +146,8 @@ describe("adaptive mobile shell", () => {
 
   it("opens the complete companion gallery from home", () => {
     expect(routerSource).toContain('path: "/gallery"');
-    expect(gallerySource).toContain("galleryPage(images.value.length, 24)");
-    expect(gallerySource).toContain("while (hasMore.value)");
+    expect(gallerySource).toContain("data.galleryAlbumImages.value");
+    expect(gallerySource).toContain("await data.preloadGallery()");
     expect(gallerySource).toContain('class="gallery-grid"');
     expect(gallerySource).toContain('class="album-shell"');
     expect(gallerySource).toContain('class="gallery-month"');

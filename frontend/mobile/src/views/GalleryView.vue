@@ -4,17 +4,17 @@ import { ChevronLeft, ChevronRight, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import EmptyState from "../components/EmptyState.vue";
 import type { GalleryImage } from "../lib/api";
-import { useSessionStore } from "../stores/session";
+import { useDataStore } from "../stores/data";
 
 type GalleryFilter = "all" | "chat" | "journal";
 
-const images = ref<GalleryImage[]>([]);
+const data = useDataStore();
+const images = computed(() => data.galleryAlbumImages.value);
 const selected = ref<GalleryImage | null>(null);
 const filter = ref<GalleryFilter>("all");
-const loading = ref(true);
+const loading = computed(() => data.galleryAlbumLoading.value && !images.value.length);
 const error = ref("");
-const total = ref(0);
-const hasMore = ref(true);
+const total = computed(() => data.galleryAlbumTotal.value);
 const pageIndex = ref(0);
 const pageSize = 4;
 const turnDirection = ref<"forward" | "backward">("forward");
@@ -92,23 +92,11 @@ function openImage(image: GalleryImage) {
 }
 
 async function syncGallery() {
-  if (!hasMore.value && images.value.length) return;
-  loading.value = true;
   error.value = "";
   try {
-    const api = useSessionStore().requireApi();
-    while (hasMore.value) {
-      const page = await api.galleryPage(images.value.length, 24);
-      const known = new Set(images.value.map((image) => image.id));
-      const next = page.items.filter((image) => !known.has(image.id));
-      images.value = [...images.value, ...next];
-      total.value = Math.max(images.value.length, page.total);
-      hasMore.value = page.hasMore && next.length > 0;
-    }
+    await data.preloadGallery();
   } catch (reason) {
     error.value = (reason as Error).message || "相册暂时没有打开。";
-  } finally {
-    loading.value = false;
   }
 }
 
