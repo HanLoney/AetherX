@@ -37,7 +37,13 @@ async function runHubHost(options) {
   await hub.listen();
   controlServer = await createControlServer(pipeName, async (command) => {
     if (command === "status") {
-      return { component: "hub", pid: process.pid, healthy: true, port };
+      return {
+        component: "hub",
+        pid: process.pid,
+        healthy: true,
+        port,
+        mobileClients: hub.mobileHealth()
+      };
     }
     if (command === "stop") {
       setImmediate(() => stop().catch(() => app.exit(1)));

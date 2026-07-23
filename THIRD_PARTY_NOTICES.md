@@ -63,6 +63,7 @@ corresponding packages and should be retained when redistributing binaries.
 | @capacitor/app | 8.0.0 | MIT |
 | @capacitor/barcode-scanner | 3.1.0 | MIT |
 | @capacitor/core | 8.4.2 | MIT |
+| @capacitor/device | 8.0.3 | MIT |
 | @capacitor/preferences | 8.0.1 | MIT |
 | @jridgewell/sourcemap-codec | 1.5.5 | MIT |
 | @lucide/vue | 1.24.0 | ISC |

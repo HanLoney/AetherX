@@ -7,7 +7,9 @@ import {
   saveMobileDataCache,
   warmGalleryPreviews
 } from "../lib/mobile-cache";
+import { MobileHealthReporter } from "../lib/device-health";
 import { SyncCoordinator } from "../lib/sync";
+import { loadInstallationId } from "../lib/storage";
 import { useSessionStore } from "./session";
 
 const todos = ref<Todo[]>([]);
@@ -26,6 +28,9 @@ const lastUpdatedAt = ref<number | null>(null);
 const conversationRevision = ref(0);
 const syncState = ref<"idle" | "syncing" | "online" | "error">("idle");
 let sync: SyncCoordinator | null = null;
+let healthReporter: MobileHealthReporter | null = null;
+let syncCursor = 0;
+let sseConnected = false;
 let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
 let activeCacheScope = "";
@@ -203,13 +208,26 @@ async function startSync() {
   const api = session.requireApi();
   const userId = session.user.value?.id;
   if (!userId) throw new Error("登录状态已经失效，请重新登录。");
+  const installationId = await loadInstallationId();
   sync = new SyncCoordinator(api, async (changes) => {
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
-  }, `${api.serverUrl}|${userId}`);
+  }, `${api.serverUrl}|${userId}`, (status) => {
+    syncCursor = status.cursor;
+    sseConnected = status.connected;
+    if (status.state === "online") syncState.value = "online";
+    else if (status.state === "retrying") syncState.value = "error";
+    void healthReporter?.report().catch(() => undefined);
+  }, installationId);
   try {
     await sync.start();
-    syncState.value = "online";
+    healthReporter = new MobileHealthReporter(api, () => ({
+      syncStatus: syncState.value,
+      syncCursor,
+      sseConnected,
+      lastError: syncState.value === "error" ? "实时同步通道正在重连" : ""
+    }));
+    healthReporter.start();
   } catch {
     syncState.value = "error";
   }
@@ -218,6 +236,10 @@ async function startSync() {
 function stopSync() {
   sync?.stop();
   sync = null;
+  healthReporter?.stop();
+  healthReporter = null;
+  syncCursor = 0;
+  sseConnected = false;
   todos.value = [];
   memories.value = [];
   conversations.value = [];

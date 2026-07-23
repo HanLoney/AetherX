@@ -110,6 +110,79 @@ class DeviceRepository {
     );
   }
 
+  upsertMobileHealth(input) {
+    this.database.prepare(
+      `INSERT INTO mobile_client_health(
+        id, user_id, paired_device_id, name, platform, model, os_version,
+        app_version, protocol_version, sync_status, sync_cursor, sse_connected, foreground,
+        latency_ms, last_error, last_heartbeat_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id, user_id) DO UPDATE SET
+        paired_device_id = excluded.paired_device_id,
+        name = excluded.name,
+        platform = excluded.platform,
+        model = excluded.model,
+        os_version = excluded.os_version,
+        app_version = excluded.app_version,
+        protocol_version = excluded.protocol_version,
+        sync_status = excluded.sync_status,
+        sync_cursor = excluded.sync_cursor,
+        sse_connected = excluded.sse_connected,
+        foreground = excluded.foreground,
+        latency_ms = excluded.latency_ms,
+        last_error = excluded.last_error,
+        last_heartbeat_at = excluded.last_heartbeat_at,
+        updated_at = excluded.updated_at`
+    ).run(
+      input.id,
+      input.userId,
+      input.pairedDeviceId,
+      input.name,
+      input.platform,
+      input.model,
+      input.osVersion,
+      input.appVersion,
+      input.protocolVersion,
+      input.syncStatus,
+      input.syncCursor,
+      input.sseConnected ? 1 : 0,
+      input.foreground ? 1 : 0,
+      input.latencyMs,
+      input.lastError,
+      input.now,
+      input.now,
+      input.now
+    );
+    return this.findMobileHealth(input.userId, input.id);
+  }
+
+  findMobileHealth(userId, id) {
+    return this.database.prepare(
+      "SELECT * FROM mobile_client_health WHERE user_id = ? AND id = ?"
+    ).get(userId, id);
+  }
+
+  listMobileHealth(userId) {
+    return this.database.prepare(
+      `SELECT * FROM mobile_client_health
+       WHERE user_id = ? ORDER BY last_heartbeat_at DESC`
+    ).all(userId);
+  }
+
+  listAllMobileHealth() {
+    return this.database.prepare(
+      `SELECT * FROM mobile_client_health ORDER BY last_heartbeat_at DESC`
+    ).all();
+  }
+
+  updateMobileConnection(userId, id, connected, cursor, now) {
+    return this.database.prepare(
+      `UPDATE mobile_client_health
+       SET sse_connected = ?, sync_cursor = MAX(sync_cursor, ?), updated_at = ?
+       WHERE user_id = ? AND id = ?`
+    ).run(connected ? 1 : 0, cursor, now, userId, id).changes > 0;
+  }
+
   deleteExpiredPairingSessions(now) {
     this.database
       .prepare(

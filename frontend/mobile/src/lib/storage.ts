@@ -11,6 +11,7 @@ const SecureSession = registerPlugin<SecureSessionPlugin>("SecureSession");
 const SESSION_KEY = "aetherx.session";
 const SERVER_KEY = "aetherx.server";
 const CURSOR_KEY = "aetherx.sync.cursor";
+const INSTALLATION_KEY = "aetherx.mobile.installation";
 
 export interface StoredSession {
   token: string;
@@ -74,4 +75,12 @@ export async function saveSyncCursor(scope: string, cursor: number) {
 
 export async function clearSyncCursor(scope = "default") {
   await Preferences.remove({ key: syncCursorKey(scope) });
+}
+
+export async function loadInstallationId() {
+  const stored = (await Preferences.get({ key: INSTALLATION_KEY })).value;
+  if (stored) return stored;
+  const created = crypto.randomUUID();
+  await Preferences.set({ key: INSTALLATION_KEY, value: created });
+  return created;
 }

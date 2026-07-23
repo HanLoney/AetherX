@@ -22,6 +22,8 @@ const selectors = {
   remoteQrLoading: document.querySelector("[data-remote-qr-loading]"),
   remoteAction: document.querySelector("[data-remote-action]"),
   copyRemote: document.querySelector("[data-copy-remote]"),
+  mobileSummary: document.querySelector("[data-mobile-summary]"),
+  mobileClients: document.querySelector("[data-mobile-clients]"),
   toast: document.querySelector("[data-toast]")
 };
 let toastTimer;
@@ -112,6 +114,82 @@ function renderRemote(status) {
     selectors.remoteAction.dataset.mode = "stop";
   }
   void renderQr(qrValue);
+  renderMobileHealth(status.mobile || {});
+}
+
+function renderMobileHealth(mobile) {
+  const clients = Array.isArray(mobile.clients) ? mobile.clients : [];
+  const summary = mobile.summary && typeof mobile.summary === "object"
+    ? mobile.summary
+    : null;
+  const onlinePeers = (mobile.tailscalePeers || []).filter((peer) => peer.online);
+  selectors.mobileClients.replaceChildren();
+  if (clients.length) {
+    selectors.mobileSummary.textContent = `${clients.filter((client) => client.status === "healthy").length} 台正常`;
+  } else if (summary?.tracked) {
+    selectors.mobileSummary.textContent = summary.healthy
+      ? `${summary.healthy} 台正常`
+      : `${summary.tracked} 台已连接`;
+  } else {
+    selectors.mobileSummary.textContent = mobile.available ? "等待手机心跳" : "等待 Hub";
+  }
+
+  if (!clients.length) {
+    const empty = document.createElement("p");
+    empty.className = "mobile-empty";
+    if (summary?.tracked) {
+      const abnormal = (summary.warning || 0) + (summary.idle || 0) +
+        (summary.offline || 0) + (summary.incompatible || 0);
+      empty.textContent = abnormal
+        ? `AetherX 已收到手机心跳，其中 ${abnormal} 台需要留意。`
+        : "AetherX 心跳正常，移动端连接与同步状态已收到。";
+    } else if (onlinePeers.length) {
+      empty.textContent = `Tailscale 已发现 ${onlinePeers.length} 台手机在线，等待 AetherX 心跳。`;
+    } else {
+      empty.textContent = mobile.available
+        ? "Hub 已连接，手机打开 AetherX 后会在这里显示状态。"
+        : "手机连接后会在这里显示实时状态。";
+    }
+    selectors.mobileClients.append(empty);
+    return;
+  }
+
+  for (const client of clients.slice(0, 4)) {
+    const item = document.createElement("article");
+    item.className = `mobile-client mobile-${client.status || "offline"}`;
+    const dot = document.createElement("i");
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    const detail = document.createElement("span");
+    const seen = document.createElement("small");
+    title.textContent = client.name || "AetherX 移动端";
+    detail.textContent = mobileDetail(client);
+    seen.textContent = `App v${client.appVersion || "未知"} · 游标 ${client.syncCursor || 0} · 心跳 ${relativeHeartbeat(client.ageMs)}`;
+    copy.append(title, detail, seen);
+    item.append(dot, copy);
+    selectors.mobileClients.append(item);
+  }
+}
+
+function mobileDetail(client) {
+  if (client.status === "incompatible") return `App v${client.appVersion || "未知"} · 版本不兼容`;
+  if (client.status === "healthy") {
+    return `AetherX 已连接 · 同步正常${client.latencyMs == null ? "" : ` · ${client.latencyMs} ms`}`;
+  }
+  if (client.status === "warning") {
+    return client.sseConnected ? "心跳正常 · 同步需要检查" : "心跳正常 · 实时通道重连中";
+  }
+  if (client.status === "idle") return client.foreground ? "连接暂时休眠" : "应用位于后台";
+  return "当前连接中断";
+}
+
+function relativeHeartbeat(ageMs) {
+  const seconds = Math.max(0, Math.round(Number(ageMs || 0) / 1000));
+  if (seconds < 10) return "刚刚";
+  if (seconds < 60) return `${seconds} 秒前`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  return `${Math.round(minutes / 60)} 小时前`;
 }
 
 function setText(root, selector, text) {

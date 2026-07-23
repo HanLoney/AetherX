@@ -84,6 +84,15 @@ test("health endpoint reports readiness", async () => {
     const { response, payload } = await request(baseUrl, "GET", "/health");
     assert.equal(response.status, 200);
     assert.equal(payload.data.status, "ok");
+    assert.deepEqual(payload.data.mobile, {
+      tracked: 0,
+      healthy: 0,
+      warning: 0,
+      idle: 0,
+      offline: 0,
+      incompatible: 0,
+      lastHeartbeatAt: null
+    });
   });
 });
 
@@ -409,6 +418,46 @@ test("phone pairing requires desktop approval and creates a revocable device tok
       deviceToken
     );
     assert.equal(rejected.response.status, 401);
+  });
+});
+
+test("mobile heartbeat reports app and sync health to the local launcher", async () => {
+  await withServer(async (baseUrl, _dataDir, app) => {
+    const heartbeat = await request(baseUrl, "POST", "/api/v1/devices/heartbeat", {
+      installationId: "mobile-installation-01",
+      name: "Xiaomi 15",
+      platform: "android",
+      model: "24129PN74C",
+      osVersion: "16",
+      appVersion: "0.1.0",
+      protocolVersion: 1,
+      syncStatus: "online",
+      syncCursor: 42,
+      sseConnected: true,
+      foreground: true,
+      latencyMs: 148
+    });
+    assert.equal(heartbeat.response.status, 200);
+    assert.equal(heartbeat.payload.data.client.status, "healthy");
+    assert.equal(heartbeat.payload.data.client.syncCursor, 42);
+
+    const accountHealth = await request(baseUrl, "GET", "/api/v1/devices/health");
+    assert.equal(accountHealth.payload.data.clients.length, 1);
+    assert.equal(accountHealth.payload.data.clients[0].name, "Xiaomi 15");
+
+    const launcherHealth = app.mobileHealth();
+    assert.equal(launcherHealth[0].latencyMs, 148);
+    assert.equal(launcherHealth[0].compatible, true);
+
+    const publicHealth = await rawRequest(baseUrl, "GET", "/health");
+    assert.equal(publicHealth.payload.data.mobile.tracked, 1);
+    assert.equal(publicHealth.payload.data.mobile.healthy, 1);
+    assert.equal(publicHealth.payload.data.mobile.lastHeartbeatAt > 0, true);
+
+    const syncRows = app.database.prepare(
+      "SELECT COUNT(*) AS count FROM sync_changes WHERE entity_type = 'mobile_client_health'"
+    ).get();
+    assert.equal(syncRows.count, 0);
   });
 });
 

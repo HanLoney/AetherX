@@ -679,6 +679,33 @@ const MIGRATIONS = [
       ADD COLUMN preview_file_name TEXT NOT NULL DEFAULT '';
     ALTER TABLE media_assets
       ADD COLUMN preview_byte_size INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS mobile_client_health (
+      id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      paired_device_id TEXT,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT '',
+      os_version TEXT NOT NULL DEFAULT '',
+      app_version TEXT NOT NULL DEFAULT '',
+      protocol_version INTEGER NOT NULL DEFAULT 1,
+      sync_status TEXT NOT NULL DEFAULT 'idle',
+      sync_cursor INTEGER NOT NULL DEFAULT 0,
+      sse_connected INTEGER NOT NULL DEFAULT 0,
+      foreground INTEGER NOT NULL DEFAULT 1,
+      latency_ms INTEGER,
+      last_error TEXT NOT NULL DEFAULT '',
+      last_heartbeat_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(id, user_id),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(paired_device_id) REFERENCES paired_devices(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_mobile_health_user_seen
+      ON mobile_client_health(user_id, last_heartbeat_at DESC);
   `
 ];
 
@@ -686,6 +713,7 @@ const SYNC_TRIGGER_EXCLUSIONS = new Set([
   "auth_sessions",
   "device_pairing_sessions",
   "memory_evidence",
+  "mobile_client_health",
   "schema_migrations",
   "sync_changes"
 ]);

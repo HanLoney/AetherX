@@ -211,12 +211,18 @@ function createApp(config) {
   router.add(
     "GET",
     "/health",
-    () => ({ data: { status: "ok", service: "aetherx-backend" } }),
+    () => ({
+      data: {
+        status: "ok",
+        service: "aetherx-backend",
+        mobile: deviceService.getMobileHealthSummary()
+      }
+    }),
     { public: true }
   );
   registerAuthRoutes(router, authService);
   registerDeviceRoutes(router, deviceService);
-  registerSyncRoutes(router, syncService, syncEventBroker);
+  registerSyncRoutes(router, syncService, syncEventBroker, deviceService);
   registerTodoRoutes(router, todoService);
   registerAiRoutes(
     router,
@@ -252,6 +258,9 @@ function createApp(config) {
   return {
     server,
     database,
+    mobileHealth() {
+      return deviceService.listAllMobileHealth();
+    },
     listen() {
       return new Promise((resolve) => {
         server.listen(config.port, config.host, () => resolve(server.address()));

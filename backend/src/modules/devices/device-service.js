@@ -4,6 +4,7 @@ const { HttpError } = require("../../lib/http-error");
 const DEFAULT_PAIRING_TTL_SECONDS = 120;
 const MIN_PAIRING_TTL_SECONDS = 60;
 const MAX_PAIRING_TTL_SECONDS = 600;
+const MOBILE_HEALTH_PROTOCOL_VERSION = 1;
 
 class DeviceService {
   constructor(repository) {
@@ -130,6 +131,77 @@ class DeviceService {
     }
   }
 
+  recordHeartbeat(userId, auth, input = {}) {
+    const now = Date.now();
+    const row = this.repository.upsertMobileHealth({
+      id: normalizeClientId(input.installationId),
+      userId,
+      pairedDeviceId: auth?.kind === "device" ? auth.deviceId : null,
+      name: normalizeDeviceName(input.name || "AetherX 移动端"),
+      platform: boundedText(input.platform, 20, "unknown"),
+      model: boundedText(input.model, 80),
+      osVersion: boundedText(input.osVersion, 40),
+      appVersion: boundedText(input.appVersion, 40),
+      protocolVersion: positiveInteger(input.protocolVersion, 0),
+      syncStatus: normalizeSyncStatus(input.syncStatus),
+      syncCursor: nonNegativeInteger(input.syncCursor),
+      sseConnected: Boolean(input.sseConnected),
+      foreground: input.foreground !== false,
+      latencyMs: nullableLatency(input.latencyMs),
+      lastError: boundedText(input.lastError, 240),
+      now
+    });
+    return { serverTime: now, client: presentMobileHealth(row, now) };
+  }
+
+  listMobileHealth(userId) {
+    const now = Date.now();
+    return this.repository.listMobileHealth(userId).map((row) => presentMobileHealth(row, now));
+  }
+
+  listAllMobileHealth() {
+    const now = Date.now();
+    return this.repository.listAllMobileHealth().map((row) => presentMobileHealth(row, now));
+  }
+
+  getMobileHealthSummary() {
+    const clients = this.listAllMobileHealth();
+    const summary = {
+      tracked: clients.length,
+      healthy: 0,
+      warning: 0,
+      idle: 0,
+      offline: 0,
+      incompatible: 0,
+      lastHeartbeatAt: null
+    };
+    for (const client of clients) {
+      const status = Object.prototype.hasOwnProperty.call(summary, client.status)
+        ? client.status
+        : "offline";
+      summary[status] += 1;
+      if (
+        summary.lastHeartbeatAt === null ||
+        client.lastHeartbeatAt > summary.lastHeartbeatAt
+      ) {
+        summary.lastHeartbeatAt = client.lastHeartbeatAt;
+      }
+    }
+    return summary;
+  }
+
+  setSseConnection(userId, installationId, connected, cursor = 0) {
+    const id = normalizeOptionalClientId(installationId);
+    if (!id) return false;
+    return this.repository.updateMobileConnection(
+      userId,
+      id,
+      connected,
+      nonNegativeInteger(cursor),
+      Date.now()
+    );
+  }
+
   requirePairingSessionBySecret(id, secretHash) {
     const session = this.repository.findPairingSessionBySecret(id, secretHash);
     if (!session) {
@@ -165,6 +237,42 @@ function presentDevice(row) {
   };
 }
 
+function presentMobileHealth(row, now = Date.now()) {
+  const lastHeartbeatAt = row.last_heartbeat_at;
+  const ageMs = Math.max(0, now - lastHeartbeatAt);
+  const compatible = row.protocol_version === MOBILE_HEALTH_PROTOCOL_VERSION;
+  let status = "offline";
+  if (!compatible && ageMs <= 5 * 60_000) {
+    status = "incompatible";
+  } else if (!row.foreground && ageMs <= 5 * 60_000) {
+    status = "idle";
+  } else if (ageMs <= 50_000) {
+    status = row.sync_status === "error" || !row.sse_connected ? "warning" : "healthy";
+  } else if (ageMs <= 5 * 60_000) {
+    status = "idle";
+  }
+  return {
+    id: row.id,
+    pairedDeviceId: row.paired_device_id || null,
+    name: row.name,
+    platform: row.platform,
+    model: row.model,
+    osVersion: row.os_version,
+    appVersion: row.app_version,
+    protocolVersion: row.protocol_version,
+    compatible,
+    syncStatus: row.sync_status,
+    syncCursor: row.sync_cursor,
+    sseConnected: Boolean(row.sse_connected),
+    foreground: Boolean(row.foreground),
+    latencyMs: row.latency_ms,
+    lastError: row.last_error,
+    lastHeartbeatAt,
+    ageMs,
+    status
+  };
+}
+
 function requireSecret(value) {
   const secret = String(value || "");
   if (secret.length < 32 || secret.length > 256) {
@@ -189,6 +297,45 @@ function normalizePublicKey(value) {
   return publicKey;
 }
 
+function normalizeClientId(value) {
+  const id = String(value || "").trim();
+  if (!/^[A-Za-z0-9._:-]{8,100}$/.test(id)) {
+    throw new HttpError(400, "INVALID_MOBILE_CLIENT_ID", "移动端安装标识无效。");
+  }
+  return id;
+}
+
+function normalizeOptionalClientId(value) {
+  const id = String(value || "").trim();
+  return /^[A-Za-z0-9._:-]{8,100}$/.test(id) ? id : "";
+}
+
+function normalizeSyncStatus(value) {
+  const status = String(value || "idle").trim().toLocaleLowerCase();
+  return ["idle", "syncing", "online", "error"].includes(status) ? status : "error";
+}
+
+function boundedText(value, maximum, fallback = "") {
+  const text = String(value || "").trim();
+  return (text || fallback).slice(0, maximum);
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+}
+
+function nullableLatency(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Math.round(Number(value));
+  return Number.isFinite(number) && number >= 0 && number <= 300_000 ? number : null;
+}
+
 function hashSecret(value) {
   return createHash("sha256").update(String(value)).digest("hex");
 }
@@ -209,4 +356,4 @@ function clampInteger(value, minimum, maximum, fallback) {
   return Math.min(maximum, Math.max(minimum, Math.trunc(number)));
 }
 
-module.exports = { DeviceService };
+module.exports = { DeviceService, MOBILE_HEALTH_PROTOCOL_VERSION, presentMobileHealth };
