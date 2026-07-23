@@ -2216,6 +2216,38 @@ test("complete conversations persist display and model message streams", async (
   });
 });
 
+test("conversations expose newest-first pagination", async () => {
+  await withServer(async (baseUrl) => {
+    for (const title of ["较早会话", "中间会话", "最新会话"]) {
+      await request(baseUrl, "POST", "/api/v1/conversations", { title });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+
+    const first = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/conversations/page?offset=0&limit=2"
+    );
+    assert.equal(first.payload.data.total, 3);
+    assert.equal(first.payload.data.hasMore, true);
+    assert.deepEqual(
+      first.payload.data.items.map((item) => item.title),
+      ["最新会话", "中间会话"]
+    );
+
+    const second = await request(
+      baseUrl,
+      "GET",
+      "/api/v1/conversations/page?offset=2&limit=2"
+    );
+    assert.equal(second.payload.data.hasMore, false);
+    assert.deepEqual(
+      second.payload.data.items.map((item) => item.title),
+      ["较早会话"]
+    );
+  });
+});
+
 test("assistant gallery aggregates images from conversations and journals", async () => {
   await withServer(async (baseUrl) => {
     const chatSource =

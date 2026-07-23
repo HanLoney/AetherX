@@ -1,4 +1,6 @@
 const { HttpError } = require("../../lib/http-error");
+const DEFAULT_PAGE_LIMIT = 12;
+const MAX_PAGE_LIMIT = 50;
 
 class ConversationService {
   constructor(repository) {
@@ -7,6 +9,18 @@ class ConversationService {
 
   list(userId) {
     return this.repository.list(userId);
+  }
+
+  page(userId, query = {}) {
+    const limit = boundedInteger(query.limit, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
+    const offset = nonNegativeInteger(query.offset);
+    const result = this.repository.page(userId, offset, limit);
+    return {
+      ...result,
+      offset,
+      limit,
+      hasMore: offset + result.items.length < result.total
+    };
   }
 
   create(userId, input) {
@@ -81,6 +95,18 @@ function restoreMessage(message) {
     content: message.content,
     ...message.payload
   };
+}
+
+function boundedInteger(value, fallback, maximum) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(maximum, parsed)
+    : fallback;
+}
+
+function nonNegativeInteger(value) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 module.exports = { ConversationService };
