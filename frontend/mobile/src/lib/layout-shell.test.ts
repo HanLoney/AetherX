@@ -11,6 +11,8 @@ const journalsSource = readFileSync(new URL("../views/JournalsView.vue", import.
 const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.meta.url), "utf8");
 const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.meta.url), "utf8");
 const settingsSource = readFileSync(new URL("../views/SettingsView.vue", import.meta.url), "utf8");
+const sessionSource = readFileSync(new URL("../stores/session.ts", import.meta.url), "utf8");
+const dataSource = readFileSync(new URL("../stores/data.ts", import.meta.url), "utf8");
 const loginSource = readFileSync(new URL("../views/LoginView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
@@ -80,6 +82,20 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain('max="125"');
     expect(settingsSource).toContain("interfaceSettings.applyFontScale");
     expect(settingsSource).toContain('class="settings-list"');
+    expect(settingsSource).toContain('class="hub-connection-row"');
+    expect(settingsSource).toContain('<Teleport to="body">');
+    expect(settingsSource).toContain("重新连接 Hub");
+    expect(settingsSource).toContain("session.reconnect(connectionUrl.value)");
+    expect(settingsSource).toContain("session.pair(pairingCode.value)");
+    expect(settingsSource).toContain("CapacitorBarcodeScanner.scanBarcode");
+    expect(settingsSource).toContain("data.reconnectHub()");
+    expect(settingsSource).toContain("正在后台恢复同步");
+    expect(settingsSource).toContain("等待电脑确认…");
+    expect(settingsSource).not.toContain("await data.reconnectHub()");
+    expect(sessionSource).toContain("withConnectionTimeout");
+    expect(sessionSource).toContain("timeoutMs = 12_000");
+    expect(dataSource).toContain("void refreshAll().catch");
+    expect(dataSource).toContain("void startSync().catch");
     expect(settingsSource).toContain("退出这个账号");
   });
 

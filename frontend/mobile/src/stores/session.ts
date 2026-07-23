@@ -10,11 +10,11 @@ const error = ref("");
 let api: AetherApi | null = null;
 let bootstrapPromise: Promise<void> | null = null;
 
-function createApi(url: string, token = "") {
+function createApi(url: string, token = "", invalidateOnUnauthorized = true) {
   return new AetherApi({
     baseUrl: url,
     token,
-    onUnauthorized: () => void invalidate()
+    ...(invalidateOnUnauthorized ? { onUnauthorized: () => void invalidate() } : {})
   });
 }
 
@@ -99,8 +99,7 @@ async function inspectRegistration(server: string): Promise<AuthConfig> {
 }
 
 async function establishAuthenticatedSession(candidate: AetherApi, token: string, authenticatedUser: AuthUser) {
-  candidate.setConnection(candidate.serverUrl, token);
-  api = candidate;
+  api = createApi(candidate.serverUrl, token);
   user.value = authenticatedUser;
   serverUrl.value = candidate.serverUrl;
   await Promise.all([
@@ -114,7 +113,7 @@ async function pair(code: string) {
   error.value = "";
   try {
     const payload = parsePairingCode(code);
-    const candidate = createApi(payload.serverUrl);
+    const candidate = createApi(payload.serverUrl, "", false);
     await candidate.health();
     await candidate.claimPairingSession(payload.id, {
       secret: payload.secret,
@@ -132,18 +131,46 @@ async function pair(code: string) {
       }
     }
     if (!redeemed) throw new Error("配对等待已经结束，请在电脑端重新生成连接码。 ");
-    candidate.setConnection(payload.serverUrl, redeemed.token);
-    const current = await candidate.session();
-    api = candidate;
-    user.value = current.user;
-    serverUrl.value = candidate.serverUrl;
-    await Promise.all([
-      saveServerUrl(serverUrl.value),
-      saveSession({ token: redeemed.token, user: current.user })
-    ]);
+    const authenticated = createApi(payload.serverUrl, redeemed.token, false);
+    const current = await authenticated.session();
+    await establishAuthenticatedSession(authenticated, redeemed.token, current.user);
     return current.user;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "没有完成设备配对。";
+    throw cause;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function reconnect(nextServerUrl: string) {
+  if (!api || !user.value || !api.accessToken) {
+    throw new Error("登录状态已失效，请重新登录。 ");
+  }
+  busy.value = true;
+  error.value = "";
+  const previousUser = user.value;
+  const token = api.accessToken;
+  try {
+    const candidate = createApi(nextServerUrl, token, false);
+    const current = await withConnectionTimeout(async (signal) => {
+      await candidate.health(signal);
+      try {
+        return await candidate.session(signal);
+      } catch (cause) {
+        if (cause instanceof Error && "status" in cause && cause.status === 401) {
+          throw new Error("当前凭证不能连接这台 Hub，请改用电脑端的新配对码。 ");
+        }
+        throw cause;
+      }
+    });
+    if (current.user.id !== previousUser.id) {
+      throw new Error("这台 Hub 返回了另一个账号，请使用新的配对码确认连接。 ");
+    }
+    await establishAuthenticatedSession(candidate, token, current.user);
+    return current.user;
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "没有成功重新连接 Hub。";
     throw cause;
   } finally {
     busy.value = false;
@@ -181,6 +208,7 @@ export function useSessionStore() {
     register,
     inspectRegistration,
     pair,
+    reconnect,
     logout,
     requireApi
   };
@@ -229,4 +257,14 @@ function androidDeviceName() {
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function withConnectionTimeout<T>(task: (signal: AbortSignal) => Promise<T>, timeoutMs = 12_000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await task(controller.signal);
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
