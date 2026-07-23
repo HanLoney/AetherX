@@ -97,6 +97,16 @@ paths:
       summary: 查询当前账号的配对设备
       responses:
         "200": { description: 设备列表 }
+  /devices/heartbeat:
+    post:
+      summary: 上报移动端连接与同步健康心跳
+      responses:
+        "200": { description: Hub 接收时间与当前移动端健康状态 }
+  /devices/health:
+    get:
+      summary: 查询当前账号的移动端健康状态
+      responses:
+        "200": { description: 移动端在线、同步、SSE、版本与延迟状态 }
   /devices/{id}:
     parameters:
       - in: path
@@ -126,6 +136,10 @@ paths:
         - in: query
           name: after
           schema: { type: integer, minimum: 0 }
+        - in: query
+          name: client_id
+          schema: { type: string }
+          description: 移动端安装标识，用于由 Hub 直接确认 SSE 通道状态。
       responses:
         "200":
           description: text/event-stream，先发送 ready，随后发送 change

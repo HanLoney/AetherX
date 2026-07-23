@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hydrateMediaSources, normalizeServerUrl } from "./api";
+import { AetherApi, hydrateMediaSources, normalizeServerUrl } from "./api";
 import { parsePairingCode } from "../stores/session";
 
 describe("normalizeServerUrl", () => {
@@ -33,5 +33,11 @@ describe("hydrateMediaSources", () => {
       source: "https://hub.example.com/api/v1/media/image%20one?variant=preview&access_token=session%20token",
       originalSource: "https://hub.example.com/api/v1/media/image%20one?access_token=session%20token"
     });
+  });
+});
+
+describe("mobile health api", () => {
+  it("exposes an authenticated heartbeat method", () => {
+    expect(AetherApi.prototype.deviceHeartbeat).toBeTypeOf("function");
   });
 });

@@ -27,6 +27,12 @@ function registerDeviceRoutes(router, service) {
   router.add("GET", "/api/v1/devices", ({ userId }) => ({
     data: { devices: service.listDevices(userId) }
   }));
+  router.add("POST", "/api/v1/devices/heartbeat", ({ userId, auth, body }) => ({
+    data: service.recordHeartbeat(userId, auth, body)
+  }));
+  router.add("GET", "/api/v1/devices/health", ({ userId }) => ({
+    data: { clients: service.listMobileHealth(userId) }
+  }));
   router.add("DELETE", "/api/v1/devices/:id", ({ userId, params }) => {
     service.revokeDevice(userId, params.id);
     return { status: 204 };

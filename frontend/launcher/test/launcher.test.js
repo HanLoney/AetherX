@@ -11,6 +11,7 @@ const {
   TailscaleManager,
   inspectServeConfiguration,
   normalizeDnsName,
+  parseTailscalePeers,
   tailscaleServeConsentUrl
 } = require("../tailscale-manager");
 
@@ -42,7 +43,12 @@ test("本地控制通道可以确认健康状态并接收关闭指令", async ()
 test("Hub 健康检测验证服务身份并记录延迟", async () => {
   const server = http.createServer((_request, response) => {
     response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({ data: { service: "aetherx-backend" } }));
+    response.end(JSON.stringify({
+      data: {
+        service: "aetherx-backend",
+        mobile: { tracked: 1, healthy: 1, lastHeartbeatAt: Date.now() }
+      }
+    }));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -50,6 +56,8 @@ test("Hub 健康检测验证服务身份并记录延迟", async () => {
     const status = await probeHub(`http://127.0.0.1:${address.port}`);
     assert.equal(status.healthy, true);
     assert.equal(typeof status.latencyMs, "number");
+    assert.equal(status.mobile.tracked, 1);
+    assert.equal(status.mobile.healthy, 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -66,18 +74,24 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   const html = fs.readFileSync(path.join(launcherDir, "launcher.html"), "utf8");
   const script = fs.readFileSync(path.join(launcherDir, "launcher.js"), "utf8");
   const main = fs.readFileSync(path.join(launcherDir, "main.js"), "utf8");
+  const hubHost = fs.readFileSync(path.join(launcherDir, "hub-host.js"), "utf8");
+  const manager = fs.readFileSync(path.join(launcherDir, "component-manager.js"), "utf8");
   assert.match(html, /data-action="deploy-all"/);
   assert.match(html, /data-action="stop-all"/);
   assert.match(html, /data-component="hub"/);
   assert.match(html, /data-component="desktop"/);
   assert.match(html, /data-component="remote"/);
   assert.match(html, /data-remote-qr/);
+  assert.match(html, /data-mobile-clients/);
   assert.match(script, /\$\{name\}-stop/);
   assert.match(main, /"hub-stop"/);
   assert.match(main, /"desktop-stop"/);
   assert.match(script, /onStatus/);
   assert.match(main, /"remote-enable"/);
   assert.match(main, /"remote-disable"/);
+  assert.match(hubHost, /mobileClients: hub\.mobileHealth\(\)/);
+  assert.match(manager, /hubControl\?\.mobileClients/);
+  assert.match(manager, /summary: hubHealth\.mobile/);
 });
 
 test("Tailscale Serve 状态只识别属于 AetherX 的 HTTPS 转发", () => {
@@ -106,6 +120,23 @@ test("Tailscale Serve 状态只识别属于 AetherX 的 HTTPS 转发", () => {
 
 test("Tailscale DNS 名称会移除状态输出里的末尾点号", () => {
   assert.equal(normalizeDnsName("aetherx-home.example.ts.net."), "aetherx-home.example.ts.net");
+});
+
+test("Tailscale 状态会识别在线的手机节点", () => {
+  const peers = parseTailscalePeers({
+    phone: {
+      ID: "peer-1",
+      HostName: "xiaomi-phone",
+      OS: "android",
+      Online: true,
+      TailscaleIPs: ["100.64.0.20"]
+    },
+    laptop: { ID: "peer-2", HostName: "laptop", OS: "windows", Online: true }
+  });
+  assert.equal(peers.length, 2);
+  assert.equal(peers[0].mobile, true);
+  assert.equal(peers[0].online, true);
+  assert.equal(peers[1].mobile, false);
 });
 
 test("Tailscale Serve 未授权时可以提取官方授权地址", () => {

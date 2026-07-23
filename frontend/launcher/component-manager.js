@@ -49,7 +49,8 @@ async function probeHub(baseUrl = HUB_URL, options = {}) {
     const payload = await response.json();
     return {
       healthy: payload?.data?.service === "aetherx-backend",
-      latencyMs: Date.now() - startedAt
+      latencyMs: Date.now() - startedAt,
+      mobile: payload?.data?.mobile || null
     };
   } catch {
     return { healthy: false, latencyMs: null };
@@ -131,6 +132,7 @@ class ComponentManager {
     const desktopRunning = Boolean(desktopControl);
     const hubRunning = hubHealth.healthy;
     const remoteStatus = await this.tailscale.getStatus({ hubHealthy: hubRunning });
+    const mobilePeers = (remoteStatus.tailscale?.peers || []).filter((peer) => peer.mobile);
     return {
       checkedAt: new Date().toISOString(),
       overall: desktopRunning && hubRunning ? "healthy" : "attention",
@@ -156,6 +158,14 @@ class ComponentManager {
         url: HUB_URL,
         dataDir: this.paths.hubData,
         status: hubRunning ? "running" : hubInstalled ? "stopped" : "missing"
+      },
+      mobile: {
+        available: hubRunning,
+        detailAvailable: Boolean(hubControl),
+        clients: hubControl?.mobileClients || [],
+        summary: hubHealth.mobile,
+        tailscalePeers: mobilePeers,
+        networkOnline: mobilePeers.some((peer) => peer.online)
       },
       ...remoteStatus
     };

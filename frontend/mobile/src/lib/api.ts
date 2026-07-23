@@ -70,6 +70,22 @@ export interface Journal {
   updatedAt: number;
 }
 
+export interface DeviceHeartbeatInput {
+  installationId: string;
+  name: string;
+  platform: string;
+  model: string;
+  osVersion: string;
+  appVersion: string;
+  protocolVersion: number;
+  syncStatus: "idle" | "syncing" | "online" | "error";
+  syncCursor: number;
+  sseConnected: boolean;
+  foreground: boolean;
+  latencyMs: number | null;
+  lastError?: string;
+}
+
 export interface ChatToolCall {
   id: string;
   type: "function";
@@ -211,6 +227,9 @@ export class AetherApi {
   }
   redeemPairingSession(id: string, secret: string) {
     return this.request<{ token: string; device: { id: string; name: string } }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/redeem`, { secret });
+  }
+  deviceHeartbeat(input: DeviceHeartbeatInput) {
+    return this.request<{ serverTime: number }>("POST", "/api/v1/devices/heartbeat", input);
   }
   profile() { return this.request<Record<string, unknown>>("GET", "/api/v1/profile"); }
   updateProfile(input: Record<string, unknown>) {

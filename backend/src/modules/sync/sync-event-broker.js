@@ -12,7 +12,7 @@ class SyncEventBroker {
     this.timer = null;
   }
 
-  subscribe({ request, response, userId, after = 0 }) {
+  subscribe({ request, response, userId, after = 0, clientId = "", onConnectionChange }) {
     response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     response.setHeader("Cache-Control", "no-cache, no-transform");
     response.setHeader("Connection", "keep-alive");
@@ -21,10 +21,13 @@ class SyncEventBroker {
     const subscriber = {
       response,
       userId,
+      clientId,
+      onConnectionChange,
       cursor: after,
       lastWriteAt: Date.now()
     };
     this.subscribers.add(subscriber);
+    subscriber.onConnectionChange?.(true, subscriber.cursor);
     this.write(subscriber, "ready", {
       cursor: after,
       latestSequence: this.repository.latestSequence(userId)
@@ -79,7 +82,9 @@ class SyncEventBroker {
   }
 
   remove(subscriber) {
+    if (!this.subscribers.has(subscriber)) return;
     this.subscribers.delete(subscriber);
+    subscriber.onConnectionChange?.(false, subscriber.cursor);
     if (this.subscribers.size === 0 && this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -91,6 +96,7 @@ class SyncEventBroker {
     this.timer = null;
     for (const subscriber of this.subscribers) {
       if (!subscriber.response.writableEnded) subscriber.response.end();
+      subscriber.onConnectionChange?.(false, subscriber.cursor);
     }
     this.subscribers.clear();
   }
