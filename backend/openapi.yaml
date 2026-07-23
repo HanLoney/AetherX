@@ -501,6 +501,40 @@ paths:
       summary: 查询 AI 伙伴画廊
       responses:
         "200": { description: 画面列表 }
+  /media/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 读取当前账号的图片资源
+      description: 返回原图或预览图。供原生图片组件直接加载时，可使用查询参数传递短期访问令牌。
+      security:
+        - bearerAuth: []
+        - mediaAccessToken: []
+      parameters:
+        - in: query
+          name: variant
+          schema: { type: string, enum: [original, preview], default: original }
+          description: 选择原图或经过压缩的预览图。
+        - in: query
+          name: access_token
+          schema: { type: string }
+          description: 无法设置 Authorization 请求头的图片组件可使用此令牌。
+      responses:
+        "200":
+          description: 图片二进制内容
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        "304": { description: 客户端缓存仍然有效 }
   /album/moments:
     get:
       summary: 查询纪念册时刻
@@ -619,3 +653,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque
+    mediaAccessToken:
+      type: apiKey
+      in: query
+      name: access_token

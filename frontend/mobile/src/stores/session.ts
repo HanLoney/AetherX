@@ -26,19 +26,25 @@ async function bootstrap() {
     const stored = await loadSession();
     if (stored?.token) {
       api = createApi(serverUrl.value, stored.token);
-      try {
-        const current = await api.session();
-        user.value = current.user;
-      } catch {
-        await clearSession();
-        api = createApi(serverUrl.value);
-      }
+      user.value = stored.user;
+      void validateStoredSession(api, stored);
     } else {
       api = createApi(serverUrl.value);
     }
     ready.value = true;
   })().finally(() => { bootstrapPromise = null; });
   return bootstrapPromise;
+}
+
+async function validateStoredSession(candidate: AetherApi, stored: { token: string; user: AuthUser }) {
+  try {
+    const current = await candidate.session();
+    if (api !== candidate) return;
+    user.value = current.user;
+    await saveSession({ token: stored.token, user: current.user });
+  } catch {
+    // 网络中断时继续使用本地缓存；真正的 401 会由 API 统一触发退出。
+  }
 }
 
 async function login(input: { serverUrl: string; username: string; password: string }) {
