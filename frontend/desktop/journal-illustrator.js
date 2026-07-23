@@ -3,7 +3,7 @@
   const PLACEHOLDER_PATTERN =
     /^[ \t]*(\[\[\s*(自拍|配图)\s*[:：]\s*([^\]\n]+?)\s*\]\])[ \t]*$/gm;
   const DEFAULT_MAX_IMAGES = 2;
-  const DEFAULT_SIZE = "1440x1920";
+  const DEFAULT_SIZE = "1440x2560";
   const STYLE_SUFFIX =
     "日系二次元动漫插画风格，柔和干净的赛璐璐上色，细腻线条与通透光影，温柔氛围，不要写实照片质感，不要文字、水印或多余边框。";
   const PERSONA_SUFFIX =

@@ -74,18 +74,30 @@
             </div>
           </article>
 
-          <article class="component-card future-card">
-            <div class="future-mark">＋</div>
-            <p class="eyebrow">COMING NEXT</p>
-            <h3>更多能力会住进这里</h3>
-            <p>模型服务、扩展组件和诊断工具都可以继续接入，而不用重新设计启动流程。</p>
+          <article class="component-card remote-card" data-component="remote">
+            <div class="card-topline"><div class="component-icon remote-icon">⌁</div><span class="status-pill" data-remote-pill>正在检查</span></div>
+            <div class="component-title"><div><p>只属于你的私人网络</p><h3>AetherX Anywhere</h3></div><span class="version" data-tailscale-version>—</span></div>
+            <p class="component-description">通过 Tailscale 安全连接手机与本机 Hub，不开放路由器端口，也不把 Hub 暴露到公网。</p>
+            <div class="remote-onboarding">
+              <div class="remote-qr"><img data-remote-qr alt="Tailscale 与 AetherX 连接二维码" /><span data-remote-qr-loading>准备二维码</span></div>
+              <div class="remote-guide"><strong data-remote-guide-title>准备远程连接</strong><p data-remote-guide>正在确认这台电脑的 Tailscale 状态。</p></div>
+            </div>
+            <div class="health-details remote-details">
+              <div><span>Tailscale</span><strong data-tailscale-state>等待检测</strong></div>
+              <div><span>远程 Hub</span><strong data-remote-health>尚未开启</strong></div>
+              <div><span>HTTPS 地址</span><strong data-remote-url>—</strong></div>
+            </div>
+            <div class="card-actions">
+              <button class="component-primary" data-remote-action>准备中</button>
+              <button class="icon-action" data-copy-remote title="复制远程地址" disabled>⧉</button>
+            </div>
           </article>
         </section>
       </section>
 
       <footer class="status-bar">
         <div class="activity"><span class="activity-dot"></span><span data-activity>启动器已就绪</span></div>
-        <span>所有检测仅在本机进行</span>
+        <span>Tailscale 远程入口仅对你的私人网络开放</span>
       </footer>
     </main>
     <div class="toast" data-toast role="status"></div>

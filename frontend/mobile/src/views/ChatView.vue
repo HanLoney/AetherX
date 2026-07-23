@@ -140,6 +140,7 @@ watch(() => data.conversationRevision.value, async () => {
     newConversation();
     return;
   }
+  if ((latest.updatedAt || 0) <= (current.value.updatedAt || 0)) return;
   await openConversation(latest).catch(() => undefined);
 });
 
@@ -171,7 +172,9 @@ async function send() {
     });
     current.value = result.conversation;
     displayMessages.value = result.displayMessages;
-    if (result.toolMutated) await data.refreshAll().catch(() => undefined);
+    conversationRefreshPending = false;
+    sending.value = false;
+    await scrollToBottom();
   } catch (cause) {
     resolveAllApprovals(false);
     displayMessages.value = displayMessages.value.filter((message) => message !== optimistic);
@@ -182,7 +185,9 @@ async function send() {
     if (conversationRefreshPending && current.value) {
       conversationRefreshPending = false;
       const latest = data.conversations.value.find((item) => item.id === current.value?.id);
-      if (latest) await openConversation(latest).catch(() => undefined);
+      if (latest && (latest.updatedAt || 0) > (current.value.updatedAt || 0)) {
+        await openConversation(latest).catch(() => undefined);
+      }
     }
     await scrollToBottom();
   }

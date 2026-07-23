@@ -104,7 +104,15 @@ const memoryKindLabels: Record<string, string> = {
         </li>
       </ul>
 
-      <img v-if="message.image?.source" class="activity-image" :src="message.image.source" alt="工具生成的画面" />
+      <img
+        v-if="message.image?.source"
+        class="activity-image"
+        :src="message.image.source"
+        alt="工具生成的画面"
+        loading="eager"
+        decoding="async"
+        fetchpriority="high"
+      />
 
       <div v-if="message.status === 'waiting'" class="approval-actions">
         <button type="button" class="deny" @click="emit('decide', false)">拒绝</button>

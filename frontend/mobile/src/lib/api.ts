@@ -45,6 +45,8 @@ export interface Conversation {
 export interface GalleryImage {
   id: string;
   source: string;
+  originalSource?: string;
+  mediaId?: string;
   description: string;
   origin: "chat" | "journal";
   refId: string;
@@ -104,6 +106,9 @@ export interface ChatMessage {
   };
   image?: {
     source?: string;
+    originalSource?: string;
+    mediaId?: string;
+    mimeType?: string;
     description?: string;
     selfie?: boolean;
   };
@@ -179,7 +184,7 @@ export class AetherApi {
         if (response.status === 401) this.onUnauthorized?.();
         throw error;
       }
-      return payload.data as T;
+      return hydrateMediaSources(payload.data, this.baseUrl, this.token) as T;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).name === "AbortError") {
@@ -254,6 +259,23 @@ export class AetherApi {
   syncChanges(after: number, limit = 200) {
     return this.request<{ changes: SyncChange[]; nextCursor: number; hasMore: boolean }>("GET", `/api/v1/sync/changes?after=${after}&limit=${limit}`);
   }
+}
+
+export function hydrateMediaSources(value: unknown, baseUrl: string, token: string): unknown {
+  if (Array.isArray(value)) {
+    value.forEach((item) => hydrateMediaSources(item, baseUrl, token));
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (typeof record.mediaId === "string" && record.mediaId) {
+    const mediaUrl = `${baseUrl}/api/v1/media/${encodeURIComponent(record.mediaId)}`;
+    const auth = token ? `&access_token=${encodeURIComponent(token)}` : "";
+    record.source = `${mediaUrl}?variant=preview${auth}`;
+    record.originalSource = `${mediaUrl}${token ? `?access_token=${encodeURIComponent(token)}` : ""}`;
+  }
+  Object.values(record).forEach((item) => hydrateMediaSources(item, baseUrl, token));
+  return value;
 }
 
 export interface SyncChange {

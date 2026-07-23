@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { getControlPipe, requestControl } = require("./control-channel");
+const { TailscaleManager } = require("./tailscale-manager");
 
 let diskFs = fs;
 try {
@@ -90,6 +91,7 @@ class ComponentManager {
     };
     this.desktopPipe = getControlPipe("desktop");
     this.hubPipe = getControlPipe("hub");
+    this.tailscale = options.tailscaleManager || new TailscaleManager();
   }
 
   emit(component, phase, message) {
@@ -128,6 +130,7 @@ class ComponentManager {
     const hubInstalled = Boolean(hubMarker.installed);
     const desktopRunning = Boolean(desktopControl);
     const hubRunning = hubHealth.healthy;
+    const remoteStatus = await this.tailscale.getStatus({ hubHealthy: hubRunning });
     return {
       checkedAt: new Date().toISOString(),
       overall: desktopRunning && hubRunning ? "healthy" : "attention",
@@ -153,7 +156,8 @@ class ComponentManager {
         url: HUB_URL,
         dataDir: this.paths.hubData,
         status: hubRunning ? "running" : hubInstalled ? "stopped" : "missing"
-      }
+      },
+      ...remoteStatus
     };
   }
 
@@ -213,6 +217,26 @@ class ComponentManager {
     const stopped = await waitFor(async () => (await probeHub()).healthy, false, 8000);
     if (!stopped) throw new Error("Hub 未能在预期时间内停止");
     this.emit("hub", "stopped", "Hub 已停止");
+    return this.getStatus();
+  }
+
+  async openTailscale() {
+    await this.tailscale.openClient();
+    return this.getStatus();
+  }
+
+  async enableRemoteAccess() {
+    if (!(await probeHub()).healthy) await this.startHub();
+    this.emit("remote", "starting", "正在开启 Tailscale 私有远程访问");
+    await this.tailscale.enable();
+    this.emit("remote", "running", "手机远程入口已经就绪");
+    return this.getStatus();
+  }
+
+  async disableRemoteAccess() {
+    this.emit("remote", "stopping", "正在关闭 Tailscale 私有远程访问");
+    await this.tailscale.disable();
+    this.emit("remote", "stopped", "远程入口已关闭，Hub 仍可在本机使用");
     return this.getStatus();
   }
 

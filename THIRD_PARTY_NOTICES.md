@@ -4,8 +4,15 @@ AetherX includes and distributes third-party open-source software. Those
 components remain licensed under their respective licenses; the AetherX MIT
 License does not replace or override them.
 
+## Hub runtime
+
+| Component | Version | License |
+| --- | ---: | --- |
+| jpeg-js | 0.4.4 | BSD-3-Clause |
+
 This inventory is generated from the runtime dependency entries in
-`frontend/desktop/package-lock.json` and `frontend/mobile/package-lock.json`.
+`backend/package-lock.json`, `frontend/desktop/package-lock.json`, and
+`frontend/mobile/package-lock.json`.
 The authoritative copyright notices and license texts are distributed with the
 corresponding packages and should be retained when redistributing binaries.
 

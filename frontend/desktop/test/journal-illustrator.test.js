@@ -27,6 +27,7 @@ test("only own-line placeholders count; inline quotes stay as text", async () =>
     }
   );
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].size, "1440x2560");
   assert.match(content, /只要在正文里写上 \[\[配图: 我想象的画面\]\] 就行/);
   assert.match(content, /!\[樱花树下\]/);
 });

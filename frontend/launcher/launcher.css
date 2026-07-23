@@ -80,12 +80,13 @@ button:disabled { opacity: .5; cursor: wait; transform: none !important; }
 .live-indicator span { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #68b39a; box-shadow: 0 0 0 4px rgba(104,179,154,.12); }
 .live-indicator b { font-weight: 650; color: #837b8b; }
 
-.component-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) 205px; gap: 15px; }
+.component-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(250px, .82fr); gap: 15px; }
 .component-card { min-height: 298px; padding: 21px; border: 1px solid rgba(136, 123, 153, .11); border-radius: 24px; background: rgba(255,255,255,.7); box-shadow: 0 14px 36px rgba(69, 60, 86, .07), inset 0 1px rgba(255,255,255,.8); }
 .card-topline, .component-title, .card-actions { display: flex; align-items: center; justify-content: space-between; }
 .component-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; font-size: 21px; font-weight: 300; }
 .hub-icon { color: #a26f99; background: linear-gradient(145deg, #f6e9f2, #eee8f5); }
 .desktop-icon { color: #668bae; background: linear-gradient(145deg, #eaf4fa, #e8edf7); }
+.remote-icon { color: #5f9d91; background: linear-gradient(145deg, #e8f6f2, #e7eef7); }
 .status-pill { padding: 7px 11px; border-radius: 999px; color: #978f9e; background: #f3f0f5; font-size: 9px; font-weight: 750; }
 .status-pill[data-state="running"] { color: #438f79; background: #e8f7f1; }
 .status-pill[data-state="stopped"] { color: #a07f56; background: #faf1e5; }
@@ -103,6 +104,21 @@ button:disabled { opacity: .5; cursor: wait; transform: none !important; }
 .component-primary[data-mode="stop"] { color: #9b6978; background: #faedf1; box-shadow: none; }
 .icon-action { width: 40px; height: 40px; border: 0; border-radius: 13px; color: #938b9c; background: #f3f0f5; cursor: pointer; }
 
+.remote-card { min-height: 348px; background: linear-gradient(155deg, rgba(255,255,255,.78), rgba(239,248,248,.66)); }
+.remote-onboarding { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: center; gap: 12px; margin: 12px 0; padding: 10px; border: 1px solid rgba(99, 160, 154, .12); border-radius: 17px; background: rgba(248,252,252,.72); }
+.remote-qr { position: relative; width: 78px; height: 78px; display: grid; place-items: center; overflow: hidden; border-radius: 14px; color: #aaa2af; background: white; box-shadow: 0 8px 20px rgba(75,94,106,.08); font-size: 8px; text-align: center; }
+.remote-qr img { width: 100%; height: 100%; display: none; object-fit: contain; }
+.remote-qr.ready img { display: block; }
+.remote-qr.ready span { display: none; }
+.remote-guide { min-width: 0; }
+.remote-guide strong { display: block; color: #615a69; font-size: 10px; line-height: 1.45; }
+.remote-guide p { margin: 5px 0 0; color: #9992a0; font-size: 8px; line-height: 1.55; }
+.remote-details { padding-block: 10px; }
+.remote-details strong { max-width: 155px; }
+.remote-details strong.healthy { color: #4b9c82; }
+.remote-details strong.warning { color: #b07b68; }
+.remote-card .card-actions { margin-top: 12px; }
+
 .future-card { display: flex; flex-direction: column; justify-content: center; text-align: center; border-style: dashed; background: rgba(255,255,255,.42); }
 .future-mark { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 17px; border-radius: 17px; color: #aaa0b2; background: rgba(242,237,246,.9); font-size: 25px; }
 .future-card h3 { margin-bottom: 9px; color: #766d7e; font-size: 14px; line-height: 1.5; }
@@ -119,5 +135,6 @@ button:disabled { opacity: .5; cursor: wait; transform: none !important; }
 
 @media (max-width: 980px) {
   .component-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .future-card { display: none; }
+  .remote-card { grid-column: 1 / -1; }
+  .remote-onboarding { grid-template-columns: 78px 1fr; }
 }
