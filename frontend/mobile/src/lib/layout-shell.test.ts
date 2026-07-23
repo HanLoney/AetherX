@@ -111,6 +111,10 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain('back-to="/home"');
     expect(chatSource).toContain("headerless");
     expect(chatSource).toContain('class="chat-floating-controls"');
+    expect(chatSource).toContain("data.refreshConversationPage(true)");
+    expect(chatSource).toContain("data.loadRemainingConversations()");
+    expect(chatSource).toContain("正在继续加载更早的对话");
+    expect(chatSource).not.toContain("data.refreshAll().catch");
     expect(chatSource).toContain("backdrop-filter:blur(26px) saturate(165%)");
     expect(chatSource).toContain("border-radius:22px 22px 22px 7px");
     expect(chatSource).toContain("border-radius:22px 22px 7px 22px");
@@ -177,6 +181,10 @@ describe("adaptive mobile shell", () => {
     expect(gallerySource).toContain("height:550px");
     expect(gallerySource).not.toContain("@media (min-width:560px)");
     expect(gallerySource).toContain('class="gallery-lightbox"');
+    expect(gallerySource).toContain('@load="warmOriginal(item)"');
+    expect(gallerySource).toContain("originalLoader.load(source, priority)");
+    expect(gallerySource).toContain("warmOriginal(image, true)");
+    expect(gallerySource).toContain(':src="lightboxSource(selected)"');
   });
 
   it("opens all journals as a page-turning notebook", () => {

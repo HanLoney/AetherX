@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import EmptyState from "../components/EmptyState.vue";
 import type { GalleryImage } from "../lib/api";
+import { GalleryOriginalLoader } from "../lib/gallery-original-loader";
 import { useDataStore } from "../stores/data";
 
 type GalleryFilter = "all" | "chat" | "journal";
@@ -18,6 +19,8 @@ const total = computed(() => data.galleryAlbumTotal.value);
 const pageIndex = ref(0);
 const pageSize = 4;
 const turnDirection = ref<"forward" | "backward">("forward");
+const readyOriginals = reactive(new Set<string>());
+const originalLoader = new GalleryOriginalLoader((source) => readyOriginals.add(source), 2);
 let touchStartX = 0;
 let touchStartY = 0;
 let lastSwipeAt = 0;
@@ -63,6 +66,21 @@ function originLabel(image: GalleryImage) {
   return image.origin === "journal" ? "手记" : "对话";
 }
 
+function originalSource(image: GalleryImage) {
+  const original = String(image.originalSource || "");
+  return original && original !== image.source ? original : "";
+}
+
+function warmOriginal(image: GalleryImage, priority = false) {
+  const source = originalSource(image);
+  if (source) void originalLoader.load(source, priority);
+}
+
+function lightboxSource(image: GalleryImage) {
+  const original = originalSource(image);
+  return original && readyOriginals.has(original) ? original : image.source || original;
+}
+
 function turnPage(offset: number) {
   const next = pageIndex.value + offset;
   if (next < 0 || next >= pageCount.value) return;
@@ -89,6 +107,7 @@ function handleTouchEnd(event: TouchEvent) {
 function openImage(image: GalleryImage) {
   if (Date.now() - lastSwipeAt < 350) return;
   selected.value = image;
+  warmOriginal(image, true);
 }
 
 async function syncGallery() {
@@ -150,7 +169,7 @@ watch(pageCount, (count) => {
                 @click="openImage(item)"
               >
                 <span class="gallery-photo">
-                  <img loading="lazy" :src="item.source" :alt="`${originLabel(item)}留影`" />
+                  <img loading="lazy" :src="item.source" :alt="`${originLabel(item)}留影`" @load="warmOriginal(item)" />
                   <i :class="`gallery-badge gallery-badge-${item.origin}`">{{ originLabel(item) }}</i>
                 </span>
                 <time :datetime="validDate(item.createdAt)?.toISOString()">{{ formatDate(item.createdAt) }}</time>
@@ -176,7 +195,7 @@ watch(pageCount, (count) => {
       <div v-if="selected" class="gallery-lightbox" role="dialog" aria-modal="true" @click.self="selected = null">
         <button type="button" aria-label="关闭大图" @click="selected = null"><X :size="20" /></button>
         <figure>
-          <img :src="selected.originalSource || selected.source" :alt="`${originLabel(selected)}留影`" />
+          <img :src="lightboxSource(selected)" :alt="`${originLabel(selected)}留影`" />
           <figcaption>{{ originLabel(selected) }}留影 · {{ formatDate(selected.createdAt) }}</figcaption>
         </figure>
       </div>
