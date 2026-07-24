@@ -11,47 +11,122 @@
     <div class="ambient ambient-right"></div>
     <main class="app-shell">
       <header class="titlebar">
-        <div class="brand"><span class="brand-glyph" aria-hidden="true">✦</span><span>AetherX</span><small>启动器</small></div>
+        <div class="brand">
+          <span class="brand-glyph" aria-hidden="true">
+            <img src="app-icon-rounded.png" alt="">
+          </span>
+          <span>AetherX</span><small>中枢</small>
+        </div>
         <div class="window-actions">
-          <button type="button" data-window="minimize" aria-label="最小化">—</button>
-          <button type="button" data-window="maximize" aria-label="最大化">□</button>
-          <button type="button" data-window="close" aria-label="关闭">×</button>
+          <button type="button" data-window="minimize" aria-label="最小化"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg></button>
+          <button type="button" data-window="maximize" aria-label="最大化"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg></button>
+          <button type="button" data-window="close" aria-label="关闭"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
         </div>
       </header>
 
       <section class="content">
         <section class="hero-card">
-          <div class="hero-copy">
-            <p class="eyebrow">AETHERX CONTROL CENTER</p>
-            <h1>让她安稳地运行在这里</h1>
-            <p class="hero-description">部署、启动与照看所有核心组件。启动器会持续确认桌面端和 Hub 是否真正健康。</p>
+          <aside class="system-control-panel">
+            <div class="control-panel-head">
+              <span class="control-panel-label"><i></i> SYSTEM CONTROL</span>
+              <span class="control-panel-code">AETHERX / 01</span>
+            </div>
+            <div class="control-panel-state">
+              <span>当前状态</span>
+              <strong data-overall-label>正在检查链路</strong>
+              <small data-monitor-state>SCANNING</small>
+            </div>
+            <div class="control-panel-trace" aria-hidden="true"><i></i><i></i><i></i></div>
             <div class="hero-actions">
               <button class="primary-action" data-action="deploy-all">
-                <span class="button-icon">✦</span><span data-primary-label>一键安装并启动</span>
+                <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 18.5h14"/></svg><span data-primary-label>一键安装并启动</span>
               </button>
               <button class="soft-action" data-action="stop-all">全部停止</button>
             </div>
-          </div>
-          <div class="health-orbit" data-overall="attention">
-            <div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div>
-            <div class="health-core"><span class="health-spark">✦</span><strong data-overall-label>正在检查</strong><small>系统健康状态</small></div>
+          </aside>
+          <div class="system-monitor health-orbit" data-overall="attention">
+            <div class="monitor-head">
+              <span class="monitor-live"><i></i> LIVE RUNTIME MATRIX</span>
+              <span class="monitor-channel">NODE TELEMETRY</span>
+            </div>
+            <div class="runtime-topology">
+              <article class="runtime-node" data-monitor-node="hub" data-state="checking">
+                <header><span><i></i> HUB CORE</span><strong data-monitor-hub-state>检测中</strong></header>
+                <div class="node-pulse" aria-hidden="true"><svg viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M0 11h22l5-3 5 3h14l5-9 8 17 8-17 8 9h45"/></svg></div>
+                <dl>
+                  <div><dt>部署</dt><dd data-monitor-hub-install>等待检测</dd></div>
+                  <div><dt>接口</dt><dd data-monitor-hub-health>等待检测</dd></div>
+                  <div><dt>控制</dt><dd data-monitor-hub-control>等待检测</dd></div>
+                  <div><dt>端口 / PID</dt><dd data-monitor-hub-process>—</dd></div>
+                </dl>
+              </article>
+              <div class="runtime-link" data-monitor-link="desktop" data-state="idle"><span></span><small data-monitor-desktop-link>LOCAL IPC</small></div>
+              <article class="runtime-node" data-monitor-node="desktop" data-state="checking">
+                <header><span><i></i> DESKTOP</span><strong data-monitor-desktop-state>检测中</strong></header>
+                <div class="node-pulse" aria-hidden="true"><svg viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M0 11h22l5-3 5 3h14l5-9 8 17 8-17 8 9h45"/></svg></div>
+                <dl>
+                  <div><dt>部署</dt><dd data-monitor-desktop-install>等待检测</dd></div>
+                  <div><dt>进程</dt><dd data-monitor-desktop-process>等待检测</dd></div>
+                  <div><dt>控制</dt><dd data-monitor-desktop-control>等待检测</dd></div>
+                  <div><dt>Hub 联动</dt><dd data-monitor-desktop-hub>—</dd></div>
+                </dl>
+              </article>
+              <div class="runtime-link" data-monitor-link="remote" data-state="idle"><span></span><small data-monitor-remote-link>PRIVATE TLS</small></div>
+              <article class="runtime-node" data-monitor-node="remote" data-state="checking">
+                <header><span><i></i> ANYWHERE</span><strong data-monitor-remote-state>检测中</strong></header>
+                <div class="node-pulse" aria-hidden="true"><svg viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M0 11h22l5-3 5 3h14l5-9 8 17 8-17 8 9h45"/></svg></div>
+                <dl>
+                  <div><dt>Tailscale</dt><dd data-monitor-tailscale>等待检测</dd></div>
+                  <div><dt>远程入口</dt><dd data-monitor-remote-health-state>等待检测</dd></div>
+                  <div><dt>网络</dt><dd data-monitor-remote-network>—</dd></div>
+                  <div><dt>移动端</dt><dd data-monitor-mobile-state>—</dd></div>
+                </dl>
+              </article>
+            </div>
+            <div class="monitor-diagnostic">
+              <span><i></i><b data-monitor-diagnostic>正在收集组件运行状态</b></span>
+              <small data-monitor-mobile-detail>等待移动端健康数据</small>
+            </div>
           </div>
         </section>
 
-        <div class="section-heading">
-          <div><p class="eyebrow">CORE COMPONENTS</p><h2>核心组件</h2></div>
-          <div class="live-indicator"><span></span>实时监控中 · <b data-last-check>准备连接</b></div>
+        <div class="section-heading network-heading">
+          <h2>连接地图</h2>
+          <div class="live-indicator"><span></span>实时拓扑 · <b data-last-check>准备连接</b></div>
         </div>
 
-        <section class="component-grid">
-          <article class="component-card" data-component="hub">
-            <div class="card-topline"><div class="component-icon hub-icon">⌁</div><span class="status-pill" data-status-pill>未安装</span></div>
-            <div class="component-title"><div><p>数据与智能中枢</p><h3>AetherX Hub</h3></div><span class="version" data-version>—</span></div>
-            <p class="component-description">保存账号、对话、记忆与模型配置，为桌面端和移动端提供统一服务。</p>
+        <section class="network-map" data-network-map>
+          <div class="network-grid" aria-hidden="true"></div>
+          <div class="network-coordinates" aria-hidden="true"><span>AX-NET / LOCAL</span><span>ROUTE 4318</span></div>
+          <svg class="network-map-links" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+            <g data-map-link="desktop" data-state="idle">
+              <path class="map-link-glow" d="M500 280 C405 280 315 265 155 265" />
+              <path class="map-link-signal" d="M500 280 C405 280 315 265 155 265" />
+              <circle class="map-link-terminal" cx="155" cy="265" r="4" />
+            </g>
+            <g data-map-link="remote" data-state="idle">
+              <path class="map-link-glow" d="M500 280 C620 270 690 170 840 155" />
+              <path class="map-link-signal" d="M500 280 C620 270 690 170 840 155" />
+              <circle class="map-link-terminal" cx="840" cy="155" r="4" />
+            </g>
+            <g data-map-link="mobile" data-state="idle">
+              <path class="map-link-glow" d="M500 280 C625 300 690 385 840 400" />
+              <path class="map-link-signal" d="M500 280 C625 300 690 385 840 400" />
+              <circle class="map-link-terminal" cx="840" cy="400" r="4" />
+            </g>
+          </svg>
+
+          <article class="map-node map-node-hub" data-component="hub">
+            <div class="map-node-orb hub-orb" aria-hidden="true">
+              <i class="orb-ring ring-a"></i><i class="orb-ring ring-b"></i><i class="orb-scan"></i>
+              <div class="component-icon hub-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="7" r="1.6"/><circle cx="19" cy="7" r="1.6"/><circle cx="12" cy="20" r="1.6"/><path d="m7 8.4 2.5 1.8m7.5-1.8-2.5 1.8M12 15v3.3"/></svg></div>
+            </div>
+            <div class="map-node-title"><span>PRIMARY CORE</span><h3>AetherX Hub</h3></div>
+            <div class="map-node-meta"><span class="status-pill" data-status-pill>未安装</span><span class="version" data-version>—</span></div>
             <div class="health-details">
-              <div><span>接口健康</span><strong data-health>等待检测</strong></div>
-              <div><span>响应延迟</span><strong data-latency>—</strong></div>
-              <div><span>本地地址</span><strong>127.0.0.1:4318</strong></div>
+              <div><span>接口</span><strong data-health>等待检测</strong></div>
+              <div><span>延迟</span><strong data-latency>—</strong></div>
+              <div><span>地址</span><strong>127.0.0.1:4318</strong></div>
             </div>
             <div class="install-progress" data-install-progress hidden>
               <div class="install-progress-copy"><span data-progress-label>准备安装</span><strong data-progress-value>0%</strong></div>
@@ -59,18 +134,18 @@
             </div>
             <div class="card-actions">
               <button class="component-primary" data-component-action="hub">安装 Hub</button>
-              <button class="icon-action" data-folder="hub-data" title="打开数据目录">⌕</button>
+              <button class="icon-action" data-folder="hub-data" title="打开数据目录" aria-label="打开 Hub 数据目录"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2-2h3.5a2 2 0 0 1 2 2v1.2M4 8.5h15.3a1.5 1.5 0 0 1 1.45 1.88l-1.8 7A2.2 2.2 0 0 1 16.82 19H5.18a2.2 2.2 0 0 1-2.13-1.65l-1.3-5A3.1 3.1 0 0 1 4 8.5Z"/></svg></button>
             </div>
           </article>
 
-          <article class="component-card" data-component="desktop">
-            <div class="card-topline"><div class="component-icon desktop-icon">◫</div><span class="status-pill" data-status-pill>未安装</span></div>
-            <div class="component-title"><div><p>你的日常陪伴空间</p><h3>AetherX 桌面端</h3></div><span class="version" data-version>—</span></div>
-            <p class="component-description">承载聊天、记忆、手记与相册，并与本机 Hub 保持实时协作。</p>
+          <article class="map-node map-node-desktop" data-component="desktop">
+            <div class="map-node-orb desktop-orb" aria-hidden="true"><i class="orb-ring ring-a"></i><i class="orb-scan"></i><div class="component-icon desktop-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="12" rx="2.5"/><path d="M9 20h6m-3-3.5V20"/><path class="icon-detail" d="M7.5 8.5h4m-4 3h7"/></svg></div></div>
+            <div class="map-node-title"><span>LOCAL CLIENT</span><h3>桌面端</h3></div>
+            <div class="map-node-meta"><span class="status-pill" data-status-pill>未安装</span><span class="version" data-version>—</span></div>
             <div class="health-details">
-              <div><span>进程状态</span><strong data-health>等待检测</strong></div>
-              <div><span>控制通道</span><strong data-control>—</strong></div>
-              <div><span>Hub 联动</span><strong data-link>—</strong></div>
+              <div><span>进程</span><strong data-health>等待检测</strong></div>
+              <div><span>控制</span><strong data-control>—</strong></div>
+              <div><span>Hub</span><strong data-link>—</strong></div>
             </div>
             <div class="install-progress" data-install-progress hidden>
               <div class="install-progress-copy"><span data-progress-label>准备安装</span><strong data-progress-value>0%</strong></div>
@@ -78,40 +153,43 @@
             </div>
             <div class="card-actions">
               <button class="component-primary" data-component-action="desktop">安装桌面端</button>
-              <button class="icon-action" data-folder="desktop" title="打开安装目录">⌕</button>
+              <button class="icon-action" data-folder="desktop" title="打开安装目录" aria-label="打开桌面端安装目录"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2-2h3.5a2 2 0 0 1 2 2v1.2M4 8.5h15.3a1.5 1.5 0 0 1 1.45 1.88l-1.8 7A2.2 2.2 0 0 1 16.82 19H5.18a2.2 2.2 0 0 1-2.13-1.65l-1.3-5A3.1 3.1 0 0 1 4 8.5Z"/></svg></button>
             </div>
           </article>
 
-          <article class="component-card remote-card" data-component="remote">
-            <div class="card-topline"><div class="component-icon remote-icon">⌁</div><span class="status-pill" data-remote-pill>正在检查</span></div>
-            <div class="component-title"><div><p>只属于你的私人网络</p><h3>AetherX Anywhere</h3></div><span class="version" data-tailscale-version>—</span></div>
-            <p class="component-description">通过 Tailscale 安全连接手机与本机 Hub，不开放路由器端口，也不把 Hub 暴露到公网。</p>
+          <div class="map-right-rail">
+          <article class="map-node map-node-remote" data-component="remote">
+            <div class="map-node-orb remote-orb" aria-hidden="true"><i class="orb-ring ring-a"></i><i class="orb-scan"></i><div class="component-icon remote-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="7" r="2.4"/><circle cx="18" cy="17" r="2.4"/><path d="m8.2 11 7.5-3m-7.5 5 7.5 3"/></svg></div></div>
+            <div class="map-node-title"><span>PRIVATE GATEWAY</span><h3>Anywhere</h3></div>
+            <div class="map-node-meta"><span class="status-pill" data-remote-pill>正在检查</span><span class="version" data-tailscale-version>—</span></div>
             <div class="remote-onboarding">
               <div class="remote-qr"><img data-remote-qr alt="Tailscale 与 AetherX 连接二维码" /><span data-remote-qr-loading>准备二维码</span></div>
-              <div class="remote-guide"><strong data-remote-guide-title>准备远程连接</strong><p data-remote-guide>正在确认这台电脑的 Tailscale 状态。</p></div>
+              <div class="remote-guide"><strong data-remote-guide-title>准备远程连接</strong><p data-remote-guide>正在确认 Tailscale 状态。</p></div>
             </div>
             <div class="health-details remote-details">
               <div><span>Tailscale</span><strong data-tailscale-state>等待检测</strong></div>
               <div><span>远程 Hub</span><strong data-remote-health>尚未开启</strong></div>
-              <div><span>HTTPS 地址</span><strong data-remote-url>—</strong></div>
+              <div><span>HTTPS</span><strong data-remote-url>—</strong></div>
             </div>
-            <section class="mobile-monitor" data-mobile-monitor>
-              <header><span>移动端健康</span><strong data-mobile-summary>等待心跳</strong></header>
-              <div class="mobile-client-list" data-mobile-clients>
-                <p class="mobile-empty">手机连接后会在这里显示实时状态。</p>
-              </div>
-            </section>
             <div class="card-actions">
               <button class="component-primary" data-remote-action>准备中</button>
-              <button class="icon-action" data-copy-remote title="复制远程地址" disabled>⧉</button>
+              <button class="icon-action" data-copy-remote title="复制远程地址" aria-label="复制远程地址" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
             </div>
           </article>
+
+          <section class="mobile-monitor map-mobile-sector" data-mobile-monitor>
+            <header><span>MOBILE NODES</span><strong data-mobile-summary>等待心跳</strong></header>
+            <div class="mobile-client-list" data-mobile-clients>
+              <p class="mobile-empty">移动端接入后会成为独立节点。</p>
+            </div>
+          </section>
+          </div>
         </section>
       </section>
 
       <footer class="status-bar">
-        <div class="activity"><span class="activity-dot"></span><span data-activity>启动器已就绪</span></div>
-        <span>Tailscale 远程入口仅对你的私人网络开放</span>
+        <div class="activity"><span class="activity-dot"></span><span data-activity>控制中心已就绪</span></div>
+        <span>PRIVATE NETWORK · Tailscale 远程入口仅对你的私有网络开放</span>
       </footer>
     </main>
     <div class="toast" data-toast role="status"></div>
