@@ -9,7 +9,10 @@ const {
   dialog,
   clipboard
 } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { XuanApiClient } = require("./api-client");
 const { AuthStore } = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
@@ -48,6 +51,13 @@ const desktopSync = new DesktopSyncCoordinator({
   api,
   onChanges: async (changes) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (changes.some((change) => change.entityType === "archive_restore" && change.operation === "reset")) {
+      const session = await api.getSession();
+      currentUser = session.user;
+      authStore?.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+      mainWindow.webContents.reload();
+      return;
+    }
     mainWindow.webContents.send("sync:received", changes);
   }
 });
@@ -182,6 +192,51 @@ function registerIpcHandlers() {
   ipcMain.handle("sync:changes", (_event, filters) =>
     api.listSyncChanges(filters)
   );
+  ipcMain.handle("archive:export", async (event, input = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const selected = await dialog.showSaveDialog(win, {
+      title: "导出 AetherX 完整存档",
+      defaultPath: path.join(app.getPath("downloads"), "AetherX-完整存档.aetherx"),
+      filters: [{ name: "AetherX 完整存档", extensions: ["aetherx"] }]
+    });
+    if (selected.canceled || !selected.filePath) return { canceled: true };
+    const exported = await api.createArchiveExport(String(input.password || ""));
+    const response = await fetch(api.archiveDownloadUrl(exported.downloadPath));
+    if (!response.ok || !response.body) throw new Error("存档下载失败，请重新导出。");
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(selected.filePath, { flags: "w" }));
+    return { canceled: false, filePath: selected.filePath, summary: exported.summary };
+  });
+  ipcMain.handle("archive:restore", async (event, input = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const selected = await dialog.showOpenDialog(win, {
+      title: "选择 AetherX 完整存档",
+      properties: ["openFile"],
+      filters: [{ name: "AetherX 完整存档", extensions: ["aetherx"] }]
+    });
+    if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
+    const confirmation = await dialog.showMessageBox(win, {
+      type: "warning",
+      title: "确认完整恢复",
+      message: "这会整套替换当前账号的 AI 数据",
+      detail: "聊天、记忆、成长、手记、相册、设置和媒体都会恢复为存档内容。登录密码、当前登录状态和已配对设备会保留；Hub 会先自动备份现有数据。",
+      buttons: ["取消", "完整恢复"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    });
+    if (confirmation.response !== 1) return { canceled: true };
+    const result = await api.restoreArchive(
+      Readable.toWeb(fs.createReadStream(selected.filePaths[0])),
+      String(input.password || "")
+    );
+    const session = await api.getSession();
+    currentUser = session.user;
+    authStore.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+    desktopSync.stop();
+    await startAuthenticatedSync();
+    openPage(event.sender, "home.html");
+    return { canceled: false, ...result };
+  });
 
   ipcMain.handle("ai:config:get", () => api.getAiConfig());
   ipcMain.handle("ai:config:save", (_event, input) =>

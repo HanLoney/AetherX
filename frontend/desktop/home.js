@@ -63,6 +63,10 @@ const elements = {
   interfaceSettingsMask: document.querySelector("#interfaceSettingsMask"),
   desktopFontScaleRange: document.querySelector("#desktopFontScaleRange"),
   desktopFontScaleValue: document.querySelector("#desktopFontScaleValue"),
+  archivePasswordInput: document.querySelector("#archivePasswordInput"),
+  exportArchiveBtn: document.querySelector("#exportArchiveBtn"),
+  restoreArchiveBtn: document.querySelector("#restoreArchiveBtn"),
+  archiveOperationResult: document.querySelector("#archiveOperationResult"),
   settingsMask: document.querySelector("#settingsMask"),
   providerGrid: document.querySelector("#providerGrid"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
@@ -644,11 +648,69 @@ function applyDesktopFontScale(value) {
 
 function openInterfaceSettings() {
   syncFontScaleControls();
+  elements.archiveOperationResult.className = "archive-operation-result hidden";
   elements.interfaceSettingsMask.classList.remove("hidden");
 }
 
 function closeInterfaceSettings() {
+  if (elements.archivePasswordInput.disabled) return;
+  elements.archivePasswordInput.value = "";
+  elements.archiveOperationResult.className = "archive-operation-result hidden";
   elements.interfaceSettingsMask.classList.add("hidden");
+}
+
+function setArchiveBusy(busy) {
+  elements.exportArchiveBtn.disabled = busy;
+  elements.restoreArchiveBtn.disabled = busy;
+  elements.archivePasswordInput.disabled = busy;
+}
+
+function showArchiveResult(message, error = false) {
+  elements.archiveOperationResult.textContent = message;
+  elements.archiveOperationResult.className = `archive-operation-result${error ? " error" : ""}`;
+}
+
+function requireArchivePassword() {
+  const password = elements.archivePasswordInput.value;
+  if (password.length < 8) {
+    showArchiveResult("存档密码至少需要 8 个字符。", true);
+    elements.archivePasswordInput.focus();
+    return "";
+  }
+  return password;
+}
+
+async function exportArchive() {
+  const password = requireArchivePassword();
+  if (!password) return;
+  setArchiveBusy(true);
+  showArchiveResult("正在加密并整理完整存档，请稍候……");
+  try {
+    const result = await window.desktop.exportArchive({ password });
+    if (result.canceled) showArchiveResult("已取消导出。", true);
+    else showArchiveResult(`完整存档已保存到：${result.filePath}`);
+  } catch (error) {
+    showArchiveResult(error.message || "完整存档导出失败。", true);
+  } finally {
+    setArchiveBusy(false);
+  }
+}
+
+async function restoreArchive() {
+  const password = requireArchivePassword();
+  if (!password) return;
+  setArchiveBusy(true);
+  showArchiveResult("正在检查存档，确认后将执行完整恢复……");
+  try {
+    const result = await window.desktop.restoreArchive({ password });
+    if (result.canceled) {
+      showArchiveResult("已取消完整恢复。", true);
+      setArchiveBusy(false);
+    }
+  } catch (error) {
+    showArchiveResult(error.message || "完整恢复失败，现有数据没有变化。", true);
+    setArchiveBusy(false);
+  }
 }
 
 function createMessage(role, content, error = false) {
@@ -1687,6 +1749,8 @@ elements.interfaceSettingsMask.addEventListener("click", (event) => {
 });
 document.querySelector("#closeInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
 document.querySelector("#doneInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
+elements.exportArchiveBtn.addEventListener("click", exportArchive);
+elements.restoreArchiveBtn.addEventListener("click", restoreArchive);
 document.querySelector("#resetDesktopFontScaleBtn").addEventListener("click", () => {
   applyDesktopFontScale(window.AetherInterfaceSettings.defaultFontScale);
 });

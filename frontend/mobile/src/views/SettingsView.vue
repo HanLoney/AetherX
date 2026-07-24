@@ -4,6 +4,8 @@ import {
   Check,
   ChevronRight,
   Cloud,
+  Archive,
+  Download,
   Link2,
   LogOut,
   Pencil,
@@ -14,10 +16,12 @@ import {
   ShieldCheck,
   Sparkles,
   Type,
+  Upload,
   X,
   ZoomIn,
   ZoomOut
 } from "@lucide/vue";
+import { Browser } from "@capacitor/browser";
 import {
   CapacitorBarcodeScanner,
   CapacitorBarcodeScannerAndroidScanningLibrary,
@@ -47,6 +51,13 @@ const connectionNotice = ref("");
 const scanning = ref(false);
 const reconnecting = ref(false);
 const interfaceOpen = ref(false);
+const archiveOpen = ref(false);
+const archivePassword = ref("");
+const archiveBusy = ref(false);
+const archiveNotice = ref("");
+const archiveError = ref("");
+const archiveInput = ref<HTMLInputElement | null>(null);
+const archiveFile = shallowRef<File | null>(null);
 const fontScaleError = ref("");
 const editing = ref(false);
 const saving = ref(false);
@@ -103,6 +114,83 @@ function resetFontScale() {
 function closeInterfaceSettings() {
   void persistFontScale();
   interfaceOpen.value = false;
+}
+
+function openArchiveSettings() {
+  archiveNotice.value = "";
+  archiveError.value = "";
+  archiveFile.value = null;
+  archiveOpen.value = true;
+}
+
+function closeArchiveSettings() {
+  if (archiveBusy.value) return;
+  archiveOpen.value = false;
+  archivePassword.value = "";
+  archiveFile.value = null;
+  archiveNotice.value = "";
+  archiveError.value = "";
+}
+
+function validateArchivePassword() {
+  if (archivePassword.value.length >= 8) return true;
+  archiveError.value = "存档密码至少需要 8 个字符。";
+  return false;
+}
+
+async function exportFullArchive() {
+  if (!validateArchivePassword()) return;
+  archiveBusy.value = true;
+  archiveError.value = "";
+  archiveNotice.value = "正在加密并整理完整存档……";
+  try {
+    const api = session.requireApi();
+    const result = await api.createArchiveExport(archivePassword.value);
+    await Browser.open({ url: api.archiveDownloadUrl(result.downloadPath) });
+    archiveNotice.value = "已交给系统浏览器下载，请妥善保存存档和密码。";
+  } catch (error) {
+    archiveError.value = (error as Error).message || "完整存档导出失败。";
+    archiveNotice.value = "";
+  } finally {
+    archiveBusy.value = false;
+  }
+}
+
+function chooseArchiveFile() {
+  if (!archiveBusy.value) archiveInput.value?.click();
+}
+
+function handleArchiveFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0] || null;
+  archiveFile.value = file;
+  archiveError.value = file && !file.name.toLowerCase().endsWith(".aetherx")
+    ? "请选择扩展名为 .aetherx 的完整存档。"
+    : "";
+  archiveNotice.value = "";
+  input.value = "";
+}
+
+async function restoreFullArchive() {
+  if (!validateArchivePassword()) return;
+  if (!archiveFile.value || !archiveFile.value.name.toLowerCase().endsWith(".aetherx")) {
+    archiveError.value = "请先选择要恢复的 .aetherx 存档。";
+    return;
+  }
+  archiveBusy.value = true;
+  archiveError.value = "";
+  archiveNotice.value = "正在校验并完整恢复，期间请不要关闭应用……";
+  try {
+    const result = await session.requireApi().restoreArchive(archiveFile.value, archivePassword.value);
+    await data.resetAfterArchiveRestore(result.resetCursor);
+    archiveFile.value = null;
+    archiveNotice.value = "完整恢复成功，聊天、记忆与媒体已经切换到存档状态。";
+  } catch (error) {
+    archiveError.value = (error as Error).message || "完整恢复失败，现有数据没有变化。";
+    archiveNotice.value = "";
+  } finally {
+    archiveBusy.value = false;
+  }
 }
 
 function openEditor() {
@@ -439,6 +527,13 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       <ChevronRight :size="17" />
     </button>
 
+    <button class="archive-settings-entry" type="button" @click="openArchiveSettings">
+      <i><Archive :size="18" /></i>
+      <span><strong>完整存档</strong><small>导出全部数据，或把当前账号完整恢复到存档状态</small></span>
+      <b>仅完整恢复</b>
+      <ChevronRight :size="17" />
+    </button>
+
     <button class="refresh-button" type="button" :disabled="refreshing" @click="refresh">
       <RefreshCw :size="17" :class="{spin:refreshing}"/>{{ refreshing ? '正在重新同步…' : '重新同步全部内容' }}
     </button>
@@ -542,6 +637,48 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </Transition>
 
       <Transition name="fade">
+        <div v-if="archiveOpen" class="sheet-backdrop" @click.self="closeArchiveSettings">
+        <section class="archive-settings-sheet" role="dialog" aria-modal="true" aria-label="完整存档">
+          <div class="sheet-handle" />
+          <header>
+            <div><span>FULL ARCHIVE</span><h2>完整存档</h2></div>
+            <button type="button" aria-label="关闭完整存档" :disabled="archiveBusy" @click="closeArchiveSettings"><X :size="18" /></button>
+          </header>
+
+          <div class="archive-hero">
+            <i><Archive :size="24" /></i>
+            <div><strong>把小玄完整地带回来</strong><span>聊天、记忆、成长、手记、相册、AI 设置与原始媒体会作为一个整体保存和恢复。</span></div>
+          </div>
+
+          <label class="archive-password">
+            <span>存档密码</span>
+            <input v-model="archivePassword" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" :disabled="archiveBusy" />
+            <small>密码只用于加密存档。忘记后无法恢复，请单独妥善保存。</small>
+          </label>
+
+          <button class="archive-export-button" type="button" :disabled="archiveBusy" @click="exportFullArchive">
+            <Download :size="18" /><span><strong>导出完整存档</strong><small>生成加密的 .aetherx 文件并交给系统下载</small></span>
+          </button>
+
+          <div class="archive-restore-card">
+            <div><strong>完整恢复</strong><span>不会合并；当前账号的 AI 数据会整套替换为存档内容。</span></div>
+            <input ref="archiveInput" class="archive-file-input" type="file" accept=".aetherx,application/vnd.aetherx.archive" @change="handleArchiveFile" />
+            <button class="archive-file-button" type="button" :disabled="archiveBusy" @click="chooseArchiveFile">
+              <Upload :size="17" />{{ archiveFile?.name || '选择 .aetherx 存档' }}
+            </button>
+            <p>登录密码、当前登录状态与已配对设备会保留；恢复前 Hub 会自动备份现有数据。</p>
+            <button class="archive-restore-button" type="button" :disabled="archiveBusy || !archiveFile" @click="restoreFullArchive">
+              {{ archiveBusy ? '正在处理存档……' : '确认完整恢复' }}
+            </button>
+          </div>
+
+          <p v-if="archiveNotice" class="archive-notice"><Check :size="13" />{{ archiveNotice }}</p>
+          <p v-if="archiveError" class="archive-error">{{ archiveError }}</p>
+        </section>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
         <div v-if="cropOpen" class="crop-backdrop" @click.self="cancelCrop">
         <section class="avatar-cropper" role="dialog" aria-modal="true" aria-label="裁剪头像">
           <header>
@@ -586,9 +723,11 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .section-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:25px 4px 11px}.section-heading>div{display:grid;gap:3px}.section-heading span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.section-heading h2{margin:0;color:#514d5d;font-size: calc(16px * var(--font-scale, 1))}.section-heading>svg{color:#7ca48f}
 .settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}
 .interface-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 19px 8px;color:#70697d;background:linear-gradient(140deg,rgba(255,255,255,.67),rgba(246,248,252,.5));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.interface-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.13),rgba(var(--blue-rgb),.12))}.interface-settings-entry>span{min-width:0;display:grid;gap:4px}.interface-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.interface-settings-entry small{color:#9a94a3;font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>b{padding:4px 7px;border-radius:999px;color:#7187a2;background:rgba(var(--blue-rgb),.1);font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>svg{color:#aaa3b0}
+.archive-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:9px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 8px 19px;color:#70697d;background:linear-gradient(140deg,rgba(247,250,255,.72),rgba(255,247,252,.56));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.archive-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#718fac;background:linear-gradient(145deg,rgba(var(--blue-rgb),.16),rgba(var(--pink-rgb),.1))}.archive-settings-entry>span{min-width:0;display:grid;gap:4px}.archive-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.archive-settings-entry small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#9a94a3;font-size:calc(7px * var(--font-scale, 1));line-height:1.4}.archive-settings-entry>b{padding:4px 7px;border-radius:999px;color:#89768d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));white-space:nowrap}.archive-settings-entry>svg{color:#aaa3b0}
 .refresh-button,.logout-button{width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:15px;font-size: calc(9px * var(--font-scale, 1));font-weight:700}.refresh-button{margin-top:17px;border:1px solid rgba(255,255,255,.82);color:#687897;background:rgba(255,255,255,.64)}.logout-button{margin-top:8px;border:0;color:#ad6175;background:rgba(217,118,143,.085)}.refresh-button:disabled{opacity:.55}.settings-note{margin:11px 22px 0;color:#a19baa;font-size: calc(7px * var(--font-scale, 1));line-height:1.6;text-align:center}
 .sheet-backdrop{position:fixed;z-index:50;inset:0;display:flex;align-items:flex-end;background:rgba(42,39,59,.23);backdrop-filter:blur(6px)}.profile-editor{width:100%;max-height:88dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:rgba(251,250,253,.97);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.profile-editor header{display:flex;align-items:center;justify-content:space-between}.profile-editor header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.profile-editor h2{margin:3px 0 0;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.profile-editor header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.editor-fields{display:grid;gap:12px;margin-top:18px}.editor-fields label{display:grid;gap:6px}.editor-fields label>span{color:#70697d;font-size: calc(9px * var(--font-scale, 1));font-weight:700}.editor-fields input,.editor-fields textarea{width:100%;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size: calc(11px * var(--font-scale, 1))}.editor-fields input{height:44px;padding:0 12px}.editor-fields textarea{min-height:84px;padding:11px 12px;line-height:1.55;resize:none}.editor-fields input:focus,.editor-fields textarea:focus{border-color:rgba(var(--pink-rgb),.42);box-shadow:0 0 0 4px rgba(var(--pink-rgb),.07)}.editor-error{margin:11px 0 0;color:#aa5970;font-size: calc(8px * var(--font-scale, 1));text-align:center}.save-profile{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:16px;border:0;border-radius:15px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size: calc(10px * var(--font-scale, 1));font-weight:700}.save-profile:disabled{opacity:.55}
 .connection-sheet{width:100%;max-height:88dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 95% 5%,rgba(var(--blue-rgb),.15),transparent 31%),radial-gradient(circle at 2% 85%,rgba(var(--pink-rgb),.12),transparent 34%),rgba(251,250,253,.98);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.connection-sheet header{display:flex;align-items:center;justify-content:space-between}.connection-sheet header span{color:#8198b1;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.connection-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.connection-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.connection-intro{margin:14px 2px 0;color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.65}.connection-tabs{display:grid;grid-template-columns:1fr 1fr;margin-top:15px;padding:4px;border-radius:14px;background:rgba(112,104,136,.07)}.connection-tabs button{height:38px;border:0;border-radius:11px;color:#918a9a;background:transparent;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.connection-tabs button.active{color:#5f5a6d;background:rgba(255,255,255,.92);box-shadow:0 7px 18px rgba(86,79,112,.1)}.connection-field{display:grid;gap:7px;margin-top:15px}.connection-field>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.connection-field>div{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:15px;background:rgba(255,255,255,.75)}.connection-field>div:focus-within{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.connection-field svg{flex:0 0 auto;color:#8b9db2}.connection-field input{min-width:0;flex:1;padding:0;border:0;outline:0;background:transparent;font-size:calc(10px * var(--font-scale, 1))}.connection-field textarea{width:100%;min-height:92px;padding:11px 12px;border:1px solid rgba(112,104,137,.13);border-radius:15px;outline:0;background:rgba(255,255,255,.75);font-size:calc(9px * var(--font-scale, 1));line-height:1.5;resize:none}.connection-field small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.scan-hub-button{width:100%;min-height:59px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.16);border-radius:16px;color:#7187a2;background:linear-gradient(125deg,rgba(var(--pink-rgb),.075),rgba(var(--blue-rgb),.1));text-align:left}.scan-hub-button>span{display:grid;gap:3px}.scan-hub-button strong{font-size:calc(9px * var(--font-scale, 1))}.scan-hub-button small{color:#9891a1;font-size:calc(7px * var(--font-scale, 1))}.connection-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.apply-connection{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;border:0;border-radius:15px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(10px * var(--font-scale, 1));font-weight:700}.apply-connection:disabled,.scan-hub-button:disabled,.connection-sheet header button:disabled{opacity:.55}
 .interface-settings-sheet{width:100%;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.13),transparent 31%),radial-gradient(circle at 4% 80%,rgba(var(--pink-rgb),.12),transparent 35%),rgba(251,250,253,.98);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.interface-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.interface-settings-sheet header span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.interface-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.interface-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.font-size-card{margin-top:18px;padding:16px;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.65);box-shadow:0 15px 38px rgba(75,70,103,.09);backdrop-filter:blur(18px)}.font-setting-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px}.font-setting-head>i{width:39px;height:39px;display:grid;place-items:center;border-radius:14px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.14))}.font-setting-head>div{display:grid;gap:4px}.font-setting-head strong{color:#575160;font-size:calc(11px * var(--font-scale, 1))}.font-setting-head span{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.font-setting-head>b{padding:5px 8px;border-radius:999px;color:#fff;background:linear-gradient(120deg,#c986ad,#849ac6);font-size:calc(8px * var(--font-scale, 1))}.font-preview{display:grid;gap:5px;margin-top:15px;padding:14px;border:1px solid rgba(116,108,137,.07);border-radius:16px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.055),rgba(var(--blue-rgb),.065))}.font-preview>span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.12em}.font-preview>strong{color:#56505f;font-size:calc(13px * var(--font-scale, 1))}.font-preview>small{color:#918a99;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control{height:47px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:8px;color:#9891a1;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control input{width:100%;accent-color:#9b87b5}.font-scale-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}.font-scale-footer small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1))}.font-scale-footer button{padding:6px 8px;border:0;border-radius:9px;color:#87718d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));font-weight:700}.font-scale-error{margin:10px 0 0;color:#aa5970;font-size:calc(8px * var(--font-scale, 1));text-align:center}
+.archive-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.16),transparent 31%),radial-gradient(circle at 4% 86%,rgba(var(--pink-rgb),.13),transparent 35%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}.archive-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.archive-settings-sheet header span{color:#7e98b3;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.archive-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.archive-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.archive-hero{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:16px;padding:15px;border:1px solid rgba(255,255,255,.8);border-radius:21px 21px 21px 8px;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(var(--pink-rgb),.075));box-shadow:0 13px 35px rgba(75,70,103,.08)}.archive-hero>i{width:45px;height:45px;display:grid;place-items:center;border-radius:15px;color:#718eac;background:rgba(255,255,255,.64)}.archive-hero>div{display:grid;gap:5px}.archive-hero strong{color:#56505f;font-size:calc(11px * var(--font-scale, 1))}.archive-hero span{color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.55}.archive-password{display:grid;gap:7px;margin-top:15px}.archive-password>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.archive-password input{height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale, 1))}.archive-password input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.archive-password small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.archive-export-button{width:100%;min-height:57px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.14);border-radius:16px;color:#7187a2;background:rgba(var(--blue-rgb),.075);text-align:left}.archive-export-button>span{display:grid;gap:3px}.archive-export-button strong{font-size:calc(9px * var(--font-scale, 1))}.archive-export-button small{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.archive-restore-card{margin-top:12px;padding:15px;border:1px solid rgba(var(--pink-rgb),.13);border-radius:20px 20px 8px 20px;background:rgba(255,249,252,.72)}.archive-restore-card>div{display:grid;gap:4px}.archive-restore-card strong{color:#655661;font-size:calc(10px * var(--font-scale, 1))}.archive-restore-card span,.archive-restore-card>p{color:#9d8790;font-size:calc(7px * var(--font-scale, 1));line-height:1.55}.archive-file-input{display:none}.archive-file-button{width:100%;min-height:43px;display:flex;align-items:center;justify-content:center;gap:7px;overflow:hidden;margin-top:11px;padding:0 12px;border:1px dashed rgba(123,146,178,.3);border-radius:13px;color:#71829a;background:rgba(255,255,255,.58);font-size:calc(8px * var(--font-scale, 1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.archive-restore-card>p{margin:10px 1px 0}.archive-restore-button{width:100%;height:46px;margin-top:11px;border:0;border-radius:14px;color:#fff;background:linear-gradient(115deg,#c77d9f,#8a8fb9 58%,#729ec4);font-size:calc(9px * var(--font-scale, 1));font-weight:800}.archive-export-button:disabled,.archive-file-button:disabled,.archive-restore-button:disabled,.archive-settings-sheet header button:disabled{opacity:.5}.archive-notice{display:flex;align-items:flex-start;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale, 1));line-height:1.5}.archive-notice svg{flex:0 0 auto;margin-top:1px}.archive-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}
 .crop-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:rgba(40,37,56,.34);backdrop-filter:blur(9px)}.avatar-cropper{width:min(100%,390px);padding:18px;border:1px solid rgba(255,255,255,.78);border-radius:28px;background:linear-gradient(145deg,rgba(255,252,254,.98),rgba(243,247,252,.98));box-shadow:0 28px 80px rgba(50,45,69,.3)}.avatar-cropper header{display:flex;align-items:center;justify-content:space-between}.avatar-cropper header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.avatar-cropper h2{margin:3px 0 0;color:#4d4859;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.avatar-cropper header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.crop-stage{position:relative;width:min(74vw,292px);overflow:hidden;aspect-ratio:1;margin:18px auto 0;border-radius:28px;background:#dedbe5;box-shadow:inset 0 0 0 1px rgba(77,70,98,.1),0 17px 35px rgba(75,68,97,.17)}.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}.crop-stage canvas:active{cursor:grabbing}.crop-guide{position:absolute;inset:10px;border:1px solid rgba(255,255,255,.76);border-radius:21px;box-shadow:0 0 0 1px rgba(68,61,86,.08);pointer-events:none}.avatar-cropper>p{margin:12px 0 0;color:#918a9b;font-size: calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.crop-zoom{height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:8px;padding:0 5px;color:#8a8295}.crop-zoom input{width:100%;accent-color:#a785b3}.crop-error{color:#aa5970!important}.crop-actions{display:grid;grid-template-columns:1fr 1.45fr;gap:9px;margin-top:12px}.crop-actions button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;color:#797283;background:rgba(105,97,131,.08);font-size: calc(9px * var(--font-scale, 1));font-weight:700}.crop-actions button:last-child{color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.crop-actions button:disabled,.avatar-cropper header button:disabled{opacity:.55}
 </style>

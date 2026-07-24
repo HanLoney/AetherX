@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("desktop", {
   writeClipboard: (value) => ipcRenderer.invoke("clipboard:write", value),
   generateQrCode: (value) => ipcRenderer.invoke("qrcode:generate", value),
   listSyncChanges: (filters) => ipcRenderer.invoke("sync:changes", filters),
+  exportArchive: (input) => ipcRenderer.invoke("archive:export", input),
+  restoreArchive: (input) => ipcRenderer.invoke("archive:restore", input),
   onSyncChanges: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, changes) => callback(changes);
