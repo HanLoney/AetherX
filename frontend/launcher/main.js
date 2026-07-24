@@ -8,9 +8,7 @@ const { TAILSCALE_DOWNLOAD_URL } = require("./tailscale-manager");
 
 const isHubMode = process.argv.includes("--aetherx-hub");
 if (isHubMode) app.disableHardwareAcceleration();
-const iconPath = app.isPackaged
-  ? path.join(__dirname, "app-icon-rounded.png")
-  : path.resolve(__dirname, "..", "desktop", "app-icon-rounded.png");
+const iconPath = path.join(__dirname, "app-icon-rounded.png");
 
 if (isHubMode) {
   app.setName("AetherX Hub");
