@@ -89,6 +89,15 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("session.pair(pairingCode.value)");
     expect(settingsSource).toContain("CapacitorBarcodeScanner.scanBarcode");
     expect(settingsSource).toContain("data.reconnectHub()");
+    expect(settingsSource).toContain('class="archive-settings-entry"');
+    expect(settingsSource).toContain('class="archive-settings-sheet"');
+    expect(settingsSource).toContain("仅完整恢复");
+    expect(settingsSource).not.toContain("合并导入");
+    expect(settingsSource).toContain("api.createArchiveExport");
+    expect(settingsSource).toContain("restoreArchive(archiveFile.value");
+    expect(dataSource).toContain('change.entityType === "archive_restore"');
+    expect(dataSource).toContain("clearMobileDataCache(scope)");
+    expect(dataSource).toContain("saveSyncCursor(scope, resetCursor)");
     expect(settingsSource).toContain("正在后台恢复同步");
     expect(settingsSource).toContain("等待电脑确认…");
     expect(settingsSource).not.toContain("await data.reconnectHub()");

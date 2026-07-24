@@ -1,6 +1,6 @@
 {
   "name": "aetherx-launcher",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "AetherX Windows deployment and health control center",
   "main": "main.js",
   "author": "Xuanxiaotech",
@@ -14,9 +14,10 @@
     "start": "electron .",
     "test": "node --test",
     "smoke:hub": "node scripts/smoke-hub.js",
+    "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
     "build:desktop": "npm --prefix ../desktop run dist:dir",
     "prepare:payload": "node scripts/prepare-payload.js",
-    "dist": "npm run build:desktop && npm run prepare:payload && electron-builder --win nsis"
+    "dist": "npm run build:desktop && npm run prepare:payload && electron-builder --win nsis && npm run verify:backend && npm run smoke:hub"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -55,9 +56,15 @@
         "to": "backend",
         "filter": [
           "src/**/*",
-          "node_modules/jpeg-js/**/*",
           "package.json",
           "README.md"
+        ]
+      },
+      {
+        "from": "../../backend/node_modules/jpeg-js",
+        "to": "backend/node_modules/jpeg-js",
+        "filter": [
+          "**/*"
         ]
       },
       {

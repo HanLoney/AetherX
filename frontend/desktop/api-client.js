@@ -132,6 +132,46 @@ class XuanApiClient {
     );
   }
 
+  createArchiveExport(password) {
+    return this.request("POST", "/api/v1/archives/export", { password });
+  }
+
+  archiveDownloadUrl(downloadPath) {
+    const value = String(downloadPath || "");
+    if (!value.startsWith("/api/v1/archives/download/")) {
+      throw new ApiError("存档下载地址无效。", 400, "ARCHIVE_DOWNLOAD_INVALID");
+    }
+    return `${this.baseUrl}${value}`;
+  }
+
+  async restoreArchive(body, password) {
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/v1/archives/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.aetherx.archive",
+          "X-AetherX-Archive-Password": Buffer.from(String(password || ""), "utf8").toString("base64"),
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+        },
+        body,
+        duplex: "half"
+      });
+    } catch (error) {
+      throw new ApiError(`无法连接 AetherX 后端：${error.message}`, 0, "BACKEND_UNAVAILABLE");
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new ApiError(
+        payload?.error?.message || `完整恢复失败（HTTP ${response.status}）。`,
+        response.status,
+        payload?.error?.code,
+        payload?.requestId
+      );
+    }
+    return payload.data;
+  }
+
   getAiConfig() {
     return this.request("GET", "/api/v1/ai/config");
   }

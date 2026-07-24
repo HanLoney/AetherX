@@ -9,7 +9,7 @@ import {
 } from "../lib/mobile-cache";
 import { MobileHealthReporter } from "../lib/device-health";
 import { SyncCoordinator } from "../lib/sync";
-import { loadInstallationId } from "../lib/storage";
+import { loadInstallationId, saveSyncCursor } from "../lib/storage";
 import { useSessionStore } from "./session";
 
 const todos = ref<Todo[]>([]);
@@ -38,6 +38,8 @@ let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
 let conversationPagePromise: Promise<ConversationPage> | null = null;
 let activeCacheScope = "";
+let archiveResetPromise: Promise<void> | null = null;
+let lastArchiveResetCursor = 0;
 const CONVERSATION_PAGE_SIZE = 12;
 
 function currentCacheScope() {
@@ -271,6 +273,11 @@ async function startSync() {
   if (!userId) throw new Error("登录状态已经失效，请重新登录。");
   const installationId = await loadInstallationId();
   sync = new SyncCoordinator(api, async (changes) => {
+    const archiveReset = changes.find((change) => change.entityType === "archive_restore" && change.operation === "reset");
+    if (archiveReset) {
+      await resetAfterArchiveRestore(archiveReset.seq);
+      return;
+    }
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
   }, `${api.serverUrl}|${userId}`, (status) => {
@@ -292,6 +299,29 @@ async function startSync() {
   } catch {
     syncState.value = "error";
   }
+}
+
+async function resetAfterArchiveRestore(resetCursor: number) {
+  if (resetCursor <= lastArchiveResetCursor && !archiveResetPromise) return;
+  if (archiveResetPromise) return archiveResetPromise;
+  lastArchiveResetCursor = resetCursor;
+  archiveResetPromise = (async () => {
+    const scope = activeCacheScope || currentCacheScope();
+    stopSyncTransport();
+    resetData(false);
+    if (scope) {
+      await Promise.all([
+        clearMobileDataCache(scope),
+        saveSyncCursor(scope, resetCursor)
+      ]);
+    }
+    activeCacheScope = scope;
+    await useSessionStore().refreshCurrentUser();
+    await refreshAll();
+    void preloadGallery().catch(() => undefined);
+    await startSync();
+  })().finally(() => { archiveResetPromise = null; });
+  return archiveResetPromise;
 }
 
 function stopSync() {
@@ -419,6 +449,7 @@ export function useDataStore() {
     startSync,
     stopSync,
     reconnectHub,
+    resetAfterArchiveRestore,
     toggleTodo,
     addTodo,
     removeTodo,

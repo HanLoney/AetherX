@@ -90,6 +90,8 @@ button:disabled { opacity: .5; cursor: wait; transform: none !important; }
 .status-pill { padding: 7px 11px; border-radius: 999px; color: #978f9e; background: #f3f0f5; font-size: 9px; font-weight: 750; }
 .status-pill[data-state="running"] { color: #438f79; background: #e8f7f1; }
 .status-pill[data-state="stopped"] { color: #a07f56; background: #faf1e5; }
+.status-pill[data-state="update"] { color: #7a70a5; background: #efedf9; }
+.status-pill[data-state="conflict"] { color: #ad6173; background: #fae9ee; }
 .component-title { align-items: end; margin-top: 15px; }
 .component-title p { margin-bottom: 3px; color: #aaa2af; font-size: 9px; }
 .component-title h3 { margin: 0; color: #554e5e; font-size: 17px; }
@@ -99,6 +101,15 @@ button:disabled { opacity: .5; cursor: wait; transform: none !important; }
 .health-details div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; color: #aaa3b0; font-size: 9px; }
 .health-details strong { overflow: hidden; color: #7e7687; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .health-details strong.healthy { color: #4b9c82; }
+.install-progress { margin-top: 12px; padding: 11px 13px; border: 1px solid rgba(137, 123, 153, .09); border-radius: 14px; background: rgba(249, 247, 251, .82); }
+.install-progress[hidden] { display: none; }
+.install-progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #958d9c; font-size: 9px; }
+.install-progress-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.install-progress-copy strong { flex: 0 0 auto; color: #756c7f; font-size: 9px; font-variant-numeric: tabular-nums; }
+.install-progress-track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(139, 126, 155, .1); box-shadow: inset 0 1px 2px rgba(83, 73, 96, .06); }
+.install-progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #d996b8, #9a98ca 55%, #78b0d7); box-shadow: 0 0 12px rgba(140, 145, 201, .28); transition: width .24s cubic-bezier(.22,.8,.3,1); }
+.component-card.installing { border-color: rgba(147, 130, 179, .2); box-shadow: 0 18px 42px rgba(79, 67, 99, .1), inset 0 1px rgba(255,255,255,.88); }
+.component-card.install-failed .install-progress-track i { background: linear-gradient(90deg, #d98598, #c66e85); }
 .card-actions { margin-top: 15px; gap: 8px; }
 .component-primary { flex: 1; color: white; background: linear-gradient(135deg, #c894b3, #8c9dc5 58%, #76acd2); box-shadow: 0 9px 20px rgba(118, 101, 145, .18); }
 .component-primary[data-mode="stop"] { color: #9b6978; background: #faedf1; box-shadow: none; }

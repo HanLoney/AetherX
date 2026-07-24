@@ -295,6 +295,29 @@
           </footer>
         </article>
 
+        <article class="archive-setting">
+          <div class="archive-setting-head">
+            <i aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7.5h16v12H4z"/><path d="M7 4.5h10l2 3H5z"/><path d="M9 12h6M12 9v6"/></svg>
+            </i>
+            <div>
+              <strong>完整存档</strong>
+              <span>保存或完整恢复聊天、记忆、成长、手记、相册、AI 设置与原始媒体</span>
+            </div>
+            <b>仅完整恢复</b>
+          </div>
+          <label class="archive-password-field">
+            <span>存档密码</span>
+            <input id="archivePasswordInput" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" />
+          </label>
+          <p class="archive-warning">恢复会整套替换当前账号的 AI 数据；登录密码、当前会话和已配对设备不会被覆盖。操作前 Hub 会自动备份现有数据。</p>
+          <div class="archive-actions">
+            <button id="exportArchiveBtn" type="button">导出完整存档</button>
+            <button id="restoreArchiveBtn" type="button">完整恢复</button>
+          </div>
+          <div id="archiveOperationResult" class="archive-operation-result hidden" aria-live="polite"></div>
+        </article>
+
         <div class="interface-settings-actions">
           <button id="doneInterfaceSettingsBtn" class="save-button" type="button">完成</button>
         </div>

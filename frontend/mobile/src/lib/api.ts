@@ -292,6 +292,55 @@ export class AetherApi {
   syncChanges(after: number, limit = 200) {
     return this.request<{ changes: SyncChange[]; nextCursor: number; hasMore: boolean }>("GET", `/api/v1/sync/changes?after=${after}&limit=${limit}`);
   }
+  createArchiveExport(password: string) {
+    return this.request<{
+      ticket: string;
+      fileName: string;
+      expiresAt: number;
+      downloadPath: string;
+      summary: { continuityDigest: string; totalMediaBytes: number };
+    }>("POST", "/api/v1/archives/export", { password });
+  }
+  archiveDownloadUrl(downloadPath: string) {
+    const value = String(downloadPath || "");
+    if (!value.startsWith("/api/v1/archives/download/")) {
+      throw new ApiError("存档下载地址无效。", 400, "ARCHIVE_DOWNLOAD_INVALID");
+    }
+    return `${this.baseUrl}${value}`;
+  }
+  async restoreArchive(file: Blob, password: string) {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/archives/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.aetherx.archive",
+          "X-AetherX-Archive-Password": utf8Base64(password),
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+        },
+        body: file
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new ApiError(
+          payload?.error?.message || `完整恢复失败（HTTP ${response.status}）。`,
+          response.status,
+          payload?.error?.code || "ARCHIVE_RESTORE_FAILED",
+          payload?.requestId || ""
+        );
+        if (response.status === 401) this.onUnauthorized?.();
+        throw error;
+      }
+      return payload.data as {
+        continuityDigest: string;
+        resetRequired: boolean;
+        resetCursor: number;
+        backupFileName: string;
+      };
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(`完整恢复时无法连接 Hub：${(error as Error).message}`, 0, "BACKEND_UNAVAILABLE");
+    }
+  }
 }
 
 export function hydrateMediaSources(value: unknown, baseUrl: string, token: string): unknown {
@@ -315,7 +364,7 @@ export interface SyncChange {
   seq: number;
   entityType: string;
   entityId: string;
-  operation: "upsert" | "delete";
+  operation: "upsert" | "delete" | "reset";
   createdAt: number;
 }
 
@@ -331,4 +380,11 @@ export interface AgentChatResult {
 export function normalizeServerUrl(value: string) {
   const normalized = String(value || "").trim().replace(/\/+$/, "");
   return /^https?:\/\//i.test(normalized) ? normalized : "";
+}
+
+function utf8Base64(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return window.btoa(binary);
 }

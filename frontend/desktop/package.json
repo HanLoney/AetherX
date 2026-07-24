@@ -1,6 +1,6 @@
 {
   "name": "aetherx-desktop",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "AetherX modular personal assistant desktop client",
   "main": "main.js",
   "author": "Xuanxiaotech",
@@ -15,7 +15,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "dist:dir": "electron-builder --win dir",
+    "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
+    "dist:dir": "electron-builder --win dir && npm run verify:backend",
     "dist": "npm run dist:installer && npm run dist:portable",
     "dist:installer": "electron-builder --win nsis --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
     "dist:portable": "electron-builder --win portable --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
@@ -95,10 +96,16 @@
         "to": "backend",
         "filter": [
           "src/**/*",
-          "node_modules/jpeg-js/**/*",
           "scripts/ensure-adb-reverse.js",
           "package.json",
           "README.md"
+        ]
+      },
+      {
+        "from": "../../backend/node_modules/jpeg-js",
+        "to": "backend/node_modules/jpeg-js",
+        "filter": [
+          "**/*"
         ]
       },
       {

@@ -1,5 +1,11 @@
 const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
-const state = { status: null, busy: false, qrValue: "", qrRequest: 0 };
+const state = {
+  status: null,
+  busy: false,
+  qrValue: "",
+  qrRequest: 0,
+  progress: { hub: null, desktop: null }
+};
 const selectors = {
   overall: document.querySelector(".health-orbit"),
   overallLabel: document.querySelector("[data-overall-label]"),
@@ -198,23 +204,69 @@ function setText(root, selector, text) {
 }
 
 function statusLabel(component) {
+  if (component.portConflict) return "端口冲突";
   if (!component.installed) return "未安装";
+  if (component.updateAvailable) return component.running ? "运行中 · 有更新" : "有更新";
   if (component.running && component.healthy) return "运行正常";
   if (component.running) return "需要留意";
   return "已停止";
+}
+
+function renderInstallProgress(name) {
+  const card = componentCard(name);
+  const progress = state.progress[name];
+  const wrap = card.querySelector("[data-install-progress]");
+  const action = card.querySelector("[data-component-action]");
+  if (!wrap) return;
+  if (!progress) {
+    wrap.hidden = true;
+    card.classList.remove("installing", "install-failed");
+    return;
+  }
+  const failed = progress.phase === "failed";
+  const percent = failed ? 100 : Math.max(0, Math.min(100, Number(progress.percent || 0)));
+  wrap.hidden = false;
+  card.classList.toggle("installing", !failed && progress.phase !== "installed");
+  card.classList.toggle("install-failed", failed);
+  setText(wrap, "[data-progress-label]", progress.message || "正在安装");
+  setText(wrap, "[data-progress-value]", failed ? "失败" : `${Math.round(percent)}%`);
+  const track = wrap.querySelector(".install-progress-track");
+  const bar = wrap.querySelector("[data-progress-bar]");
+  track.setAttribute("aria-valuenow", String(Math.round(percent)));
+  bar.style.width = `${percent}%`;
+  if (!failed && progress.phase !== "installed") {
+    action.textContent = `${name === "hub" ? "安装 Hub" : "安装桌面端"} · ${Math.round(percent)}%`;
+    action.disabled = true;
+  }
 }
 
 function renderComponent(name, component, linked) {
   const card = componentCard(name);
   const pill = card.querySelector("[data-status-pill]");
   pill.textContent = statusLabel(component);
-  pill.dataset.state = component.status;
-  setText(card, "[data-version]", component.version ? `v${component.version}` : "—");
+  pill.dataset.state = component.portConflict
+    ? "conflict"
+    : component.updateAvailable
+      ? "update"
+      : component.status;
+  const versionText = component.updateAvailable
+    ? `v${component.version || "?"} → v${component.availableVersion}`
+    : component.version
+      ? `v${component.version}`
+      : component.availableVersion
+        ? `v${component.availableVersion}`
+        : "—";
+  setText(card, "[data-version]", versionText);
   const action = card.querySelector("[data-component-action]");
   const folder = card.querySelector("[data-folder]");
   if (folder) folder.disabled = state.busy || !component.installed;
   action.disabled = state.busy;
-  if (!component.installed) {
+  if (name === "hub" && component.portConflict) {
+    action.textContent = "端口被占用";
+    action.dataset.nextAction = "";
+    action.dataset.mode = "stop";
+    action.disabled = true;
+  } else if (!component.installed) {
     action.textContent = name === "hub" ? "安装 Hub" : "安装桌面端";
     action.dataset.nextAction = `${name}-install`;
     action.dataset.mode = "install";
@@ -226,16 +278,33 @@ function renderComponent(name, component, linked) {
     action.textContent = "正在外部运行";
     action.dataset.nextAction = "";
     action.disabled = true;
+  } else if (name === "desktop" && component.updateAvailable) {
+    action.textContent = "更新桌面端";
+    action.dataset.nextAction = "desktop-install";
+    action.dataset.mode = "install";
   } else {
     action.textContent = "启动";
     action.dataset.nextAction = `${name}-start`;
     action.dataset.mode = "start";
   }
+  renderInstallProgress(name);
   if (name === "hub") {
     const health = card.querySelector("[data-health]");
-    health.textContent = component.healthy ? "接口响应正常" : "当前不可访问";
+    const owner = component.portOwner?.pid
+      ? `${component.portOwner.processName || "其他程序"} · PID ${component.portOwner.pid}`
+      : "其他程序";
+    health.textContent = component.portConflict
+      ? `4318 被 ${owner} 占用`
+      : component.healthy
+        ? "接口响应正常"
+        : "当前不可访问";
+    health.title = component.portConflict ? health.textContent : "";
     health.classList.toggle("healthy", component.healthy);
-    setText(card, "[data-latency]", component.latencyMs == null ? "—" : `${component.latencyMs} ms`);
+    setText(
+      card,
+      "[data-latency]",
+      component.portConflict ? "端口冲突" : component.latencyMs == null ? "—" : `${component.latencyMs} ms`
+    );
   } else {
     const health = card.querySelector("[data-health]");
     health.textContent = component.healthy ? "进程响应正常" : "当前未运行";
@@ -257,13 +326,18 @@ function render(status) {
   renderRemote(status);
   const allInstalled = status.hub.installed && status.desktop.installed;
   const allRunning = status.hub.running && status.desktop.running;
-  selectors.primaryLabel.textContent = allRunning
+  const desktopNeedsUpdate = Boolean(status.desktop.updateAvailable);
+  selectors.primaryLabel.textContent = desktopNeedsUpdate && status.desktop.running
+    ? "停止桌面端后更新"
+    : desktopNeedsUpdate
+      ? "更新并启动"
+      : allRunning
     ? "全部运行正常"
     : allInstalled
       ? "全部启动"
       : "一键安装并启动";
-  selectors.primaryAction.dataset.action = allInstalled ? "start-all" : "deploy-all";
-  selectors.primaryAction.disabled = state.busy || allRunning;
+  selectors.primaryAction.dataset.action = allInstalled && !desktopNeedsUpdate ? "start-all" : "deploy-all";
+  selectors.primaryAction.disabled = state.busy || (desktopNeedsUpdate ? status.desktop.running : allRunning);
   selectors.stopAllAction.disabled = state.busy || !(status.hub.running || status.desktop.running);
 }
 
@@ -306,6 +380,10 @@ document.addEventListener("click", (event) => {
 
 window.launcher.onStatus(render);
 window.launcher.onProgress((progress) => {
+  if (progress.component === "hub" || progress.component === "desktop") {
+    state.progress[progress.component] = progress;
+    renderInstallProgress(progress.component);
+  }
   selectors.activity.textContent = progress.message;
 });
 window.launcher.onBusy(({ busy }) => {
@@ -314,6 +392,19 @@ window.launcher.onBusy(({ busy }) => {
   document.querySelectorAll("button[data-action], button[data-component-action], button[data-remote-action]").forEach((button) => {
     button.disabled = busy;
   });
-  if (!busy && state.status) render(state.status);
+  if (!busy) {
+    for (const component of ["hub", "desktop"]) {
+      const progress = state.progress[component];
+      if (progress && progress.phase !== "failed") {
+        setTimeout(() => {
+          if (state.progress[component] === progress) {
+            state.progress[component] = null;
+            if (state.status) render(state.status);
+          }
+        }, 900);
+      }
+    }
+    if (state.status) render(state.status);
+  }
 });
 window.launcher.getStatus().then(render).catch((error) => showToast(error.message, true));

@@ -4,7 +4,15 @@ const http = require("node:http");
 const path = require("node:path");
 const test = require("node:test");
 const { createControlServer, getControlPipe, requestControl } = require("../control-channel");
-const { probeHub, waitFor } = require("../component-manager");
+const {
+  HUB_START_TIMEOUT_MS,
+  compareVersions,
+  copyDirectoryWithProgress,
+  inspectTcpPort,
+  probeHub,
+  waitForHubStartup,
+  waitFor
+} = require("../component-manager");
 const {
   AETHERX_HUB_TARGET,
   REMOTE_HTTPS_PORT,
@@ -53,6 +61,8 @@ test("Hub 健康检测验证服务身份并记录延迟", async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
+    const portState = await inspectTcpPort(address.port);
+    assert.equal(portState.occupied, true);
     const status = await probeHub(`http://127.0.0.1:${address.port}`);
     assert.equal(status.healthy, true);
     assert.equal(typeof status.latencyMs, "number");
@@ -70,6 +80,53 @@ test("状态等待器可以观察组件从启动到停止", async () => {
   assert.equal(await waitFor(() => value, false, 60), false);
 });
 
+test("Hub 启动等待允许慢速首次启动，并能识别提前退出", async () => {
+  const { EventEmitter } = require("node:events");
+  const healthyChild = new EventEmitter();
+  healthyChild.exitCode = null;
+  let attempts = 0;
+  const healthy = await waitForHubStartup(healthyChild, {
+    timeoutMs: 1000,
+    probe: async () => ({ healthy: ++attempts >= 3 })
+  });
+  assert.equal(healthy.started, true);
+  assert.ok(HUB_START_TIMEOUT_MS >= 60_000);
+
+  const exitedChild = new EventEmitter();
+  exitedChild.exitCode = null;
+  setTimeout(() => exitedChild.emit("exit", 1, null), 20);
+  const exited = await waitForHubStartup(exitedChild, {
+    timeoutMs: 1000,
+    probe: async () => ({ healthy: false })
+  });
+  assert.deepEqual(exited.exit, { code: 1, signal: null });
+});
+
+test("桌面端安装复制会按实际字节报告进度", async (t) => {
+  const source = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "aetherx-copy-source-"));
+  const destination = `${source}-destination`;
+  t.after(() => {
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(destination, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(source, "resources"), { recursive: true });
+  fs.writeFileSync(path.join(source, "AetherX.exe"), Buffer.alloc(96 * 1024, 1));
+  fs.writeFileSync(path.join(source, "resources", "app.asar"), Buffer.alloc(128 * 1024, 2));
+  const updates = [];
+  const manifest = await copyDirectoryWithProgress(source, destination, (progress) => {
+    updates.push(progress);
+  });
+  assert.equal(manifest.totalBytes, 224 * 1024);
+  assert.equal(updates.at(-1).copiedBytes, manifest.totalBytes);
+  assert.deepEqual(fs.readFileSync(path.join(destination, "resources", "app.asar")), Buffer.alloc(128 * 1024, 2));
+});
+
+test("启动器可以识别桌面端的新版本", () => {
+  assert.equal(compareVersions("1.2.5", "1.2.4") > 0, true);
+  assert.equal(compareVersions("1.2.5", "1.2.5"), 0);
+  assert.equal(compareVersions("1.3.0", "1.2.99") > 0, true);
+});
+
 test("启动器界面提供完整的安装、启动、停止与监控入口", () => {
   const html = fs.readFileSync(path.join(launcherDir, "launcher.html"), "utf8");
   const script = fs.readFileSync(path.join(launcherDir, "launcher.js"), "utf8");
@@ -83,9 +140,19 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(html, /data-component="remote"/);
   assert.match(html, /data-remote-qr/);
   assert.match(html, /data-mobile-clients/);
+  assert.equal((html.match(/data-install-progress/g) || []).length, 2);
+  assert.match(script, /data-progress-bar/);
+  assert.match(script, /更新桌面端/);
+  assert.match(script, /availableVersion/);
+  assert.match(script, /portConflict/);
+  assert.match(manager, /copyDirectoryWithProgress/);
+  assert.match(manager, /desktopUpdateAvailable/);
+  assert.match(manager, /prepareHubLog/);
+  assert.match(manager, /HUB_PORT_CONFLICT/);
   assert.match(script, /\$\{name\}-stop/);
   assert.match(main, /"hub-stop"/);
   assert.match(main, /"desktop-stop"/);
+  assert.match(main, /disableHardwareAcceleration/);
   assert.match(script, /onStatus/);
   assert.match(main, /"remote-enable"/);
   assert.match(main, /"remote-disable"/);

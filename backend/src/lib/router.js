@@ -33,7 +33,7 @@ async function readJson(request) {
   }
 }
 
-function createRouter({ corsOrigin = "*", authenticate } = {}) {
+function createRouter({ corsOrigin = "*", authenticate, isWriteLocked } = {}) {
   const routes = [];
 
   function add(method, path, handler, options = {}) {
@@ -42,7 +42,9 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
       ...compilePath(path),
       handler,
       public: options.public === true,
-      queryAuth: options.queryAuth === true
+      queryAuth: options.queryAuth === true,
+      parseBody: options.parseBody !== false,
+      allowDuringWriteLock: options.allowDuringWriteLock === true
     });
   }
 
@@ -53,7 +55,7 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
     response.setHeader("Access-Control-Allow-Origin", corsOrigin);
     response.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Request-Id"
+      "Content-Type, Authorization, X-Request-Id, X-AetherX-Archive-Password"
     );
     response.setHeader(
       "Access-Control-Allow-Methods",
@@ -86,6 +88,14 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
       if (!route.public && !auth) {
         throw new HttpError(401, "AUTH_REQUIRED", "请先登录。");
       }
+      if (
+        !route.public &&
+        !route.allowDuringWriteLock &&
+        ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
+        isWriteLocked?.(auth.userId)
+      ) {
+        throw new HttpError(423, "ARCHIVE_WRITE_LOCKED", "完整存档任务正在进行，暂时不能修改数据。");
+      }
       const context = {
         request,
         response,
@@ -94,7 +104,7 @@ function createRouter({ corsOrigin = "*", authenticate } = {}) {
         query: Object.fromEntries(url.searchParams.entries()),
         auth,
         userId: auth?.userId || "",
-        body: ["POST", "PUT", "PATCH"].includes(request.method)
+        body: route.parseBody && ["POST", "PUT", "PATCH"].includes(request.method)
           ? await readJson(request)
           : {}
       };

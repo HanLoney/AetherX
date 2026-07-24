@@ -37,3 +37,14 @@ test("desktop exposes a polished global font size setting", () => {
   assert.match(css, /\.interface-settings-panel\s*\{/);
   assert.match(css, /--font-scale/);
 });
+
+test("desktop settings expose encrypted export and full restore only", () => {
+  assert.match(html, /id="archivePasswordInput"/);
+  assert.match(html, /id="exportArchiveBtn"/);
+  assert.match(html, /id="restoreArchiveBtn"/);
+  assert.match(html, /仅完整恢复/);
+  assert.doesNotMatch(html, /合并导入/);
+  assert.match(javascript, /window\.desktop\.exportArchive/);
+  assert.match(javascript, /window\.desktop\.restoreArchive/);
+  assert.match(css, /\.archive-setting\s*\{/);
+});

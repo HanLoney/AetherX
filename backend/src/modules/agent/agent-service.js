@@ -15,6 +15,12 @@ class AgentService {
     this.activeConversations = new Map();
   }
 
+  isBusy(userId) {
+    const prefix = `${userId}:`;
+    if ([...this.activeConversations.keys()].some((key) => key.startsWith(prefix))) return true;
+    return [...this.runs.values()].some((run) => run.userId === userId);
+  }
+
   async chat(userId, input = {}) {
     this.pruneRuns();
     const content = String(input.content || "").trim().slice(0, 30_000);

@@ -62,6 +62,7 @@ corresponding packages and should be retained when redistributing binaries.
 | @capacitor/android | 8.4.2 | MIT |
 | @capacitor/app | 8.0.0 | MIT |
 | @capacitor/barcode-scanner | 3.1.0 | MIT |
+| @capacitor/browser | 8.0.4 | MIT |
 | @capacitor/core | 8.4.2 | MIT |
 | @capacitor/device | 8.0.3 | MIT |
 | @capacitor/preferences | 8.0.1 | MIT |

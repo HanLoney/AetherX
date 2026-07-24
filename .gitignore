@@ -17,6 +17,7 @@ dist/
 *.sqlite
 *.sqlite3
 backups/
+*.aetherx
 aetherx-data*.zip
 aetherx-backend-deploy*.tar.gz
 

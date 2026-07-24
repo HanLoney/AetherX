@@ -113,10 +113,13 @@ const { registerAgentRoutes } = require("./modules/agent/agent-routes");
 const { MediaRepository } = require("./modules/media/media-repository");
 const { MediaService } = require("./modules/media/media-service");
 const { registerMediaRoutes } = require("./modules/media/media-routes");
+const { ArchiveService } = require("./modules/archive/archive-service");
+const { registerArchiveRoutes } = require("./modules/archive/archive-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
   const secretBox = createSecretBox(config.dataDir, config.masterKey);
+  let archiveService = null;
   const authService = new AuthService(new AuthRepository(database), {
     registrationMode: config.registrationMode,
     registrationSecret: config.registrationSecret,
@@ -128,7 +131,8 @@ function createApp(config) {
   const syncEventBroker = new SyncEventBroker(syncRepository);
   const router = createRouter({
     corsOrigin: config.corsOrigin,
-    authenticate: (authorization) => authService.authenticate(authorization)
+    authenticate: (authorization) => authService.authenticate(authorization),
+    isWriteLocked: (userId) => archiveService?.isUserLocked(userId) === true
   });
 
   const todoRepository = new TodoRepository(database);
@@ -207,6 +211,12 @@ function createApp(config) {
     agentServices,
     createAgentToolRuntime(agentServices)
   );
+  archiveService = new ArchiveService({
+    database,
+    secretBox,
+    dataDir: config.dataDir,
+    isAgentBusy: (userId) => agentService.isBusy(userId)
+  });
 
   router.add(
     "GET",
@@ -247,6 +257,7 @@ function createApp(config) {
   registerDreamRoutes(router, dreamService);
   registerGalleryRoutes(router, galleryService);
   registerMediaRoutes(router, mediaService);
+  registerArchiveRoutes(router, archiveService);
   registerPromptSettingsRoutes(router, promptSettingsService);
   registerTimeAwarenessRoutes(router, timeAwarenessService);
   registerConversationRoutes(router, conversationService);
