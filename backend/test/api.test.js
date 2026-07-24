@@ -301,6 +301,46 @@ test("time-related questions always use model wording with authoritative runtime
   );
 });
 
+test("完整存档通过下载票据导出，并用中文密码整套恢复", async () => {
+  await withServer(async (baseUrl) => {
+    const created = await request(baseUrl, "POST", "/api/v1/todos", {
+      text: "存档里的待办",
+      startAt: 100,
+      endAt: 200
+    });
+    assert.equal(created.response.status, 201);
+    const password = "中文存档密码123";
+    const exported = await request(baseUrl, "POST", "/api/v1/archives/export", { password });
+    assert.equal(exported.response.status, 200);
+    assert.equal(exported.payload.data.summary.archiveMode, "full_restore_only");
+    const download = await fetch(`${baseUrl}${exported.payload.data.downloadPath}`);
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get("content-disposition"), /\.aetherx/);
+    const archive = Buffer.from(await download.arrayBuffer());
+    assert.ok(archive.length > 64);
+    assert.equal(archive.includes(Buffer.from("存档里的待办")), false);
+
+    await request(baseUrl, "PATCH", `/api/v1/todos/${created.payload.data.id}`, {
+      text: "恢复前被改掉"
+    });
+    const restoredResponse = await fetch(`${baseUrl}/api/v1/archives/restore`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authTokens.get(baseUrl)}`,
+        "Content-Type": "application/vnd.aetherx.archive",
+        "X-AetherX-Archive-Password": Buffer.from(password, "utf8").toString("base64")
+      },
+      body: archive
+    });
+    const restored = await restoredResponse.json();
+    assert.equal(restoredResponse.status, 200);
+    assert.equal(restored.data.resetRequired, true);
+    assert.ok(restored.data.resetCursor > 0);
+    const todos = await request(baseUrl, "GET", "/api/v1/todos");
+    assert.equal(todos.payload.data[0].text, "存档里的待办");
+  });
+});
+
 test("media endpoint streams authenticated images and supports browser caching", async () => {
   await withServer(async (baseUrl, dataDir, app) => {
     const session = await request(baseUrl, "GET", "/api/v1/auth/session");

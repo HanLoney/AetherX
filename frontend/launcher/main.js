@@ -7,6 +7,7 @@ const { generateQrDataUrl } = require("./qr-code");
 const { TAILSCALE_DOWNLOAD_URL } = require("./tailscale-manager");
 
 const isHubMode = process.argv.includes("--aetherx-hub");
+if (isHubMode) app.disableHardwareAcceleration();
 const iconPath = app.isPackaged
   ? path.join(__dirname, "app-icon-rounded.png")
   : path.resolve(__dirname, "..", "desktop", "app-icon-rounded.png");
@@ -32,6 +33,9 @@ if (isHubMode) {
         host: process.env.AETHERX_HOST || "127.0.0.1",
         port: Number(process.env.AETHERX_PORT || 4318)
       });
+      console.log(
+        `[${new Date().toISOString()}] AetherX Hub is listening on ${process.env.AETHERX_HOST || "127.0.0.1"}:${Number(process.env.AETHERX_PORT || 4318)}`
+      );
     } catch (error) {
       console.error("AetherX Hub 启动失败", error);
       app.exit(1);

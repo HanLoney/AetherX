@@ -177,6 +177,14 @@ async function reconnect(nextServerUrl: string) {
   }
 }
 
+async function refreshCurrentUser() {
+  if (!api || !user.value || !api.accessToken) return null;
+  const current = await api.session();
+  user.value = current.user;
+  await saveSession({ token: api.accessToken, user: current.user });
+  return current.user;
+}
+
 async function logout() {
   try { await api?.logout(); } catch { /* 本地退出不依赖网络 */ }
   await invalidate();
@@ -209,6 +217,7 @@ export function useSessionStore() {
     inspectRegistration,
     pair,
     reconnect,
+    refreshCurrentUser,
     logout,
     requireApi
   };
