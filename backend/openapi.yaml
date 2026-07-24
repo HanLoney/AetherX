@@ -325,6 +325,69 @@ paths:
       summary: 基于近期事件刷新小玄心情展示
       responses:
         "200": { description: 刷新后的心情快照 }
+  /archives/export:
+    post:
+      summary: 生成当前账号的加密完整存档
+      description: 创建一次性下载票据。存档包含当前账号的记录、设置、模型凭据与媒体文件，仅支持完整恢复。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 256
+                  description: 用于加密存档的密码，不会由 Hub 保存。
+      responses:
+        "200": { description: 一次性下载路径、文件名、过期时间与存档内容汇总 }
+        "400": { description: 存档密码不符合要求 }
+        "409": { description: Agent 正在运行、媒体损坏或当前账号已有存档任务 }
+  /archives/download/{ticket}:
+    parameters:
+      - in: path
+        name: ticket
+        required: true
+        schema: { type: string }
+        description: 导出接口签发的短时一次性下载票据。
+    get:
+      security: []
+      summary: 使用一次性票据下载完整存档
+      description: 票据使用后立即失效；默认在签发五分钟后过期。
+      responses:
+        "200":
+          description: 加密的 AetherX 完整存档
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+          content:
+            application/vnd.aetherx.archive:
+              schema: { type: string, format: binary }
+        "404": { description: 下载票据不存在、已使用或已经过期 }
+  /archives/restore:
+    post:
+      summary: 使用加密存档完整恢复当前账号
+      description: 校验存档完整性后替换当前账号全部数据，并在恢复前自动生成备份。恢复完成后客户端必须清空缓存并重新同步。
+      parameters:
+        - in: header
+          name: X-AetherX-Archive-Password
+          required: true
+          schema: { type: string, format: byte }
+          description: 存档密码的 UTF-8 Base64 编码，最长 512 个字符。
+      requestBody:
+        required: true
+        content:
+          application/vnd.aetherx.archive:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: 一致性摘要、重置游标、恢复内容汇总与恢复前备份文件名 }
+        "400": { description: 密码错误、存档格式无效、文件过大或一致性校验失败 }
+        "409": { description: Agent 正在运行、数据或媒体文件冲突，或当前账号已有存档任务 }
   /conversations:
     get:
       summary: 获取全部历史会话
@@ -334,6 +397,19 @@ paths:
       summary: 创建新会话
       responses:
         "201": { description: 已创建 }
+  /conversations/page:
+    get:
+      summary: 分页获取历史会话
+      description: 按最近更新时间倒序返回会话，适合客户端先显示最新会话，再在空闲时逐页加载历史记录。
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 12 }
+      responses:
+        "200": { description: 会话 items、总数 total、当前 offset 和 limit，以及是否还有更多 hasMore }
   /conversations/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
