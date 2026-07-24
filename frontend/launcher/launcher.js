@@ -8,7 +8,11 @@ const state = {
 };
 const selectors = {
   overall: document.querySelector(".health-orbit"),
+  controlPanel: document.querySelector(".system-control-panel"),
   overallLabel: document.querySelector("[data-overall-label]"),
+  monitorState: document.querySelector("[data-monitor-state]"),
+  monitorDiagnostic: document.querySelector("[data-monitor-diagnostic]"),
+  monitorMobileDetail: document.querySelector("[data-monitor-mobile-detail]"),
   lastCheck: document.querySelector("[data-last-check]"),
   activity: document.querySelector("[data-activity]"),
   activityDot: document.querySelector(".activity-dot"),
@@ -38,6 +42,172 @@ function componentCard(name) {
   return document.querySelector(`[data-component="${name}"]`);
 }
 
+function monitorNode(name) {
+  return document.querySelector(`[data-monitor-node="${name}"]`);
+}
+
+function setMonitorText(root, selector, text, title = "") {
+  const node = root?.querySelector(selector);
+  if (!node) return;
+  node.textContent = text;
+  node.title = title || text;
+}
+
+function setMonitorLink(name, stateName, text) {
+  const link = document.querySelector(`[data-monitor-link="${name}"]`);
+  if (!link) return;
+  link.dataset.state = stateName;
+  setMonitorText(link, `[data-monitor-${name}-link]`, text);
+}
+
+function setMapLink(name, stateName) {
+  const link = document.querySelector(`[data-map-link="${name}"]`);
+  if (link) link.dataset.state = stateName;
+}
+
+function renderRuntimeMonitor(status) {
+  const hub = status.hub || {};
+  const desktop = status.desktop || {};
+  const tailscale = status.tailscale || {};
+  const remote = status.remote || {};
+  const mobile = status.mobile || {};
+  const clients = Array.isArray(mobile.clients) ? mobile.clients : [];
+  const summary = mobile.summary && typeof mobile.summary === "object" ? mobile.summary : {};
+  const onlinePeers = (mobile.tailscalePeers || []).filter((peer) => peer.online);
+  const healthyClients = clients.filter((client) => client.status === "healthy").length || Number(summary.healthy || 0);
+  const trackedClients = Math.max(clients.length, Number(summary.tracked || 0));
+
+  const hubNode = monitorNode("hub");
+  const hubState = hub.portConflict ? "danger" : hub.healthy ? "healthy" : hub.installed ? "idle" : "missing";
+  hubNode.dataset.state = hubState;
+  setMonitorText(hubNode, "[data-monitor-hub-state]", hub.portConflict ? "端口冲突" : hub.healthy ? "运行正常" : hub.installed ? "已停止" : "未安装");
+  setMonitorText(hubNode, "[data-monitor-hub-install]", hub.installed ? `已安装 · v${hub.version || "未知"}` : "未安装");
+  setMonitorText(
+    hubNode,
+    "[data-monitor-hub-health]",
+    hub.portConflict ? "4318 被占用" : hub.healthy ? `正常${hub.latencyMs == null ? "" : ` · ${hub.latencyMs} ms`}` : "不可访问"
+  );
+  setMonitorText(hubNode, "[data-monitor-hub-control]", hub.controllable ? "启动器已接管" : hub.running ? "外部运行" : "未连接");
+  const hubOwner = hub.portOwner?.pid
+    ? `${hub.portOwner.processName || "其他程序"} · PID ${hub.portOwner.pid}`
+    : hub.running
+      ? `4318 · PID ${hub.pid || "未知"}`
+      : "4318 · 未监听";
+  setMonitorText(hubNode, "[data-monitor-hub-process]", hubOwner);
+
+  const desktopNode = monitorNode("desktop");
+  const desktopState = desktop.updateAvailable ? "update" : desktop.healthy ? "healthy" : desktop.installed ? "idle" : "missing";
+  desktopNode.dataset.state = desktopState;
+  setMonitorText(desktopNode, "[data-monitor-desktop-state]", desktop.updateAvailable ? "发现更新" : desktop.healthy ? "运行正常" : desktop.installed ? "已停止" : "未安装");
+  const desktopVersion = desktop.updateAvailable
+    ? `v${desktop.version || "?"} → v${desktop.availableVersion}`
+    : desktop.installed
+      ? `已安装 · v${desktop.version || "未知"}`
+      : desktop.availableVersion
+        ? `可安装 · v${desktop.availableVersion}`
+        : "未安装";
+  setMonitorText(desktopNode, "[data-monitor-desktop-install]", desktopVersion);
+  setMonitorText(desktopNode, "[data-monitor-desktop-process]", desktop.running ? `运行中 · PID ${desktop.pid || "未知"}` : "当前未运行");
+  setMonitorText(desktopNode, "[data-monitor-desktop-control]", desktop.controllable ? "可安全控制" : desktop.running ? "外部进程" : "未连接");
+  const desktopLinked = Boolean(hub.healthy && desktop.healthy);
+  setMonitorText(desktopNode, "[data-monitor-desktop-hub]", desktopLinked ? "连接正常" : hub.healthy ? "等待桌面端" : "Hub 离线");
+  const desktopLinkState = desktopLinked ? "healthy" : hub.healthy || desktop.running ? "warning" : "idle";
+  setMonitorLink("desktop", desktopLinkState, desktopLinked ? "IPC LINK" : hub.healthy ? "WAITING" : "OFFLINE");
+  setMapLink("desktop", desktopLinkState);
+
+  const remoteNode = monitorNode("remote");
+  const remoteDanger = Boolean(remote.conflict || tailscale.error || remote.error);
+  const remoteState = remoteDanger ? "danger" : remote.healthy ? "healthy" : tailscale.connected || remote.enabled ? "warning" : tailscale.installed ? "idle" : "missing";
+  remoteNode.dataset.state = remoteState;
+  setMonitorText(remoteNode, "[data-monitor-remote-state]", remote.conflict ? "端口冲突" : remote.healthy ? "远程可用" : remote.enabled ? "等待 Hub" : tailscale.connected ? "入口待开启" : tailscale.installed ? "未连接" : "未安装");
+  const tailscaleText = !tailscale.installed
+    ? "未安装"
+    : tailscale.connected
+      ? `已连接 · v${tailscale.version || "未知"}`
+      : tailscale.state === "needs-login"
+        ? "需要登录"
+        : "当前未连接";
+  setMonitorText(remoteNode, "[data-monitor-tailscale]", tailscaleText, tailscale.error || tailscaleText);
+  const remoteHealthText = remote.conflict
+    ? "HTTPS 端口冲突"
+    : remote.healthy
+      ? `响应正常${remote.latencyMs == null ? "" : ` · ${remote.latencyMs} ms`}`
+      : remote.enabled
+        ? "入口已开 · 等待 Hub"
+        : "尚未开启";
+  setMonitorText(remoteNode, "[data-monitor-remote-health-state]", remoteHealthText, remote.error || remoteHealthText);
+  const networkText = remote.url
+    ? `HTTPS${remote.latencyMs == null ? "" : ` · ${remote.latencyMs} ms`}`
+    : tailscale.connected
+      ? tailscale.ip || tailscale.dnsName || "私有网络在线"
+      : "离线";
+  setMonitorText(remoteNode, "[data-monitor-remote-network]", networkText, remote.url || tailscale.dnsName || networkText);
+  const mobileText = trackedClients
+    ? `${healthyClients}/${trackedClients} 健康`
+    : onlinePeers.length
+      ? `${onlinePeers.length} 台在线 · 等待心跳`
+      : "暂无连接";
+  setMonitorText(remoteNode, "[data-monitor-mobile-state]", mobileText);
+  const remoteLinkState = remote.conflict ? "danger" : remote.healthy ? "healthy" : tailscale.connected ? "warning" : "idle";
+  setMonitorLink("remote", remoteLinkState, remote.healthy ? "TLS LINK" : tailscale.connected ? "READY" : "OFFLINE");
+  setMapLink("remote", remoteLinkState);
+  const mobileLinkState = clients.some((client) => client.status === "incompatible" || client.status === "offline")
+    ? "danger"
+    : healthyClients
+      ? "healthy"
+      : trackedClients || onlinePeers.length
+        ? "warning"
+        : "idle";
+  setMapLink("mobile", mobileLinkState);
+  const mobileSector = document.querySelector("[data-mobile-monitor]");
+  if (mobileSector) mobileSector.dataset.state = mobileLinkState;
+
+  const coreHealthy = Boolean(hub.healthy && desktop.healthy);
+  const allHealthy = Boolean(coreHealthy && remote.healthy);
+  const hasDanger = Boolean(hub.portConflict || remoteDanger);
+  const anyRunning = Boolean(hub.running || desktop.running || tailscale.connected);
+  const overallState = hasDanger ? "danger" : allHealthy ? "healthy" : anyRunning ? "attention" : "idle";
+  selectors.overall.dataset.overall = overallState;
+  selectors.controlPanel.dataset.state = overallState;
+  selectors.overallLabel.textContent = hasDanger
+    ? "检测到运行异常"
+    : allHealthy
+      ? "链路稳定"
+      : coreHealthy
+        ? "核心稳定 · 远程待命"
+        : anyRunning
+          ? "部分节点在线"
+          : "节点休眠";
+  selectors.monitorState.textContent = hasDanger ? "ALERT" : allHealthy ? "ALL NOMINAL" : coreHealthy ? "CORE NOMINAL" : anyRunning ? "PARTIAL" : "STANDBY";
+
+  let diagnostic = "各节点运行稳定";
+  if (hub.portConflict) diagnostic = `Hub 端口 4318 被 ${hub.portOwner?.processName || "其他程序"}${hub.portOwner?.pid ? `（PID ${hub.portOwner.pid}）` : ""}占用`;
+  else if (remote.conflict) diagnostic = "Anywhere HTTPS 端口被其他 Tailscale 服务占用";
+  else if (tailscale.error || remote.error) diagnostic = tailscale.error || remote.error;
+  else if (!hub.installed) diagnostic = "Hub 尚未安装，桌面端与移动端无法同步";
+  else if (!hub.healthy) diagnostic = "Hub 当前不可访问，正在等待接口恢复";
+  else if (!desktop.installed) diagnostic = "桌面端尚未安装";
+  else if (!desktop.healthy) diagnostic = "Hub 正常，桌面端当前未运行";
+  else if (desktop.updateAvailable) diagnostic = `桌面端可更新至 v${desktop.availableVersion}`;
+  else if (!tailscale.installed) diagnostic = "核心链路正常；安装 Tailscale 后可启用 Anywhere";
+  else if (!tailscale.connected) diagnostic = "核心链路正常；Tailscale 当前未连接";
+  else if (!remote.enabled) diagnostic = "私有网络在线；Anywhere 远程入口尚未开启";
+  else if (!remote.healthy) diagnostic = "Anywhere 入口已开启，正在等待 Hub 响应";
+  selectors.monitorDiagnostic.textContent = diagnostic;
+
+  const warningClients = Number(summary.warning || 0) + Number(summary.idle || 0) + Number(summary.offline || 0) + Number(summary.incompatible || 0);
+  selectors.monitorMobileDetail.textContent = trackedClients
+    ? `移动端：${trackedClients} 台已跟踪 · ${healthyClients} 台健康${warningClients ? ` · ${warningClients} 台需留意` : ""}`
+    : onlinePeers.length
+      ? `移动端：Tailscale 发现 ${onlinePeers.length} 台在线，等待 AetherX 心跳`
+      : "移动端：暂无已跟踪设备";
+
+  const latencySamples = [hub.latencyMs, remote.latencyMs].filter((value) => Number.isFinite(value));
+  const slowestLatency = latencySamples.length ? Math.max(...latencySamples) : null;
+  const pulseDuration = slowestLatency == null ? 2.8 : Math.max(1.65, Math.min(3.1, 1.7 + slowestLatency / 180));
+  selectors.overall.style.setProperty("--pulse-duration", `${pulseDuration.toFixed(2)}s`);
+}
+
 async function renderQr(value) {
   if (!value || state.qrValue === value) return;
   state.qrValue = value;
@@ -57,6 +227,7 @@ async function renderQr(value) {
 function renderRemote(status) {
   const tailscale = status.tailscale || {};
   const remote = status.remote || {};
+  selectors.remoteCard.dataset.runtime = remote.conflict ? "conflict" : remote.healthy ? "running" : remote.enabled || tailscale.connected ? "stopped" : "missing";
   selectors.tailscaleVersion.textContent = tailscale.version ? `v${tailscale.version}` : "—";
   selectors.remoteAction.disabled = state.busy;
   selectors.copyRemote.disabled = state.busy || !remote.url;
@@ -70,7 +241,7 @@ function renderRemote(status) {
     selectors.remotePill.dataset.state = "missing";
     selectors.tailscaleState.textContent = "电脑端未安装";
     selectors.remoteHealth.textContent = "尚未开启";
-    selectors.remoteGuideTitle.textContent = "先让两台设备认识彼此";
+    selectors.remoteGuideTitle.textContent = "配置私有网络";
     selectors.remoteGuide.textContent = "手机扫描这里安装 Tailscale；电脑端点击下方按钮安装。";
     selectors.remoteAction.textContent = "安装 Tailscale";
     selectors.remoteAction.dataset.nextAction = "tailscale-download";
@@ -80,15 +251,15 @@ function renderRemote(status) {
     selectors.remotePill.dataset.state = "stopped";
     selectors.tailscaleState.textContent = tailscale.state === "needs-login" ? "需要登录" : "当前未连接";
     selectors.remoteHealth.textContent = "等待 Tailscale";
-    selectors.remoteGuideTitle.textContent = "登录同一个 Tailscale 账号";
-    selectors.remoteGuide.textContent = "手机扫描二维码安装后，与这台电脑登录同一个私人网络。";
+    selectors.remoteGuideTitle.textContent = "接入同一私有网络";
+    selectors.remoteGuide.textContent = "手机扫描二维码安装后，与这台电脑登录同一个 Tailscale 账号。";
     selectors.remoteAction.textContent = "打开 Tailscale";
     selectors.remoteAction.dataset.nextAction = "tailscale-open";
     selectors.remoteAction.dataset.mode = "start";
   } else if (remote.conflict) {
     selectors.remotePill.textContent = "端口冲突";
     selectors.remotePill.dataset.state = "stopped";
-    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.tailscaleState.textContent = "私有网络在线";
     selectors.remoteHealth.textContent = "端口已被占用";
     selectors.remoteGuideTitle.textContent = "需要释放远程端口";
     selectors.remoteGuide.textContent = "Tailscale 的 4318 端口正由其他服务使用，AetherX 不会覆盖它。";
@@ -98,10 +269,10 @@ function renderRemote(status) {
   } else if (!remote.enabled) {
     selectors.remotePill.textContent = "可以开启";
     selectors.remotePill.dataset.state = "stopped";
-    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.tailscaleState.textContent = "私有网络在线";
     selectors.remoteHealth.textContent = "尚未开启";
-    selectors.remoteGuideTitle.textContent = "手机端也准备好了吗？";
-    selectors.remoteGuide.textContent = "扫描二维码安装并登录 Tailscale，然后开启 AetherX 远程入口。";
+    selectors.remoteGuideTitle.textContent = "建立远程连接";
+    selectors.remoteGuide.textContent = "安装并登录 Tailscale 后，即可开启 AetherX 远程入口。";
     selectors.remoteAction.textContent = "开启远程访问";
     selectors.remoteAction.dataset.nextAction = "remote-enable";
     selectors.remoteAction.dataset.mode = "start";
@@ -109,12 +280,12 @@ function renderRemote(status) {
     qrValue = remote.url;
     selectors.remotePill.textContent = remote.healthy ? "远程可用" : "等待 Hub";
     selectors.remotePill.dataset.state = remote.healthy ? "running" : "stopped";
-    selectors.tailscaleState.textContent = "私人网络已连接";
+    selectors.tailscaleState.textContent = "私有网络在线";
     selectors.remoteHealth.textContent = remote.healthy
       ? `响应正常${remote.latencyMs == null ? "" : ` · ${remote.latencyMs} ms`}`
       : "入口已开，等待 Hub";
-    selectors.remoteGuideTitle.textContent = "用手机连接 AetherX";
-    selectors.remoteGuide.textContent = "在手机端登录页选择“配对电脑”并扫码，自动读取 HTTPS Hub 地址。";
+    selectors.remoteGuideTitle.textContent = "连接移动端";
+    selectors.remoteGuide.textContent = "扫描后自动读取私有 HTTPS Hub 地址。";
     selectors.remoteAction.textContent = "关闭远程访问";
     selectors.remoteAction.dataset.nextAction = "remote-disable";
     selectors.remoteAction.dataset.mode = "stop";
@@ -141,40 +312,63 @@ function renderMobileHealth(mobile) {
   }
 
   if (!clients.length) {
+    if (summary?.tracked) {
+      const tracked = Math.min(4, Math.max(1, Number(summary.tracked || 0)));
+      const healthy = Math.min(tracked, Number(summary.healthy || 0));
+      for (let index = 0; index < tracked; index += 1) {
+        appendMobileNode({
+          name: `移动设备 ${String(index + 1).padStart(2, "0")}`,
+          status: index < healthy ? "healthy" : "warning",
+          detail: index < healthy ? "AetherX 已连接 · 同步正常" : "已收到心跳 · 状态需要确认",
+          meta: "Hub 已收到心跳 · 设备明细同步中"
+        });
+      }
+      return;
+    }
+    if (onlinePeers.length) {
+      for (const peer of onlinePeers.slice(0, 4)) {
+        appendMobileNode({
+          name: peer.name || "Tailscale 移动设备",
+          status: "warning",
+          detail: "Tailscale 在线 · 等待 AetherX 心跳",
+          meta: [peer.os, peer.ip].filter(Boolean).join(" · ") || "私有网络节点"
+        });
+      }
+      return;
+    }
     const empty = document.createElement("p");
     empty.className = "mobile-empty";
-    if (summary?.tracked) {
-      const abnormal = (summary.warning || 0) + (summary.idle || 0) +
-        (summary.offline || 0) + (summary.incompatible || 0);
-      empty.textContent = abnormal
-        ? `AetherX 已收到手机心跳，其中 ${abnormal} 台需要留意。`
-        : "AetherX 心跳正常，移动端连接与同步状态已收到。";
-    } else if (onlinePeers.length) {
-      empty.textContent = `Tailscale 已发现 ${onlinePeers.length} 台手机在线，等待 AetherX 心跳。`;
-    } else {
-      empty.textContent = mobile.available
-        ? "Hub 已连接，手机打开 AetherX 后会在这里显示状态。"
-        : "手机连接后会在这里显示实时状态。";
-    }
+    empty.textContent = mobile.available
+      ? "Hub 已连接，手机打开 AetherX 后会在这里显示状态。"
+      : "手机连接后会在这里显示实时状态。";
     selectors.mobileClients.append(empty);
     return;
   }
 
   for (const client of clients.slice(0, 4)) {
-    const item = document.createElement("article");
-    item.className = `mobile-client mobile-${client.status || "offline"}`;
-    const dot = document.createElement("i");
-    const copy = document.createElement("div");
-    const title = document.createElement("strong");
-    const detail = document.createElement("span");
-    const seen = document.createElement("small");
-    title.textContent = client.name || "AetherX 移动端";
-    detail.textContent = mobileDetail(client);
-    seen.textContent = `App v${client.appVersion || "未知"} · 游标 ${client.syncCursor || 0} · 心跳 ${relativeHeartbeat(client.ageMs)}`;
-    copy.append(title, detail, seen);
-    item.append(dot, copy);
-    selectors.mobileClients.append(item);
+    appendMobileNode({
+      name: client.name || "AetherX 移动端",
+      status: client.status || "offline",
+      detail: mobileDetail(client),
+      meta: `App v${client.appVersion || "未知"} · 游标 ${client.syncCursor || 0} · 心跳 ${relativeHeartbeat(client.ageMs)}`
+    });
   }
+}
+
+function appendMobileNode({ name, status, detail, meta }) {
+  const item = document.createElement("article");
+  item.className = `mobile-client mobile-${status || "offline"}`;
+  const dot = document.createElement("i");
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  const description = document.createElement("span");
+  const seen = document.createElement("small");
+  title.textContent = name;
+  description.textContent = detail;
+  seen.textContent = meta;
+  copy.append(title, description, seen);
+  item.append(dot, copy);
+  selectors.mobileClients.append(item);
 }
 
 function mobileDetail(client) {
@@ -242,6 +436,7 @@ function renderInstallProgress(name) {
 
 function renderComponent(name, component, linked) {
   const card = componentCard(name);
+  card.dataset.runtime = component.portConflict ? "conflict" : component.status;
   const pill = card.querySelector("[data-status-pill]");
   pill.textContent = statusLabel(component);
   pill.dataset.state = component.portConflict
@@ -317,9 +512,7 @@ function renderComponent(name, component, linked) {
 function render(status) {
   if (!status) return;
   state.status = status;
-  const healthy = status.overall === "healthy";
-  selectors.overall.dataset.overall = healthy ? "healthy" : "attention";
-  selectors.overallLabel.textContent = healthy ? "一切正常" : "等待就绪";
+  renderRuntimeMonitor(status);
   selectors.lastCheck.textContent = "刚刚更新";
   renderComponent("hub", status.hub, status.hub.healthy);
   renderComponent("desktop", status.desktop, status.hub.healthy && status.desktop.healthy);
@@ -332,7 +525,7 @@ function render(status) {
     : desktopNeedsUpdate
       ? "更新并启动"
       : allRunning
-    ? "全部运行正常"
+    ? "系统稳定"
     : allInstalled
       ? "全部启动"
       : "一键安装并启动";
@@ -388,6 +581,7 @@ window.launcher.onProgress((progress) => {
 });
 window.launcher.onBusy(({ busy }) => {
   state.busy = busy;
+  document.body.classList.toggle("is-busy", busy);
   selectors.activityDot.classList.toggle("busy", busy);
   document.querySelectorAll("button[data-action], button[data-component-action], button[data-remote-action]").forEach((button) => {
     button.disabled = busy;

@@ -1,6 +1,6 @@
 {
   "name": "aetherx-launcher",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AetherX Windows deployment and health control center",
   "main": "main.js",
   "author": "Xuanxiaotech",
@@ -41,10 +41,7 @@
       "launcher.js",
       "tailscale-manager.js",
       "qr-code.js",
-      {
-        "from": "../desktop/app-icon-rounded.png",
-        "to": "app-icon-rounded.png"
-      }
+      "app-icon-rounded.png"
     ],
     "extraResources": [
       {
@@ -83,7 +80,7 @@
       }
     ],
     "win": {
-      "icon": "../desktop/app-icon-rounded.png",
+      "icon": "app-icon-rounded.png",
       "target": [
         {
           "target": "nsis",
