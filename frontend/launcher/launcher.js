@@ -63,6 +63,49 @@ function setMonitorLink(name, stateName, text) {
 function setMapLink(name, stateName) {
   const link = document.querySelector(`[data-map-link="${name}"]`);
   if (link) link.dataset.state = stateName;
+  document.querySelectorAll(`[data-map-link-state="${name}"]`).forEach((terminal) => {
+    terminal.dataset.state = stateName;
+  });
+}
+
+function updateMapGeometry() {
+  const map = document.querySelector("[data-network-map]");
+  const svg = map?.querySelector(".network-map-links");
+  if (!map || !svg) return;
+  const mapRect = map.getBoundingClientRect();
+  if (!mapRect.width || !mapRect.height) return;
+  svg.setAttribute("viewBox", `0 0 ${mapRect.width} ${mapRect.height}`);
+
+  const point = (name) => {
+    const anchor = map.querySelector(`[data-map-anchor="${name}"]`);
+    if (!anchor) return null;
+    const rect = anchor.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2 - mapRect.left,
+      y: rect.top + rect.height / 2 - mapRect.top
+    };
+  };
+  const links = {
+    desktop: ["hub", "desktop"],
+    remote: ["hub", "remote"],
+    mobile: ["remote", "mobile"]
+  };
+  for (const [name, [fromName, toName]] of Object.entries(links)) {
+    const from = point(fromName);
+    const to = point(toName);
+    const group = svg.querySelector(`[data-map-link="${name}"]`);
+    if (!from || !to || !group) continue;
+    let path;
+    if (name === "mobile") {
+      const bend = Math.max(36, Math.abs(to.y - from.y) * 0.46);
+      path = `M${from.x} ${from.y} C${from.x} ${from.y + bend} ${to.x} ${to.y - bend} ${to.x} ${to.y}`;
+    } else {
+      const direction = Math.sign(to.x - from.x) || 1;
+      const bend = Math.max(52, Math.abs(to.x - from.x) * 0.42);
+      path = `M${from.x} ${from.y} C${from.x + direction * bend} ${from.y} ${to.x - direction * bend} ${to.y} ${to.x} ${to.y}`;
+    }
+    group.querySelectorAll("path").forEach((line) => line.setAttribute("d", path));
+  }
 }
 
 function renderRuntimeMonitor(status) {
@@ -228,6 +271,8 @@ function renderRemote(status) {
   const tailscale = status.tailscale || {};
   const remote = status.remote || {};
   selectors.remoteCard.dataset.runtime = remote.conflict ? "conflict" : remote.healthy ? "running" : remote.enabled || tailscale.connected ? "stopped" : "missing";
+  const remotePort = selectors.remoteCard.querySelector('[data-map-anchor="remote"]');
+  if (remotePort) remotePort.dataset.state = remote.conflict ? "danger" : remote.healthy ? "healthy" : tailscale.connected ? "warning" : "idle";
   selectors.tailscaleVersion.textContent = tailscale.version ? `v${tailscale.version}` : "—";
   selectors.remoteAction.disabled = state.busy;
   selectors.copyRemote.disabled = state.busy || !remote.url;
@@ -437,6 +482,8 @@ function renderInstallProgress(name) {
 function renderComponent(name, component, linked) {
   const card = componentCard(name);
   card.dataset.runtime = component.portConflict ? "conflict" : component.status;
+  const mapPort = card.querySelector(`[data-map-anchor="${name}"]`);
+  if (mapPort) mapPort.dataset.state = component.portConflict ? "danger" : component.healthy ? "healthy" : component.running ? "warning" : "idle";
   const pill = card.querySelector("[data-status-pill]");
   pill.textContent = statusLabel(component);
   pill.dataset.state = component.portConflict
@@ -532,6 +579,7 @@ function render(status) {
   selectors.primaryAction.dataset.action = allInstalled && !desktopNeedsUpdate ? "start-all" : "deploy-all";
   selectors.primaryAction.disabled = state.busy || (desktopNeedsUpdate ? status.desktop.running : allRunning);
   selectors.stopAllAction.disabled = state.busy || !(status.hub.running || status.desktop.running);
+  requestAnimationFrame(updateMapGeometry);
 }
 
 function showToast(message, error = false) {
@@ -576,6 +624,7 @@ window.launcher.onProgress((progress) => {
   if (progress.component === "hub" || progress.component === "desktop") {
     state.progress[progress.component] = progress;
     renderInstallProgress(progress.component);
+    requestAnimationFrame(updateMapGeometry);
   }
   selectors.activity.textContent = progress.message;
 });
@@ -601,4 +650,11 @@ window.launcher.onBusy(({ busy }) => {
     if (state.status) render(state.status);
   }
 });
+const networkMap = document.querySelector("[data-network-map]");
+if (networkMap && typeof ResizeObserver === "function") {
+  const mapResizeObserver = new ResizeObserver(updateMapGeometry);
+  mapResizeObserver.observe(networkMap);
+  networkMap.querySelectorAll(".map-node, .map-mobile-sector").forEach((node) => mapResizeObserver.observe(node));
+}
+requestAnimationFrame(updateMapGeometry);
 window.launcher.getStatus().then(render).catch((error) => showToast(error.message, true));
