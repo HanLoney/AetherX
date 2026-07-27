@@ -49,7 +49,7 @@
     Object.freeze({
       id: "xuan-mood",
       name: "她的心情",
-      description: "根据聊天、手记和共同经历生成小玄连续变化的心情、精力与关注点。",
+      description: "让她拥有连续变化的心绪、精力、关注点与拟生心率，并把当前状态带入对话。",
       icon: "♡",
       color: "pink",
       core: false,

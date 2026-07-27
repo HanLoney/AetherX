@@ -49,6 +49,7 @@ test("desktop optional modules are hydrated from Hub and loaded through lifecycl
   );
   for (const source of [
     "xuan-mood.js",
+    "mood-heartbeat.js",
     "reminder-engine.js",
     "journal-writer.js",
     "dream-writer.js"
@@ -61,6 +62,16 @@ test("desktop optional modules are hydrated from Hub and loaded through lifecycl
   assert.match(home, /dreamWriter\?\.stop\(\)/);
   assert.match(settings, /client\?\.listModules/);
   assert.match(settings, /global\.desktop\?\.updateModule/);
+});
+
+test("心情模块在模块中心明确展示拟生心率与对话感知", () => {
+  const settings = fs.readFileSync(
+    path.join(__dirname, "..", "module-settings.js"),
+    "utf8"
+  );
+  const modules = fs.readFileSync(path.join(__dirname, "..", "modules.js"), "utf8");
+  assert.match(settings, /id: "xuan-mood"[\s\S]*拟生心率[\s\S]*带入对话/);
+  assert.match(modules, /心绪流动 · 拟生心率 · 对话感知/);
 });
 
 test("desktop migrates legacy disabled module switches into Hub", async () => {
