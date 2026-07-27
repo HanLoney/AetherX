@@ -78,6 +78,19 @@ export interface Journal {
   updatedAt: number;
 }
 
+export interface ModuleState {
+  id: string;
+  name: string;
+  description: string;
+  core: boolean;
+  installed: boolean;
+  requestedEnabled: boolean;
+  enabled: boolean;
+  dependencies: string[];
+  blockedBy: string[];
+  updatedAt: number | null;
+}
+
 export interface DeviceHeartbeatInput {
   installationId: string;
   name: string;
@@ -271,6 +284,10 @@ export class AetherApi {
   }
   approveAgentRun(id: string, approved: boolean) {
     return this.request<AgentChatResult>("POST", `/api/v1/agent/runs/${encodeURIComponent(id)}/approve`, { approved });
+  }
+  listModules() { return this.request<ModuleState[]>("GET", "/api/v1/modules"); }
+  updateModule(id: string, enabled: boolean) {
+    return this.request<ModuleState[]>("PATCH", `/api/v1/modules/${encodeURIComponent(id)}`, { enabled });
   }
   listTodos(status = "all") { return this.request<Todo[]>("GET", `/api/v1/todos?status=${encodeURIComponent(status)}`); }
   createTodo(input: { text: string; startAt: number; endAt: number }) { return this.request<Todo>("POST", "/api/v1/todos", input); }

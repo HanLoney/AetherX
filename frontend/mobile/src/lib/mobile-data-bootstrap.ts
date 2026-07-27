@@ -1,4 +1,5 @@
 import { useDataStore } from "../stores/data";
+import { useModuleStore } from "../stores/modules";
 
 let startPromise: Promise<void> | null = null;
 let started = false;
@@ -8,6 +9,7 @@ export function ensureMobileDataStarted() {
   if (!startPromise) {
     const data = useDataStore();
     startPromise = (async () => {
+      await useModuleStore().hydrate().catch(() => undefined);
       const restored = await data.restoreCache();
       if (!restored) await data.refreshAll().catch(() => undefined);
       void data.preloadGallery().catch(() => undefined);

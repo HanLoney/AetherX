@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { primaryRoutePaths } from "../router";
+import { availablePrimaryRoutePaths } from "../router";
+import { useModuleStore } from "../stores/modules";
 
 const route = useRoute();
 const router = useRouter();
-const pages = [
-  defineAsyncComponent(() => import("../views/HomeView.vue")),
-  defineAsyncComponent(() => import("../views/TodosView.vue")),
-  defineAsyncComponent(() => import("../views/MemoriesView.vue")),
-  defineAsyncComponent(() => import("../views/SettingsView.vue"))
+const modules = useModuleStore();
+const allPages = [
+  { path: "/home", component: defineAsyncComponent(() => import("../views/HomeView.vue")) },
+  { path: "/todos", module: "todo", component: defineAsyncComponent(() => import("../views/TodosView.vue")) },
+  { path: "/memories", module: "memory", component: defineAsyncComponent(() => import("../views/MemoriesView.vue")) },
+  { path: "/settings", component: defineAsyncComponent(() => import("../views/SettingsView.vue")) }
 ];
+const pages = computed(() => allPages.filter((page) => !page.module || modules.isEnabled(page.module)));
+const primaryRoutePaths = computed(() => availablePrimaryRoutePaths());
 
-const currentIndex = computed(() => typeof route.meta.navIndex === "number" ? route.meta.navIndex : 0);
+const currentIndex = computed(() =>
+  Math.max(0, primaryRoutePaths.value.findIndex((path) => path === route.path))
+);
 const visualIndex = ref(currentIndex.value);
 const dragging = ref(false);
 const dragX = ref(0);
@@ -72,7 +78,7 @@ function handleTouchMove(event: TouchEvent) {
   lastAt = now;
 
   const atStart = visualIndex.value === 0 && deltaX > 0;
-  const atEnd = visualIndex.value === pages.length - 1 && deltaX < 0;
+  const atEnd = visualIndex.value === pages.value.length - 1 && deltaX < 0;
   dragX.value = (atStart || atEnd) ? deltaX * .24 : deltaX;
 }
 
@@ -80,7 +86,7 @@ function settle(targetIndex: number) {
   dragging.value = false;
   dragX.value = 0;
   visualIndex.value = targetIndex;
-  const target = primaryRoutePaths[targetIndex];
+  const target = primaryRoutePaths.value[targetIndex];
   if (target && target !== route.path) void router.push(target);
 }
 
@@ -98,7 +104,7 @@ function handleTouchEnd(event: TouchEvent) {
   const shouldChange = Math.abs(deltaX) >= threshold || Math.abs(velocityX) >= .52;
   const direction = deltaX < 0 ? 1 : -1;
   const targetIndex = shouldChange
-    ? Math.max(0, Math.min(pages.length - 1, currentIndex.value + direction))
+    ? Math.max(0, Math.min(pages.value.length - 1, currentIndex.value + direction))
     : currentIndex.value;
   settle(targetIndex);
 }
@@ -121,14 +127,14 @@ function handleTouchCancel() {
     <div class="primary-page-track" :style="trackStyle">
       <div
         v-for="(page, index) in pages"
-        :key="primaryRoutePaths[index]"
+        :key="page.path"
         class="primary-deck-page"
         :class="{ 'is-current': index === currentIndex }"
         :style="{ left: `${index * 100}%` }"
         :inert="index !== currentIndex"
         :aria-hidden="index !== currentIndex"
       >
-        <component :is="page" />
+        <component :is="page.component" />
       </div>
     </div>
   </section>

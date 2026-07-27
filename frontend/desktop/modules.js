@@ -92,19 +92,29 @@ function renderModules() {
     input.checked = module.enabled;
     input.disabled = module.core;
     input.setAttribute("aria-label", `${module.enabled ? "停用" : "启用"}${module.name}`);
-    input.addEventListener("change", () => {
-      window.XuanModules.setEnabled(module.id, input.checked);
-      renderModules();
-      window.parent?.postMessage(
-        {
-          type: "xuan:module-state-changed",
-          id: module.id,
-          enabled: input.checked
-        },
-        "*"
-      );
-      if (module.id === "time-awareness" && input.checked) {
-        refreshTimeAwarenessStatus();
+    input.addEventListener("change", async () => {
+      const desired = input.checked;
+      input.disabled = true;
+      try {
+        await window.XuanModules.setEnabled(module.id, desired);
+        renderModules();
+        window.parent?.postMessage(
+          {
+            type: "xuan:module-state-changed",
+            id: module.id,
+            enabled: window.XuanModules.isEnabled(module.id)
+          },
+          "*"
+        );
+        if (module.id === "time-awareness" && desired) {
+          refreshTimeAwarenessStatus();
+        }
+      } catch (error) {
+        timeAwarenessStatus = {
+          state: "error",
+          text: error.message || "模块状态保存失败"
+        };
+        renderModules();
       }
     });
     moduleGrid.append(card);
@@ -113,7 +123,7 @@ function renderModules() {
   const enabled = modules.filter((module) => module.enabled);
   const tools = enabled.reduce((sum, module) => sum + module.tools, 0);
   document.querySelector("#enabledCount").textContent = String(enabled.length);
-  document.querySelector("#toolCount").textContent = `${tools} 个 AI 工具可用`;
+  document.querySelector("#toolCount").textContent = `${tools} 个 AI 工具已启用`;
   todoModuleBtn.classList.toggle(
     "hidden",
     !window.XuanModules.isEnabled("todo")
@@ -199,5 +209,16 @@ document.querySelector("#closeBtn").addEventListener("click", () => window.deskt
 window.addEventListener("xuan:modules-changed", renderModules);
 window.addEventListener("xuan:permissions-changed", renderModules);
 
-renderModules();
-refreshTimeAwarenessStatus();
+async function initializeModules() {
+  await window.XuanModules.hydrate(window.desktop);
+  renderModules();
+  await refreshTimeAwarenessStatus();
+}
+
+initializeModules().catch((error) => {
+  timeAwarenessStatus = {
+    state: "error",
+    text: error.message || "无法读取模块状态"
+  };
+  renderModules();
+});
