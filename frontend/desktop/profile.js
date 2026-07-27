@@ -24,6 +24,7 @@ let galleryLoadError = "";
 let galleryLoadPromise = null;
 let galleryFilter = "all";
 let galleryLightboxLoadId = 0;
+const galleryOriginalLoads = new Map();
 let assistantView = "overview";
 const assistantContentState = {
   growth: { loading: kind === "assistant", error: "" },
@@ -156,6 +157,42 @@ function renderAssistant() {
   setAssistantView(assistantView);
 }
 
+function loadGalleryOriginal(source, priority = "low") {
+  if (!source) return Promise.reject(new Error("缺少原图地址。"));
+  if (galleryOriginalLoads.has(source)) return galleryOriginalLoads.get(source);
+  const request = new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    if ("fetchPriority" in image) image.fetchPriority = priority;
+    image.onload = () => resolve(source);
+    image.onerror = () => reject(new Error("原图加载失败。"));
+    image.src = source;
+  }).catch((error) => {
+    galleryOriginalLoads.delete(source);
+    throw error;
+  });
+  galleryOriginalLoads.set(source, request);
+  return request;
+}
+
+function upgradeGalleryPreview(element, image, priority = "low") {
+  const previewSource = image.source || image.originalSource || "";
+  const originalSource = image.originalSource || previewSource;
+  if (!originalSource || originalSource === previewSource) return;
+  element.dataset.originalSource = originalSource;
+  const upgrade = () => {
+    loadGalleryOriginal(originalSource, priority)
+      .then(() => {
+        if (!element.isConnected || element.dataset.originalSource !== originalSource) return;
+        element.src = originalSource;
+        element.dataset.quality = "original";
+      })
+      .catch(() => undefined);
+  };
+  if (element.complete && element.naturalWidth) upgrade();
+  else element.addEventListener("load", upgrade, { once: true });
+}
+
 function setAssistantView(view) {
   const allowed = ["overview", "journal", "gallery", "growth"];
   assistantView = allowed.includes(view) ? view : "overview";
@@ -220,7 +257,9 @@ function renderAssistantOverview() {
     preview.src = image.source;
     preview.alt = previewLabel;
     preview.loading = "lazy";
+    preview.decoding = "async";
     button.append(preview);
+    upgradeGalleryPreview(preview, image);
     button.addEventListener("click", () => openLightbox(image));
     galleryHost.append(button);
   });
@@ -396,6 +435,8 @@ function renderGallery() {
       img.src = image.source;
       img.alt = `${originLabel}留影`;
       img.loading = "lazy";
+      img.decoding = "async";
+      upgradeGalleryPreview(img, image);
       const badge = document.createElement("span");
       badge.className = `gallery-badge gallery-badge-${image.origin}`;
       badge.textContent = image.origin === "journal" ? "手记" : "对话";
