@@ -196,6 +196,18 @@ class XuanApiClient {
     );
   }
 
+  listModules() {
+    return this.request("GET", "/api/v1/modules");
+  }
+
+  updateModule(id, enabled) {
+    return this.request(
+      "PATCH",
+      `/api/v1/modules/${encodeURIComponent(id)}`,
+      { enabled: enabled === true }
+    );
+  }
+
   getAiImageConfig() {
     return this.request("GET", "/api/v1/ai/image-config");
   }

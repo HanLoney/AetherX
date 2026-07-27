@@ -45,6 +45,31 @@ paths:
       summary: 注销当前会话
       responses:
         "204": { description: 已退出登录 }
+  /modules:
+    get:
+      summary: 查询当前账号的已安装模块与有效启用状态
+      responses:
+        "200": { description: 模块清单、依赖关系和启用状态 }
+  /modules/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      summary: 热启用或停用一个模块
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: 更新后的完整模块清单 }
+        "409": { description: 核心模块不可停用，或依赖模块尚未启用 }
   /pairing/sessions:
     post:
       summary: 创建短时手机配对会话

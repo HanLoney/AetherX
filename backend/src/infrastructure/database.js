@@ -706,6 +706,18 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_mobile_health_user_seen
       ON mobile_client_health(user_id, last_heartbeat_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS module_settings (
+      user_id TEXT NOT NULL,
+      module_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id, module_id),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_module_settings_user
+      ON module_settings(user_id, updated_at DESC);
   `
 ];
 

@@ -19,6 +19,13 @@ function createAgentToolRuntime(services) {
   const registry = new ToolRegistry({
     isEnabled: (toolName) => {
       const context = currentContext();
+      const moduleId = services.moduleManager?.moduleForTool(toolName) || "";
+      if (moduleId) {
+        const enabled = typeof services.moduleManager?.isEnabled === "function"
+          ? services.moduleManager.isEnabled(context.userId, moduleId)
+          : context.enabledModules.has(moduleId);
+        if (!enabled) return false;
+      }
       return !toolName.startsWith("image.") || context.imageEnabled;
     }
   });
@@ -38,11 +45,22 @@ function createAgentToolRuntime(services) {
 
   return {
     async forUser(userId, callback) {
-      const imageConfig = services.aiConfigRepository.getImagePublic(userId);
+      const enabledModules = new Set(
+        services.moduleManager
+          ? services.moduleManager
+              .snapshot(userId)
+              .filter((module) => module.enabled)
+              .map((module) => module.id)
+          : ["image-generation"]
+      );
+      const imageConfig = enabledModules.has("image-generation")
+        ? services.aiConfigRepository.getImagePublic(userId)
+        : { hasApiKey: false };
       const assistantProfile = services.assistantMemoryService.getProfile(userId);
       const context = {
         userId,
         imageEnabled: Boolean(imageConfig.hasApiKey),
+        enabledModules,
         personaImage: String(assistantProfile.personaImageDataUrl || ""),
         adapter: createServiceAdapter(userId, services)
       };

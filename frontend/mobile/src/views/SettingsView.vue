@@ -2,6 +2,7 @@
 import { computed, nextTick, reactive, ref, shallowRef } from "vue";
 import {
   Check,
+  Blocks,
   ChevronRight,
   Cloud,
   Archive,
@@ -36,10 +37,12 @@ import ProfileAvatar from "../components/ProfileAvatar.vue";
 import { DEFAULT_FONT_SCALE, useInterfaceSettings } from "../lib/interface-settings";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
+import { useModuleStore } from "../stores/modules";
 
 const router = useRouter();
 const session = useSessionStore();
 const data = useDataStore();
+const modules = useModuleStore();
 const interfaceSettings = useInterfaceSettings();
 const refreshing = ref(false);
 const connectionOpen = ref(false);
@@ -69,6 +72,7 @@ const cropOpen = ref(false);
 const cropZoom = ref(100);
 const avatarSaving = ref(false);
 const avatarError = ref("");
+const moduleError = ref("");
 const crop = reactive({ baseScale: 1, offsetX: 0, offsetY: 0 });
 const aiState = ref<{hasApiKey:boolean;model?:string}|null>(null);
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
@@ -469,6 +473,16 @@ async function logout() {
   await router.replace("/login");
 }
 
+async function toggleModule(id: string, enabled: boolean) {
+  moduleError.value = "";
+  try {
+    await modules.setEnabled(id, enabled);
+    await data.refreshAll();
+  } catch (error) {
+    moduleError.value = (error as Error).message || "模块状态没有保存成功。";
+  }
+}
+
 void session.requireApi().aiConfig().then((value) => { aiState.value = value; }).catch(() => undefined);
 </script>
 
@@ -519,6 +533,21 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </article>
     </section>
     <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
+
+    <div class="section-heading module-heading"><div><span>CAPABILITIES</span><h2>功能模块</h2></div><Blocks :size="18" /></div>
+    <section class="module-control-list">
+      <label v-for="module in modules.modules.value" :key="module.id" :class="{ core: module.core, disabled: !module.enabled }">
+        <span><strong>{{ module.name }}</strong><small>{{ module.description }}</small></span>
+        <input
+          type="checkbox"
+          :checked="module.enabled"
+          :disabled="module.core || modules.loading.value"
+          @change="toggleModule(module.id, ($event.target as HTMLInputElement).checked)"
+        />
+        <i aria-hidden="true"><b /></i>
+      </label>
+    </section>
+    <p v-if="moduleError" class="module-error">{{ moduleError }}</p>
 
     <button class="interface-settings-entry" type="button" @click="interfaceOpen = true">
       <i><Settings2 :size="18" /></i>
@@ -722,6 +751,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .profile-meta{position:relative;z-index:1;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding:0 4px 0 10px;border-radius:14px;background:rgba(112,104,135,.045)}.profile-meta>span{min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;color:#8e8797;font-size: calc(8px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.profile-meta>button{height:31px;flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 10px;border:1px solid rgba(255,255,255,.75);border-radius:11px;color:#806c82;background:linear-gradient(125deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.14));font-size: calc(8px * var(--font-scale, 1));font-weight:700}
 .section-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:25px 4px 11px}.section-heading>div{display:grid;gap:3px}.section-heading span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.section-heading h2{margin:0;color:#514d5d;font-size: calc(16px * var(--font-scale, 1))}.section-heading>svg{color:#7ca48f}
 .settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}
+.module-heading{margin-top:22px}.module-control-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.075);backdrop-filter:blur(18px)}.module-control-list label{position:relative;min-height:68px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:13px;padding:12px 14px;border-bottom:1px solid rgba(106,98,129,.07);transition:opacity .18s ease}.module-control-list label:last-child{border-bottom:0}.module-control-list label.disabled{opacity:.62}.module-control-list label>span{min-width:0;display:grid;gap:4px}.module-control-list strong{color:#4f4a5b;font-size:calc(10px * var(--font-scale,1))}.module-control-list small{overflow:hidden;color:#9993a3;font-size:calc(7px * var(--font-scale,1));line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.module-control-list input{position:absolute;opacity:0;pointer-events:none}.module-control-list label>i{position:relative;width:39px;height:23px;border-radius:999px;background:rgba(133,127,151,.18);box-shadow:inset 0 0 0 1px rgba(108,101,130,.08);transition:background .2s ease}.module-control-list label>i b{position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(75,67,95,.2);transition:transform .22s cubic-bezier(.2,.9,.25,1.15)}.module-control-list input:checked+i{background:linear-gradient(135deg,#cb8dac,#7fa8d0)}.module-control-list input:checked+i b{transform:translateX(16px)}.module-control-list label.core>i{opacity:.55}.module-error{margin:9px 12px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));text-align:center}
 .interface-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 19px 8px;color:#70697d;background:linear-gradient(140deg,rgba(255,255,255,.67),rgba(246,248,252,.5));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.interface-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.13),rgba(var(--blue-rgb),.12))}.interface-settings-entry>span{min-width:0;display:grid;gap:4px}.interface-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.interface-settings-entry small{color:#9a94a3;font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>b{padding:4px 7px;border-radius:999px;color:#7187a2;background:rgba(var(--blue-rgb),.1);font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>svg{color:#aaa3b0}
 .archive-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:9px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 8px 19px;color:#70697d;background:linear-gradient(140deg,rgba(247,250,255,.72),rgba(255,247,252,.56));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.archive-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#718fac;background:linear-gradient(145deg,rgba(var(--blue-rgb),.16),rgba(var(--pink-rgb),.1))}.archive-settings-entry>span{min-width:0;display:grid;gap:4px}.archive-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.archive-settings-entry small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#9a94a3;font-size:calc(7px * var(--font-scale, 1));line-height:1.4}.archive-settings-entry>b{padding:4px 7px;border-radius:999px;color:#89768d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));white-space:nowrap}.archive-settings-entry>svg{color:#aaa3b0}
 .refresh-button,.logout-button{width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:15px;font-size: calc(9px * var(--font-scale, 1));font-weight:700}.refresh-button{margin-top:17px;border:1px solid rgba(255,255,255,.82);color:#687897;background:rgba(255,255,255,.64)}.logout-button{margin-top:8px;border:0;color:#ad6175;background:rgba(217,118,143,.085)}.refresh-button:disabled{opacity:.55}.settings-note{margin:11px 22px 0;color:#a19baa;font-size: calc(7px * var(--font-scale, 1));line-height:1.6;text-align:center}

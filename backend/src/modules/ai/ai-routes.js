@@ -4,7 +4,8 @@ function registerAiRoutes(
   router,
   configRepository,
   providerClient,
-  timeAwarenessService
+  timeAwarenessService,
+  moduleManager
 ) {
   router.add("GET", "/api/v1/ai/config", ({ userId }) => ({
     data: configRepository.getPublic(userId)
@@ -12,12 +13,18 @@ function registerAiRoutes(
   router.add("PUT", "/api/v1/ai/config", ({ userId, body }) => ({
     data: configRepository.save(userId, body)
   }));
-  router.add("GET", "/api/v1/ai/image-config", ({ userId }) => ({
-    data: configRepository.getImagePublic(userId)
-  }));
-  router.add("PUT", "/api/v1/ai/image-config", ({ userId, body }) => ({
-    data: configRepository.saveImage(userId, body)
-  }));
+  router.add(
+    "GET",
+    "/api/v1/ai/image-config",
+    ({ userId }) => ({ data: configRepository.getImagePublic(userId) }),
+    { module: "image-generation" }
+  );
+  router.add(
+    "PUT",
+    "/api/v1/ai/image-config",
+    ({ userId, body }) => ({ data: configRepository.saveImage(userId, body) }),
+    { module: "image-generation" }
+  );
   router.add("POST", "/api/v1/ai/chat", async ({ userId, body }) => {
     const stored = configRepository.getCredentials(userId);
     const config = {
@@ -30,7 +37,8 @@ function registerAiRoutes(
       userId,
       body.runtime,
       timeAwarenessService,
-      body.messages
+      body.messages,
+      moduleManager
     );
     const payload = runtime
       ? {
@@ -44,27 +52,34 @@ function registerAiRoutes(
         userId,
         body.runtime,
         timeAwarenessService,
-        body.messages
+        body.messages,
+        moduleManager
       );
       normalizeCurrentTimeClaims(result, latest.localTime);
     }
     return { data: result };
   });
-  router.add("POST", "/api/v1/ai/image-generations", async ({ userId, body }) => {
-    const stored = configRepository.getImageCredentials(userId);
-    const config = {
-      ...stored,
-      ...(body.baseUrl ? { baseUrl: String(body.baseUrl).replace(/\/+$/, "") } : {}),
-      ...(body.model ? { model: String(body.model) } : {}),
-      ...(body.apiKey ? { apiKey: String(body.apiKey) } : {})
-    };
-    const result = await providerClient.image(config, body);
-    return { data: result };
-  });
+  router.add(
+    "POST",
+    "/api/v1/ai/image-generations",
+    async ({ userId, body }) => {
+      const stored = configRepository.getImageCredentials(userId);
+      const config = {
+        ...stored,
+        ...(body.baseUrl ? { baseUrl: String(body.baseUrl).replace(/\/+$/, "") } : {}),
+        ...(body.model ? { model: String(body.model) } : {}),
+        ...(body.apiKey ? { apiKey: String(body.apiKey) } : {})
+      };
+      const result = await providerClient.image(config, body);
+      return { data: result };
+    },
+    { module: "image-generation" }
+  );
 }
 
-function runtimeTimeContext(userId, input, service, messages) {
+function runtimeTimeContext(userId, input, service, messages, moduleManager) {
   if (!service || input?.timeAwareness !== true) return null;
+  if (moduleManager && !moduleManager.isEnabled(userId, "time-awareness")) return null;
   return service.getContext(userId, {
     timeZone: input.timeZone,
     locale: input.locale,

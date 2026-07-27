@@ -115,6 +115,13 @@ const { MediaService } = require("./modules/media/media-service");
 const { registerMediaRoutes } = require("./modules/media/media-routes");
 const { ArchiveService } = require("./modules/archive/archive-service");
 const { registerArchiveRoutes } = require("./modules/archive/archive-routes");
+const {
+  ModuleSettingsRepository
+} = require("./modules/module-settings/module-settings-repository");
+const { ModuleManager } = require("./modules/module-settings/module-manager");
+const {
+  registerModuleSettingsRoutes
+} = require("./modules/module-settings/module-settings-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -129,10 +136,13 @@ function createApp(config) {
   const syncRepository = new SyncRepository(database);
   const syncService = new SyncService(syncRepository);
   const syncEventBroker = new SyncEventBroker(syncRepository);
+  const moduleManager = new ModuleManager(new ModuleSettingsRepository(database));
   const router = createRouter({
     corsOrigin: config.corsOrigin,
     authenticate: (authorization) => authService.authenticate(authorization),
-    isWriteLocked: (userId) => archiveService?.isUserLocked(userId) === true
+    isWriteLocked: (userId) => archiveService?.isUserLocked(userId) === true,
+    isModuleEnabled: (userId, moduleId) =>
+      moduleManager.isEnabled(userId, moduleId)
   });
 
   const todoRepository = new TodoRepository(database);
@@ -205,7 +215,8 @@ function createApp(config) {
     albumService,
     dreamService,
     conversationService,
-    mediaService
+    mediaService,
+    moduleManager
   };
   const agentService = new AgentService(
     agentServices,
@@ -233,12 +244,14 @@ function createApp(config) {
   registerAuthRoutes(router, authService);
   registerDeviceRoutes(router, deviceService);
   registerSyncRoutes(router, syncService, syncEventBroker, deviceService);
+  registerModuleSettingsRoutes(router, moduleManager);
   registerTodoRoutes(router, todoService);
   registerAiRoutes(
     router,
     aiConfigRepository,
     aiProviderClient,
-    timeAwarenessService
+    timeAwarenessService,
+    moduleManager
   );
   registerAgentRoutes(router, agentService);
   registerProfileRoutes(router, profileService);

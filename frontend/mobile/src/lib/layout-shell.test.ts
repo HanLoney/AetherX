@@ -13,6 +13,7 @@ const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.
 const settingsSource = readFileSync(new URL("../views/SettingsView.vue", import.meta.url), "utf8");
 const sessionSource = readFileSync(new URL("../stores/session.ts", import.meta.url), "utf8");
 const dataSource = readFileSync(new URL("../stores/data.ts", import.meta.url), "utf8");
+const modulesSource = readFileSync(new URL("../stores/modules.ts", import.meta.url), "utf8");
 const loginSource = readFileSync(new URL("../views/LoginView.vue", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
@@ -26,6 +27,17 @@ describe("adaptive mobile shell", () => {
     expect(routerSource).not.toMatch(/path: "\/chat"[^\n]+primaryNav/);
     expect(shellSource).toContain('aria-label="返回主页"');
     expect(shellSource).toContain(':to="props.backTo"');
+  });
+
+  it("hydrates module switches from Hub and removes disabled mobile capabilities", () => {
+    expect(modulesSource).toContain("listModules()");
+    expect(modulesSource).toContain("updateModule(id, enabled)");
+    expect(routerSource).toContain('meta: { primaryNav: true, navIndex: 1, module: "todo" }');
+    expect(primaryNavSource).toContain("modules.isEnabled(item.module)");
+    expect(primaryDeckSource).toContain("modules.isEnabled(page.module)");
+    expect(dataSource).toContain('moduleStore.isEnabled("todo") ? api.listTodos()');
+    expect(dataSource).toContain('moduleStore.isEnabled("memory") ? api.listMemories()');
+    expect(settingsSource).toContain('class="module-control-list"');
   });
 
   it("uses a compact dock and hides browse navigation during input", () => {

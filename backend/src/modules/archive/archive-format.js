@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 3;
+const PREVIOUS_FORMAT_VERSION = 2;
 const LEGACY_FORMAT_VERSION = 1;
 const DIGEST_ALGORITHM = "sha256-canonical-codepoint-v2";
 const CURRENT_USER = "__CURRENT_USER__";
@@ -33,8 +34,12 @@ const TABLES = Object.freeze([
   "assistant_dreams",
   "assistant_dream_sources",
   "ai_image_configs",
+  "module_settings",
   "media_assets"
 ]);
+const PREVIOUS_TABLES = Object.freeze(
+  TABLES.filter((table) => table !== "module_settings")
+);
 
 const INSERT_ORDER = Object.freeze([
   "todos",
@@ -58,6 +63,7 @@ const INSERT_ORDER = Object.freeze([
   "assistant_dreams",
   "assistant_dream_sources",
   "ai_image_configs",
+  "module_settings",
   "conversations",
   "messages",
   "memory_evidence",
@@ -77,9 +83,13 @@ function codePointCompare(left, right) {
   return 0;
 }
 
-function digestWithComparator({ records, credentials, account, media }, comparator) {
+function digestWithComparator(
+  { records, credentials, account, media },
+  comparator,
+  tables = TABLES
+) {
   const normalizedRecords = {};
-  for (const table of TABLES) {
+  for (const table of tables) {
     normalizedRecords[table] = [...(records[table] || [])]
       .map(normalizeRow)
       .sort((left, right) => comparator(canonicalStringify(left), canonicalStringify(right)));
@@ -105,7 +115,15 @@ function continuityDigest(input) {
 }
 
 function legacyContinuityDigest(input) {
-  return digestWithComparator(input, (left, right) => left.localeCompare(right));
+  return digestWithComparator(
+    input,
+    (left, right) => left.localeCompare(right),
+    PREVIOUS_TABLES
+  );
+}
+
+function previousContinuityDigest(input) {
+  return digestWithComparator(input, codePointCompare, PREVIOUS_TABLES);
 }
 
 function normalizeRow(row) {
@@ -153,11 +171,19 @@ function readMetadata(payloadPath, fs) {
 }
 
 function validateMetadata(metadata) {
-  if (!metadata || ![LEGACY_FORMAT_VERSION, FORMAT_VERSION].includes(metadata.formatVersion)) {
+  if (
+    !metadata ||
+    ![LEGACY_FORMAT_VERSION, PREVIOUS_FORMAT_VERSION, FORMAT_VERSION].includes(
+      metadata.formatVersion
+    )
+  ) {
     throw archiveError(400, "ARCHIVE_VERSION_UNSUPPORTED", "这个存档版本暂不受支持。");
   }
   if (!metadata.records || typeof metadata.records !== "object") throw invalidArchive();
-  for (const table of TABLES) {
+  const archiveTables = metadata.formatVersion === FORMAT_VERSION
+    ? TABLES
+    : PREVIOUS_TABLES;
+  for (const table of archiveTables) {
     if (!Array.isArray(metadata.records[table])) throw invalidArchive();
   }
   if (Object.keys(metadata.records).some((table) => !TABLES.includes(table))) throw invalidArchive();
@@ -177,19 +203,27 @@ function validateMetadata(metadata) {
       throw archiveError(413, "ARCHIVE_TOO_LARGE", "存档总大小超出限制。");
     }
   }
-  const actualDigest = continuityDigest(metadata);
+  const actualDigest = metadata.formatVersion === FORMAT_VERSION
+    ? continuityDigest(metadata)
+    : previousContinuityDigest(metadata);
   if (metadata.formatVersion === LEGACY_FORMAT_VERSION && !metadata.digestAlgorithm) {
     if (!/^[a-f0-9]{64}$/i.test(String(metadata.continuityDigest || ""))) throw invalidArchive();
     // Version 1 sorted rows with localeCompare(), whose result changes across
     // Node/Electron ICU versions and OS locales. The encrypted envelope already
     // authenticates the whole payload, and media is verified separately, so
     // normalize legacy archives to the deterministic digest before restoring.
-    metadata.continuityDigest = actualDigest;
-    metadata.digestAlgorithm = DIGEST_ALGORITHM;
   } else if (metadata.digestAlgorithm !== DIGEST_ALGORITHM) {
     throw archiveError(400, "ARCHIVE_DIGEST_UNSUPPORTED", "这个存档使用了当前版本不支持的一致性校验方式。");
   } else if (actualDigest !== metadata.continuityDigest) {
     throw archiveError(400, "ARCHIVE_DIGEST_MISMATCH", "存档一致性校验失败。");
+  }
+  if (!Array.isArray(metadata.records.module_settings)) {
+    metadata.records.module_settings = [];
+  }
+  if (metadata.formatVersion !== FORMAT_VERSION) {
+    metadata.records.module_settings = [];
+    metadata.continuityDigest = continuityDigest(metadata);
+    metadata.digestAlgorithm = DIGEST_ALGORITHM;
   }
   return metadata;
 }

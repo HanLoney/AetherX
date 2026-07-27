@@ -20,6 +20,13 @@ const state = {
   testing: false,
   savingImageConfig: false
 };
+const loadedModuleScripts = new Map();
+let reminderComposer = null;
+let reminderEngine = null;
+let journalWriter = null;
+let dreamWriter = null;
+let xuanMood = null;
+let moduleRuntimeSync = Promise.resolve();
 
 function runtimeOptions() {
   return {
@@ -74,6 +81,7 @@ const elements = {
   modelInput: document.querySelector("#modelInput"),
   keyHelp: document.querySelector("#keyHelp"),
   imageProviderGrid: document.querySelector("#imageProviderGrid"),
+  imageAISection: document.querySelector("#imageAISection"),
   imageBaseUrlInput: document.querySelector("#imageBaseUrlInput"),
   imageApiKeyInput: document.querySelector("#imageApiKeyInput"),
   imageModelInput: document.querySelector("#imageModelInput"),
@@ -309,7 +317,9 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (event.data?.type === "xuan:module-state-changed") {
-    syncModuleState();
+    window.XuanModules.hydrate(window.desktop)
+      .then(() => syncModuleState())
+      .catch((error) => console.warn("Unable to refresh module state:", error.message));
     return;
   }
   if (event.data?.type !== "xuan:navigate") return;
@@ -365,6 +375,13 @@ window.addEventListener("message", (event) => {
 });
 
 function syncModuleState() {
+  moduleRuntimeSync = moduleRuntimeSync
+    .then(syncModuleStateNow)
+    .catch((error) => console.warn("Unable to synchronize module runtime:", error.message));
+  return moduleRuntimeSync;
+}
+
+async function syncModuleStateNow() {
   const todoEnabled = window.XuanModules.isEnabled("todo");
   const memoryEnabled = window.XuanModules.isEnabled("memory");
   const albumEnabled = window.XuanModules.isEnabled("anniversary-album");
@@ -376,10 +393,17 @@ function syncModuleState() {
   albumModuleBtn.classList.toggle("hidden", !albumEnabled);
   dreamModuleBtn.classList.toggle("hidden", !dreamsEnabled);
   imageModuleBtn.classList.toggle("hidden", !imageGenerationEnabled);
-  xuanMood?.syncHome();
-  reminderEngine?.runCheck();
-  journalWriter?.run();
-  dreamWriter?.run();
+  elements.imageAISection.classList.toggle("hidden", !imageGenerationEnabled);
+  if (imageGenerationEnabled && !state.imageConfig) {
+    state.imageConfig = await window.desktop.getAIImageConfig();
+    state.imageDraft = { ...state.imageConfig, apiKey: "" };
+  }
+  await Promise.all([
+    syncMoodRuntime(),
+    syncReminderRuntime(),
+    syncJournalRuntime(),
+    syncDreamRuntime()
+  ]);
 }
 
 function providerById(id) {
@@ -848,7 +872,9 @@ async function refreshXuanMoodContext() {
 }
 
 async function deliverReminder(reminder) {
-  const content = await reminderComposer.compose(reminder);
+  const content = reminderComposer
+    ? await reminderComposer.compose(reminder)
+    : reminder.body;
   const message = {
     ...createMessage("assistant", content),
     source: "proactive-reminder",
@@ -897,123 +923,173 @@ async function deliverReminder(reminder) {
   }
 }
 
-const reminderComposer = new window.AetherReminderComposer({
-  requestAI: (payload) => window.desktop.requestAI(payload),
-  extractText: extractResponse,
-  getSystemPrompt: () => systemPrompt,
-  getRuntime: runtimeOptions,
-  getUserName: () =>
-    state.userProfile?.preferredName ||
-    state.userProfile?.displayName ||
-    "洛尼",
-  canUseAI: () => Boolean(state.config?.hasApiKey),
-  onError: (error) =>
-    console.warn("Unable to generate a personalized reminder:", error.message)
-});
+function loadModuleScript(source) {
+  if (loadedModuleScripts.has(source)) return loadedModuleScripts.get(source);
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = source;
+    script.async = true;
+    script.addEventListener("load", resolve, { once: true });
+    script.addEventListener(
+      "error",
+      () => reject(new Error(`模块脚本加载失败：${source}`)),
+      { once: true }
+    );
+    document.head.append(script);
+  });
+  loadedModuleScripts.set(source, promise);
+  return promise;
+}
 
-const reminderEngine = new window.AetherReminderEngine({
-  listTodos: (filters) => window.desktop.listTodos(filters),
-  onReminder: deliverReminder,
-  isEnabled: () =>
-    window.XuanModules.isEnabled("todo") &&
-    window.XuanModules.isEnabled("proactive-reminders"),
-  storage: window.localStorage,
-  onError: (error) =>
-    console.warn("Unable to check proactive reminders:", error.message)
-});
-
-let xuanMood = null;
-const albumWriter = new window.XuanAlbumWriter({
-  isEnabled: () => window.XuanModules.isEnabled("anniversary-album"),
-  getConfig: () => state.config,
-  requestAI: (payload) => window.desktop.requestAI(payload),
-  createMoment: (moment) => window.desktop.createAlbumMoment(moment),
-  getUserName: () =>
-    state.userProfile?.preferredName ||
-    state.userProfile?.displayName ||
-    state.auth?.user?.displayName ||
-    "洛尼",
-  getAssistantName: () => state.assistantProfile?.name || "小玄"
-});
-
-const journalWriter = new window.AetherJournalWriter({
-  getJournal: (type, periodKey) =>
-    window.desktop.getJournal(type, periodKey),
-  getMaterial: (from, to) =>
-    window.desktop.getJournalMaterial(from, to),
-  saveJournal: (journal) => window.desktop.saveJournal(journal),
-  requestAI: (payload) => window.desktop.requestAI(payload),
-  extractText: extractResponse,
-  getSystemPrompt: () => systemPrompt,
-  getRuntime: runtimeOptions,
-  generateImage: (payload) => window.desktop.generateImage(payload),
-  getPersonaImage: () => state.assistantProfile?.personaImageDataUrl || "",
-  isImageEnabled: () => Boolean(state.imageConfig?.hasApiKey),
-  isEnabled: () =>
-    Boolean(state.config?.hasApiKey) &&
-    window.XuanModules.isEnabled("autonomous-journal"),
-  onSaved: async (journal) => {
-    xuanMood?.record({
-      sourceType: "journal",
-      sourceId: journal.id,
-      title: journal.title,
-      content: journal.content,
-      mood: journal.mood,
-      summary: `${journal.title}${journal.mood ? ` · ${journal.mood}` : ""}`,
-      sourceCreatedAt: journal.updatedAt || Date.now()
+async function syncMoodRuntime() {
+  if (!window.XuanModules.isEnabled("xuan-mood")) {
+    xuanMood = null;
+    state.xuanMoodContext = "";
+    renderXuanMood({ enabled: false });
+    return;
+  }
+  if (!xuanMood) {
+    await loadModuleScript("xuan-mood.js");
+    xuanMood = new window.XuanMoodModule({
+      isEnabled: () => window.XuanModules.isEnabled("xuan-mood"),
+      getHome: () => window.desktop.getXuanMoodHome(),
+      recordEvent: (input) => window.desktop.recordXuanMoodEvent(input),
+      refreshMood: () => window.desktop.refreshXuanMood(),
+      onChange: renderXuanMood
     });
-    moduleFrame.contentWindow?.postMessage(
-      { type: "aether:journals-updated" },
-      "*"
-    );
-    try {
-      await window.desktop.showNotification({
-        title: `${state.assistantProfile?.name || "AI 伙伴"}写完了${
-          journal.type === "daily" ? "日记" : "周记"
-        }`,
-        body: journal.title
-      });
-    } catch {}
-  },
-  onError: (error) =>
-    console.warn("Unable to write autonomous journal:", error.message)
-});
+  }
+  await xuanMood.syncHome();
+}
 
-const dreamWriter = new window.AetherDreamWriter({
-  getDreamByDate: (dreamDate) => window.desktop.getDreamByDate(dreamDate),
-  getMaterial: (from, to, limit) =>
-    window.desktop.getDreamMaterial(from, to, limit),
-  createDream: (dream) => window.desktop.createDream(dream),
-  requestAI: (payload) => window.desktop.requestAI(payload),
-  extractText: extractResponse,
-  getSystemPrompt: () => systemPrompt,
-  getRuntime: runtimeOptions,
-  isEnabled: () =>
-    Boolean(state.config?.hasApiKey) &&
-    window.XuanModules.isEnabled("dreams"),
-  onSaved: async (dream) => {
-    moduleFrame.contentWindow?.postMessage(
-      { type: "aether:dreams-updated" },
-      "*"
-    );
-    try {
-      await window.desktop.showNotification({
-        title: "梦境写好了",
-        body: dream.title
-      });
-    } catch {}
-  },
-  onError: (error) =>
-    console.warn("Unable to write dream:", error.message)
-});
+async function syncReminderRuntime() {
+  const enabled =
+    window.XuanModules.isEnabled("todo") &&
+    window.XuanModules.isEnabled("proactive-reminders");
+  if (!enabled) {
+    reminderEngine?.stop();
+    reminderEngine = null;
+    reminderComposer = null;
+    return;
+  }
+  if (!reminderEngine) {
+    await Promise.all([
+      loadModuleScript("reminder-composer.js"),
+      loadModuleScript("reminder-engine.js")
+    ]);
+    reminderComposer = new window.AetherReminderComposer({
+      requestAI: (payload) => window.desktop.requestAI(payload),
+      extractText: extractResponse,
+      getSystemPrompt: () => systemPrompt,
+      getRuntime: runtimeOptions,
+      getUserName: () =>
+        state.userProfile?.preferredName ||
+        state.userProfile?.displayName ||
+        "洛尼",
+      canUseAI: () => Boolean(state.config?.hasApiKey),
+      onError: (error) =>
+        console.warn("Unable to generate a personalized reminder:", error.message)
+    });
+    reminderEngine = new window.AetherReminderEngine({
+      listTodos: (filters) => window.desktop.listTodos(filters),
+      onReminder: deliverReminder,
+      isEnabled: () =>
+        window.XuanModules.isEnabled("todo") &&
+        window.XuanModules.isEnabled("proactive-reminders"),
+      storage: window.localStorage,
+      onError: (error) =>
+        console.warn("Unable to check proactive reminders:", error.message)
+    });
+  }
+  reminderEngine.start();
+}
 
-xuanMood = new window.XuanMoodModule({
-  isEnabled: () => window.XuanModules.isEnabled("xuan-mood"),
-  getHome: () => window.desktop.getXuanMoodHome(),
-  recordEvent: (input) => window.desktop.recordXuanMoodEvent(input),
-  refreshMood: () => window.desktop.refreshXuanMood(),
-  onChange: renderXuanMood
-});
+async function syncJournalRuntime() {
+  if (!window.XuanModules.isEnabled("autonomous-journal")) {
+    journalWriter?.stop();
+    journalWriter = null;
+    return;
+  }
+  if (!journalWriter) {
+    await Promise.all([
+      loadModuleScript("journal-illustrator.js"),
+      loadModuleScript("journal-writer.js")
+    ]);
+    journalWriter = new window.AetherJournalWriter({
+      getJournal: (type, periodKey) => window.desktop.getJournal(type, periodKey),
+      getMaterial: (from, to) => window.desktop.getJournalMaterial(from, to),
+      saveJournal: (journal) => window.desktop.saveJournal(journal),
+      requestAI: (payload) => window.desktop.requestAI(payload),
+      extractText: extractResponse,
+      getSystemPrompt: () => systemPrompt,
+      getRuntime: runtimeOptions,
+      generateImage: (payload) => window.desktop.generateImage(payload),
+      getPersonaImage: () => state.assistantProfile?.personaImageDataUrl || "",
+      isImageEnabled: () =>
+        window.XuanModules.isEnabled("image-generation") &&
+        Boolean(state.imageConfig?.hasApiKey),
+      isEnabled: () =>
+        Boolean(state.config?.hasApiKey) &&
+        window.XuanModules.isEnabled("autonomous-journal"),
+      onSaved: handleJournalSaved,
+      onError: (error) =>
+        console.warn("Unable to write autonomous journal:", error.message)
+    });
+  }
+  journalWriter.start();
+}
+
+async function handleJournalSaved(journal) {
+  xuanMood?.record({
+    sourceType: "journal",
+    sourceId: journal.id,
+    title: journal.title,
+    content: journal.content,
+    mood: journal.mood,
+    summary: `${journal.title}${journal.mood ? ` · ${journal.mood}` : ""}`,
+    sourceCreatedAt: journal.updatedAt || Date.now()
+  });
+  moduleFrame.contentWindow?.postMessage({ type: "aether:journals-updated" }, "*");
+  try {
+    await window.desktop.showNotification({
+      title: `${state.assistantProfile?.name || "AI 伙伴"}写完了${
+        journal.type === "daily" ? "日记" : "周记"
+      }`,
+      body: journal.title
+    });
+  } catch {}
+}
+
+async function syncDreamRuntime() {
+  if (!window.XuanModules.isEnabled("dreams")) {
+    dreamWriter?.stop();
+    dreamWriter = null;
+    return;
+  }
+  if (!dreamWriter) {
+    await loadModuleScript("dream-writer.js");
+    dreamWriter = new window.AetherDreamWriter({
+      getDreamByDate: (dreamDate) => window.desktop.getDreamByDate(dreamDate),
+      getMaterial: (from, to, limit) =>
+        window.desktop.getDreamMaterial(from, to, limit),
+      createDream: (dream) => window.desktop.createDream(dream),
+      requestAI: (payload) => window.desktop.requestAI(payload),
+      extractText: extractResponse,
+      getSystemPrompt: () => systemPrompt,
+      getRuntime: runtimeOptions,
+      isEnabled: () =>
+        Boolean(state.config?.hasApiKey) &&
+        window.XuanModules.isEnabled("dreams"),
+      onSaved: async (dream) => {
+        moduleFrame.contentWindow?.postMessage({ type: "aether:dreams-updated" }, "*");
+        try {
+          await window.desktop.showNotification({ title: "梦境写好了", body: dream.title });
+        } catch {}
+      },
+      onError: (error) => console.warn("Unable to write dream:", error.message)
+    });
+  }
+  dreamWriter.start();
+}
 
 function profileAvatar(role) {
   const profile =
@@ -1762,17 +1838,18 @@ window.addEventListener("aether:font-scale-changed", (event) => {
 });
 
 async function initialize() {
-  [state.config, state.imageConfig, state.auth] = await Promise.all([
-    window.desktop.getAIConfig(),
-    window.desktop.getAIImageConfig(),
-    window.desktop.getCurrentAuth()
-  ]);
+  state.auth = await window.desktop.getCurrentAuth();
+  await window.XuanModules.hydrate(window.desktop);
+  state.config = await window.desktop.getAIConfig();
+  state.imageConfig = window.XuanModules.isEnabled("image-generation")
+    ? await window.desktop.getAIImageConfig()
+    : null;
   renderAccount();
   await refreshSystemPrompt();
   await refreshProfiles();
   state.draft = { ...state.config, apiKey: "" };
-  state.imageDraft = { ...state.imageConfig, apiKey: "" };
-  syncModuleState();
+  state.imageDraft = { ...(state.imageConfig || {}), apiKey: "" };
+  await syncModuleState();
   renderHeader();
   await refreshConversationHistory();
   if (state.conversations.length) {
@@ -1780,9 +1857,6 @@ async function initialize() {
   } else {
     renderMessages();
   }
-  reminderEngine.start();
-  journalWriter.start();
-  dreamWriter.start();
 }
 
 function renderAccount() {
@@ -1854,6 +1928,11 @@ async function flushRemoteRefresh() {
   if (["prompt_settings", "prompt_setting_versions"].some((type) => entityTypes.has(type))) {
     jobs.push(refreshSystemPrompt());
   }
+  if (entityTypes.has("module_settings")) {
+    jobs.push(
+      window.XuanModules.hydrate(window.desktop).then(() => syncModuleState())
+    );
+  }
   if (["xuan_mood_events", "xuan_mood_state", "xuan_mood_displays"].some((type) => entityTypes.has(type))) {
     jobs.push(refreshXuanMoodContext());
   }
@@ -1871,15 +1950,15 @@ async function flushRemoteRefresh() {
 
 const disposeRemoteSync = window.desktop.onSyncChanges(queueRemoteRefresh);
 
-window.addEventListener("xuan:modules-changed", syncModuleState);
-window.addEventListener("storage", syncModuleState);
+window.addEventListener("xuan:modules-changed", () => void syncModuleState());
+window.addEventListener("storage", () => void syncModuleState());
 window.addEventListener("beforeunload", () => {
   disposeRemoteSync?.();
   clearTimeout(remoteSyncTimer);
   titlebarClock.stop();
-  reminderEngine.stop();
-  journalWriter.stop();
-  dreamWriter.stop();
+  reminderEngine?.stop();
+  journalWriter?.stop();
+  dreamWriter?.stop();
   deviceManager.destroy();
 });
 

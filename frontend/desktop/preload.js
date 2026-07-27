@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld("desktop", {
   agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
   approveAgentRun: (id, approved) =>
     ipcRenderer.invoke("agent:approve", id, approved),
+  listModules: () => ipcRenderer.invoke("modules:list"),
+  updateModule: (id, enabled) =>
+    ipcRenderer.invoke("modules:update", id, enabled),
   getAIImageConfig: () => ipcRenderer.invoke("ai:image-config:get"),
   saveAIImageConfig: (config) =>
     ipcRenderer.invoke("ai:image-config:save", config),
