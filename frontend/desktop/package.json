@@ -55,6 +55,7 @@
       "ai-providers.js",
       "module-settings.js",
       "xuan-mood.js",
+      "mood-heartbeat.js",
       "reminder-composer.js",
       "reminder-engine.js",
       "journal-writer.js",

@@ -5,6 +5,7 @@ const { AgentService } = require("../src/modules/agent/agent-service");
 function fixture(completions, tool = { name: "todo.list", title: "查询待办", risk: "read" }) {
   const saved = [];
   const calls = [];
+  const providerPayloads = [];
   const registry = {
     modelTools: () => [{ type: "function", function: { name: tool.name.replaceAll(".", "_"), parameters: {} } }],
     get: (name) => name === tool.name || name === tool.name.replaceAll(".", "_") ? tool : undefined,
@@ -29,11 +30,20 @@ function fixture(completions, tool = { name: "todo.list", title: "查询待办",
     timeAwarenessService: { getContext: () => ({ context: "权威时间" }) },
     aiConfigRepository: { getCredentials: () => ({ apiKey: "key" }) },
     providerClient: {
-      chat: async () => ({ ok: true, status: 200, data: completions.shift() })
+      chat: async (_config, payload) => {
+        providerPayloads.push(payload);
+        return { ok: true, status: 200, data: completions.shift() };
+      }
     }
   };
   const runtime = { forUser: (_userId, callback) => callback(registry) };
-  return { service: new AgentService(services, runtime), saved, calls };
+  return {
+    service: new AgentService(services, runtime),
+    saved,
+    calls,
+    providerPayloads,
+    services
+  };
 }
 
 test("Agent Hub owns the complete read-tool loop and conversation persistence", async () => {
@@ -47,6 +57,30 @@ test("Agent Hub owns the complete read-tool loop and conversation persistence", 
   assert.equal(result.displayMessages.at(-1).content, "现在没有待办，先轻松一下吧～");
   assert.ok(result.displayMessages.some((message) => message.role === "tool" && message.status === "success"));
   assert.ok(saved.length >= 1);
+});
+
+test("Agent Hub 会把她自己的拟生心率明确交给模型", async () => {
+  const context = fixture([
+    { choices: [{ message: { content: "现在是 72 BPM，跳得很平稳喵～" } }] }
+  ]);
+  context.services.xuanMoodService.getHome = async () => ({
+    state: {
+      state: {
+        currentMood: "安稳",
+        physiology: { heartRateBpm: 72, rhythm: "steady" }
+      }
+    }
+  });
+  await context.service.chat("user-1", { content: "看看你现在的心率", runtime: {} });
+  const systemMessages = context.providerPayloads[0].messages.filter(
+    (message) => message.role === "system"
+  );
+  assert.equal(systemMessages.length, 2);
+  const state = systemMessages[1].content;
+  assert.match(state, /你拥有.*拟生心跳/);
+  assert.match(state, /拟生心率：72 BPM/);
+  assert.match(state, /心跳节律：平稳/);
+  assert.doesNotMatch(state, /询问你的心跳|直接结合这个数值|不要声称/);
 });
 
 test("Agent Hub pauses write tools for approval and resumes the same run", async () => {

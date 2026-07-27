@@ -3,7 +3,12 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const test = require("node:test");
-const { createControlServer, getControlPipe, requestControl } = require("../control-channel");
+const {
+  createControlServer,
+  getControlPipe,
+  requestControl,
+  sendControlResponse
+} = require("../control-channel");
 const {
   HUB_START_TIMEOUT_MS,
   compareVersions,
@@ -46,6 +51,21 @@ test("本地控制通道可以确认健康状态并接收关闭指令", async ()
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("控制通道回写时会吸收已经断开的管道错误", () => {
+  const { EventEmitter } = require("node:events");
+  const socket = new EventEmitter();
+  socket.destroyed = false;
+  socket.writable = true;
+  socket.writableEnded = false;
+  socket.end = () => {
+    const error = new Error("write EPIPE");
+    error.code = "EPIPE";
+    queueMicrotask(() => socket.emit("error", error));
+  };
+  assert.equal(sendControlResponse(socket, { ok: true }), true);
+  return new Promise((resolve) => setImmediate(resolve));
 });
 
 test("Hub 健康检测验证服务身份并记录延迟", async () => {

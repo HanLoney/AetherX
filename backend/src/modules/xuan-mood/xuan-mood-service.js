@@ -10,6 +10,15 @@ const TONES = new Set([
   "worried",
   "quiet"
 ]);
+const HEART_RATE_BY_TONE = Object.freeze({
+  calm: 66,
+  clingy: 76,
+  focused: 72,
+  tired: 61,
+  happy: 79,
+  worried: 88,
+  quiet: 64
+});
 
 class XuanMoodService {
   constructor({ repository, configRepository, providerClient }) {
@@ -19,15 +28,27 @@ class XuanMoodService {
   }
 
   async getHome(userId) {
-    const display = this.repository.getLatestDisplay(userId);
+    let display = this.repository.getLatestDisplay(userId);
     const events = this.repository.listRecentEvents(userId, 6);
     if (events.length && (!display || display.expiresAt <= Date.now())) {
       await this.refresh(userId).catch(() => null);
+      display = this.repository.getLatestDisplay(userId);
+    }
+    const storedState = this.repository.getState(userId);
+    if (!storedState?.state?.physiology) {
+      this.repository.saveState(userId, enrichStateWithPhysiology({
+        previous: storedState,
+        generatedState: storedState?.state,
+        display,
+        event: events.at(-1) || null,
+        refreshing: true
+      }));
     }
     return this.snapshot(userId);
   }
 
   async recordEvent(userId, input = {}) {
+    const previousState = this.repository.getState(userId);
     const source = normalizeSource(input);
     const generated = await this.generate(userId, source).catch(() => null);
     const event = this.repository.createEvent(userId, {
@@ -43,9 +64,13 @@ class XuanMoodService {
       intensity: normalizeIntensity(generated?.event?.intensity),
       rawPayload: source.payload
     });
-    if (generated?.state) {
-      this.repository.saveState(userId, generated.state);
-    }
+    const nextState = enrichStateWithPhysiology({
+      previous: previousState,
+      generatedState: generated?.state,
+      display: generated?.display,
+      event
+    });
+    this.repository.saveState(userId, nextState);
     if (generated?.display) {
       const display = safeDisplay(generated.display, [event.id]);
       if (display) this.repository.saveDisplay(userId, display);
@@ -57,9 +82,17 @@ class XuanMoodService {
   }
 
   async refresh(userId) {
+    const previousState = this.repository.getState(userId);
     const generated = await this.generate(userId, null);
-    if (generated?.state) {
-      this.repository.saveState(userId, generated.state);
+    const latestEvent = this.repository.listRecentEvents(userId, 1).at(-1) || null;
+    if (generated?.state || previousState || latestEvent) {
+      this.repository.saveState(userId, enrichStateWithPhysiology({
+        previous: previousState,
+        generatedState: generated?.state,
+        display: generated?.display,
+        event: latestEvent,
+        refreshing: true
+      }));
     }
     if (generated?.display) {
       const eventIds = this.repository
@@ -137,6 +170,98 @@ class XuanMoodService {
     if (!result?.ok) return null;
     return normalizeGenerated(parseJsonObject(extractText(result.data)));
   }
+}
+
+function enrichStateWithPhysiology({
+  previous,
+  generatedState,
+  display,
+  event,
+  refreshing = false,
+  now = Date.now()
+}) {
+  const previousInner = previous?.state && typeof previous.state === "object"
+    ? previous.state
+    : {};
+  const next = generatedState && typeof generatedState === "object"
+    ? { ...previousInner, ...generatedState }
+    : { ...previousInner };
+  next.physiology = derivePhysiology({
+    previous: previousInner.physiology,
+    state: next,
+    display,
+    event,
+    refreshing,
+    now
+  });
+  return next;
+}
+
+function derivePhysiology({
+  previous,
+  state = {},
+  display = {},
+  event = {},
+  refreshing = false,
+  now = Date.now()
+} = {}) {
+  const restingHeartRateBpm = clamp(
+    Number(previous?.restingHeartRateBpm) || 67,
+    58,
+    76
+  );
+  const tone = TONES.has(display?.tone) ? display.tone : inferTone(state);
+  let target = HEART_RATE_BY_TONE[tone] || restingHeartRateBpm;
+  const energyText = `${state.energy || ""} ${state.currentMood || ""}`;
+  if (/(疲惫|困倦|低落|没精神|乏力)/.test(energyText)) target -= 4;
+  if (/(兴奋|充沛|雀跃|激动|活力)/.test(energyText)) target += 5;
+  if (event?.intensity === "high") target += tone === "tired" ? 1 : 4;
+  if (event?.intensity === "low") target -= 1;
+  target = clamp(Math.round(target), 56, 102);
+
+  const hasPreviousBpm = Number.isFinite(Number(previous?.heartRateBpm));
+  const previousBpm = hasPreviousBpm
+    ? clamp(Number(previous.heartRateBpm), 54, 108)
+    : target;
+  const maxStep = refreshing ? 3 : event?.intensity === "high" ? 9 : 6;
+  const heartRateBpm = hasPreviousBpm
+    ? Math.round(previousBpm + clamp(target - previousBpm, -maxStep, maxStep))
+    : target;
+  const rhythm = heartRateBpm >= 86
+    ? "alert"
+    : heartRateBpm >= 75
+      ? "lively"
+      : heartRateBpm <= 62
+        ? "resting"
+        : "steady";
+  const variabilityMs = clamp(
+    Math.round(52 - Math.max(0, heartRateBpm - restingHeartRateBpm) * 1.1),
+    28,
+    58
+  );
+  return {
+    heartRateBpm,
+    restingHeartRateBpm,
+    variabilityMs,
+    rhythm,
+    tone,
+    updatedAt: now
+  };
+}
+
+function inferTone(state = {}) {
+  const text = `${state.currentMood || ""} ${state.energy || ""}`;
+  if (/(担心|焦虑|紧张|不安)/.test(text)) return "worried";
+  if (/(开心|高兴|雀跃|愉快)/.test(text)) return "happy";
+  if (/(疲惫|困倦|乏力)/.test(text)) return "tired";
+  if (/(专注|认真|投入)/.test(text)) return "focused";
+  if (/(黏|依恋|想陪|亲近)/.test(text)) return "clingy";
+  if (/(平静|放松|安稳)/.test(text)) return "calm";
+  return "quiet";
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function normalizeSource(input) {
@@ -263,4 +388,4 @@ function timestamp(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
-module.exports = { XuanMoodService };
+module.exports = { derivePhysiology, enrichStateWithPhysiology, XuanMoodService };

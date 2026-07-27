@@ -1,6 +1,8 @@
 const net = require("node:net");
 const os = require("node:os");
 
+const CONTROL_SOCKET_ERROR_HANDLER = Symbol("aetherxControlSocketErrorHandler");
+
 function normalizePipeOwner(value = os.userInfo().username) {
   return String(value || "user")
     .toLowerCase()
@@ -48,22 +50,47 @@ function requestControl(pipeName, command, options = {}) {
   });
 }
 
+function guardControlSocket(socket) {
+  if (!socket || typeof socket.on !== "function") return;
+  if (!socket[CONTROL_SOCKET_ERROR_HANDLER]) {
+    socket[CONTROL_SOCKET_ERROR_HANDLER] = true;
+    socket.on("error", () => {});
+  }
+}
+
+function sendControlResponse(socket, payload) {
+  if (!socket || typeof socket.end !== "function") return false;
+  guardControlSocket(socket);
+  if (socket.destroyed || !socket.writable || socket.writableEnded) return false;
+  const response = `${JSON.stringify(payload)}\n`;
+  try {
+    socket.end(response);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createControlServer(pipeName, handler) {
   const server = net.createServer((socket) => {
+    guardControlSocket(socket);
     socket.setEncoding("utf8");
     let buffer = "";
+    let handled = false;
     socket.on("data", async (chunk) => {
+      if (handled) return;
       buffer += chunk;
       const newline = buffer.indexOf("\n");
       if (newline < 0) return;
+      handled = true;
+      socket.pause();
       const line = buffer.slice(0, newline);
-      buffer = buffer.slice(newline + 1);
       try {
         const request = JSON.parse(line);
         const result = await handler(request.command);
-        socket.end(`${JSON.stringify({ ok: true, ...result })}\n`);
+        sendControlResponse(socket, { ok: true, ...result });
       } catch (error) {
-        socket.end(`${JSON.stringify({ ok: false, error: error.message })}\n`);
+        sendControlResponse(socket, { ok: false, error: error.message });
       }
     });
   });
@@ -80,5 +107,6 @@ module.exports = {
   createControlServer,
   getControlPipe,
   normalizePipeOwner,
-  requestControl
+  requestControl,
+  sendControlResponse
 };

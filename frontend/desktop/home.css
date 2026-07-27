@@ -465,7 +465,7 @@ button { color: inherit; cursor: pointer; }
 .xuan-mood-chip {
   position: relative;
   z-index: 6;
-  width: fit-content;
+  width: min(720px, 100%);
   max-width: min(720px, 100%);
   min-height: 29px;
   display: inline-block;
@@ -491,11 +491,11 @@ button { color: inherit; cursor: pointer; }
 }
 
 .xuan-mood-summary {
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: 19px max-content fit-content(118px) fit-content(220px) fit-content(132px) 21px 21px;
+  grid-template-columns: 19px max-content minmax(72px, 104px) 132px minmax(110px, 1fr) minmax(72px, 112px) 21px 21px;
   align-items: center;
   gap: 6px;
 }
@@ -645,6 +645,70 @@ button { color: inherit; cursor: pointer; }
   align-items: center;
   gap: 8px;
 }
+
+.mood-heartbeat {
+  --pulse-color: #c977a0;
+  min-width: 0;
+  height: 34px;
+  display: grid;
+  grid-template-columns: minmax(58px, 1fr) auto;
+  grid-template-rows: 19px 11px;
+  align-items: center;
+  column-gap: 5px;
+  padding: 2px 7px 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--pulse-color) 20%, transparent);
+  border-radius: 11px;
+  color: var(--pulse-color);
+  background: linear-gradient(120deg, rgba(255,255,255,.72), color-mix(in srgb, var(--pulse-color) 6%, transparent));
+  box-shadow: inset 0 0 16px color-mix(in srgb, var(--pulse-color) 5%, transparent);
+  overflow: hidden;
+}
+
+.mood-heartbeat canvas {
+  width: 100%;
+  height: 29px;
+  grid-row: 1 / 3;
+  color: var(--pulse-color);
+}
+
+.mood-heartbeat b {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px;
+  color: #5f5868;
+  font-size: calc(12px * var(--font-scale, 1));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mood-heartbeat b span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 800;
+}
+
+.mood-heartbeat b small {
+  color: #a19aa8;
+  font-size: calc(6px * var(--font-scale, 1));
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.mood-heartbeat > em {
+  justify-self: end;
+  color: color-mix(in srgb, var(--pulse-color) 78%, #6f6878);
+  font-size: calc(6px * var(--font-scale, 1));
+  font-style: normal;
+  line-height: 1;
+}
+
+.xuan-mood-chip[data-tone="happy"] .mood-heartbeat { --pulse-color: #d47e9f; }
+.xuan-mood-chip[data-tone="worried"] .mood-heartbeat { --pulse-color: #bf7288; }
+.xuan-mood-chip[data-tone="focused"] .mood-heartbeat { --pulse-color: #728fbd; }
+.xuan-mood-chip[data-tone="tired"] .mood-heartbeat,
+.xuan-mood-chip[data-tone="quiet"] .mood-heartbeat { --pulse-color: #9183ad; }
+.xuan-mood-chip[data-tone="calm"] .mood-heartbeat { --pulse-color: #6f9e9c; }
 
 .account-control { position: relative; }
 

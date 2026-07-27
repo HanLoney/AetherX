@@ -26,6 +26,7 @@ let reminderEngine = null;
 let journalWriter = null;
 let dreamWriter = null;
 let xuanMood = null;
+let moodHeartbeat = null;
 let moduleRuntimeSync = Promise.resolve();
 
 function runtimeOptions() {
@@ -97,6 +98,9 @@ const elements = {
   xuanMoodCard: document.querySelector("#xuanMoodCard"),
   xuanMoodTone: document.querySelector("#xuanMoodTone"),
   xuanMoodTitle: document.querySelector("#xuanMoodTitle"),
+  xuanMoodEcg: document.querySelector("#xuanMoodEcg"),
+  xuanMoodBpm: document.querySelector("#xuanMoodBpm"),
+  xuanMoodRhythm: document.querySelector("#xuanMoodRhythm"),
   xuanMoodLine: document.querySelector("#xuanMoodLine"),
   xuanMoodFocus: document.querySelector("#xuanMoodFocus"),
   xuanMoodToggleBtn: document.querySelector("#xuanMoodToggleBtn"),
@@ -751,9 +755,15 @@ function renderXuanMood(snapshot = {}) {
   const display = snapshot.display;
   state.xuanMoodContext = enabled ? buildXuanMoodContext(snapshot) : "";
   elements.xuanMoodCard.classList.toggle("hidden", !enabled);
-  if (!enabled) return;
+  if (!enabled) {
+    moodHeartbeat?.stop();
+    return;
+  }
+  moodHeartbeat?.setSnapshot(snapshot);
 
   if (!display) {
+    elements.xuanMoodCard.dataset.tone =
+      snapshot.state?.state?.physiology?.tone || "quiet";
     elements.xuanMoodTone.textContent = snapshot.error ? "连接异常" : "等待生成";
     elements.xuanMoodTitle.textContent = "还没有当前心情";
     elements.xuanMoodLine.textContent = snapshot.error
@@ -769,6 +779,7 @@ function renderXuanMood(snapshot = {}) {
     return;
   }
 
+  elements.xuanMoodCard.dataset.tone = display.tone || "quiet";
   elements.xuanMoodTone.textContent = display.tone || "她的心情";
   elements.xuanMoodTitle.textContent = display.title;
   elements.xuanMoodLine.textContent = display.line;
@@ -943,13 +954,23 @@ function loadModuleScript(source) {
 
 async function syncMoodRuntime() {
   if (!window.XuanModules.isEnabled("xuan-mood")) {
+    moodHeartbeat?.destroy();
+    moodHeartbeat = null;
     xuanMood = null;
     state.xuanMoodContext = "";
     renderXuanMood({ enabled: false });
     return;
   }
   if (!xuanMood) {
-    await loadModuleScript("xuan-mood.js");
+    await Promise.all([
+      loadModuleScript("xuan-mood.js"),
+      loadModuleScript("mood-heartbeat.js")
+    ]);
+    moodHeartbeat = new window.AetherMoodHeartbeat({
+      canvas: elements.xuanMoodEcg,
+      bpmElement: elements.xuanMoodBpm,
+      rhythmElement: elements.xuanMoodRhythm
+    });
     xuanMood = new window.XuanMoodModule({
       isEnabled: () => window.XuanModules.isEnabled("xuan-mood"),
       getHome: () => window.desktop.getXuanMoodHome(),
@@ -1959,6 +1980,7 @@ window.addEventListener("beforeunload", () => {
   reminderEngine?.stop();
   journalWriter?.stop();
   dreamWriter?.stop();
+  moodHeartbeat?.destroy();
   deviceManager.destroy();
 });
 
