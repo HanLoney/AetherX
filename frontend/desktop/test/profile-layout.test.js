@@ -69,6 +69,15 @@ test("overview gallery never exposes image generation descriptions as tooltips",
   assert.match(javascript, /button\.title\s*=\s*previewLabel/);
 });
 
+test("overview gallery upgrades previews to original images in the background", () => {
+  assert.match(javascript, /function upgradeGalleryPreview\(/);
+  assert.match(javascript, /loadGalleryOriginal\(originalSource, priority\)/);
+  assert.match(javascript, /element\.src = originalSource/);
+  assert.match(javascript, /upgradeGalleryPreview\(preview, image\)/);
+  assert.match(javascript, /upgradeGalleryPreview\(img, image\)/);
+  assert.match(javascript, /image\.fetchPriority = priority/);
+});
+
 test("gallery lightbox upgrades the thumbnail to the original image", () => {
   assert.match(javascript, /const originalSource = image\.originalSource \|\| previewSource/);
   assert.match(javascript, /const original = new Image\(\)/);
