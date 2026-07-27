@@ -301,6 +301,46 @@ test("time-related questions always use model wording with authoritative runtime
   );
 });
 
+test("module switches are shared by Hub and block disabled APIs", async () => {
+  await withServer(async (baseUrl) => {
+    const initial = await request(baseUrl, "GET", "/api/v1/modules");
+    assert.equal(initial.response.status, 200);
+    assert.equal(
+      initial.payload.data.find((module) => module.id === "todo").enabled,
+      true
+    );
+
+    const disabled = await request(
+      baseUrl,
+      "PATCH",
+      "/api/v1/modules/todo",
+      { enabled: false }
+    );
+    assert.equal(disabled.response.status, 200);
+    assert.equal(
+      disabled.payload.data.find((module) => module.id === "todo").enabled,
+      false
+    );
+    assert.equal(
+      disabled.payload.data.find((module) => module.id === "proactive-reminders").enabled,
+      false
+    );
+
+    const blocked = await request(baseUrl, "GET", "/api/v1/todos");
+    assert.equal(blocked.response.status, 403);
+    assert.equal(blocked.payload.error.code, "MODULE_DISABLED");
+
+    const core = await request(
+      baseUrl,
+      "PATCH",
+      "/api/v1/modules/ai",
+      { enabled: false }
+    );
+    assert.equal(core.response.status, 409);
+    assert.equal(core.payload.error.code, "CORE_MODULE_REQUIRED");
+  });
+});
+
 test("完整存档通过下载票据导出，并用中文密码整套恢复", async () => {
   await withServer(async (baseUrl) => {
     const created = await request(baseUrl, "POST", "/api/v1/todos", {

@@ -48,17 +48,22 @@ class AgentService {
     this.activeConversations.set(conversationKey, lockId);
     try {
       const userMessage = message("user", content);
-      const recalled = this.services.memoryIntelligenceService.recall(userId, {
-        query: content
-      });
+      const memoryEnabled = this.moduleEnabled(userId, "memory");
+      const recalled = memoryEnabled
+        ? this.services.memoryIntelligenceService.recall(userId, { query: content })
+        : { items: [], context: "" };
       const prompt =
         this.services.promptSettingsService.getBundle(userId).compiledPrompt || "";
-      const moodContext = await this.moodContext(userId);
-      const timeContext = this.services.timeAwarenessService.getContext(userId, {
-        timeZone: input.runtime?.timeZone,
-        locale: input.runtime?.locale,
-        currentUserMessage: content
-      }).context;
+      const moodContext = this.moduleEnabled(userId, "xuan-mood")
+        ? await this.moodContext(userId)
+        : "";
+      const timeContext = this.moduleEnabled(userId, "time-awareness")
+        ? this.services.timeAwarenessService.getContext(userId, {
+            timeZone: input.runtime?.timeZone,
+            locale: input.runtime?.locale,
+            currentUserMessage: content
+          }).context
+        : "";
       const system = [
         timeContext,
         prompt,
@@ -387,19 +392,27 @@ class AgentService {
       .filter((item) => ["user", "assistant"].includes(item.role) && typeof item.content === "string")
       .slice(-12)
       .map(({ role, content }) => ({ role, content }));
-    void this.services.memoryIntelligenceService.extract(run.userId, {
-      userMessage: run.userContent,
-      assistantMessage: run.finalContent,
-      conversationId: run.conversation.id,
-      conversationMessages
-    }).catch(() => undefined);
-    void this.services.xuanMoodService.recordEvent(run.userId, {
-      sourceType: "chat",
-      sourceId: run.conversation.id,
-      userMessage: run.userContent,
-      assistantMessage: run.finalContent,
-      conversationMessages
-    }).catch(() => undefined);
+    if (this.moduleEnabled(run.userId, "memory")) {
+      void this.services.memoryIntelligenceService.extract(run.userId, {
+        userMessage: run.userContent,
+        assistantMessage: run.finalContent,
+        conversationId: run.conversation.id,
+        conversationMessages
+      }).catch(() => undefined);
+    }
+    if (this.moduleEnabled(run.userId, "xuan-mood")) {
+      void this.services.xuanMoodService.recordEvent(run.userId, {
+        sourceType: "chat",
+        sourceId: run.conversation.id,
+        userMessage: run.userContent,
+        assistantMessage: run.finalContent,
+        conversationMessages
+      }).catch(() => undefined);
+    }
+  }
+
+  moduleEnabled(userId, moduleId) {
+    return this.services.moduleManager?.isEnabled(userId, moduleId) !== false;
   }
 
   respond(run, status) {

@@ -33,7 +33,12 @@ async function readJson(request) {
   }
 }
 
-function createRouter({ corsOrigin = "*", authenticate, isWriteLocked } = {}) {
+function createRouter({
+  corsOrigin = "*",
+  authenticate,
+  isWriteLocked,
+  isModuleEnabled
+} = {}) {
   const routes = [];
 
   function add(method, path, handler, options = {}) {
@@ -44,7 +49,8 @@ function createRouter({ corsOrigin = "*", authenticate, isWriteLocked } = {}) {
       public: options.public === true,
       queryAuth: options.queryAuth === true,
       parseBody: options.parseBody !== false,
-      allowDuringWriteLock: options.allowDuringWriteLock === true
+      allowDuringWriteLock: options.allowDuringWriteLock === true,
+      moduleId: String(options.module || "")
     });
   }
 
@@ -87,6 +93,19 @@ function createRouter({ corsOrigin = "*", authenticate, isWriteLocked } = {}) {
       const auth = route.public ? null : authenticate?.(authorization);
       if (!route.public && !auth) {
         throw new HttpError(401, "AUTH_REQUIRED", "请先登录。");
+      }
+      if (
+        !route.public &&
+        route.moduleId &&
+        typeof isModuleEnabled === "function" &&
+        isModuleEnabled(auth.userId, route.moduleId) !== true
+      ) {
+        throw new HttpError(
+          403,
+          "MODULE_DISABLED",
+          "这个功能模块当前已停用。",
+          { moduleId: route.moduleId }
+        );
       }
       if (
         !route.public &&

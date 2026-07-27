@@ -6,16 +6,16 @@ function registerMemoryRoutes(
 ) {
   router.add("POST", "/api/v1/memories/recall", ({ userId, body }) => ({
     data: intelligenceService.recall(userId, body)
-  }));
+  }), { module: "memory" });
   router.add("POST", "/api/v1/memories/extract", async ({ userId, body }) => ({
     data: await intelligenceService.extract(userId, body)
-  }));
+  }), { module: "memory" });
   router.add("POST", "/api/v1/memories/consolidate", ({ userId }) => ({
     data: consolidationService.consolidateExisting(userId)
-  }));
+  }), { module: "memory" });
   router.add("GET", "/api/v1/memories", ({ userId, query }) => ({
     data: service.list(userId, query)
-  }));
+  }), { module: "memory" });
   router.add("POST", "/api/v1/memories", ({ userId, body }) => ({
     status: 201,
     data: consolidationService.consolidateCandidate(
@@ -26,20 +26,20 @@ function registerMemoryRoutes(
         conversationId: body.conversationId || ""
       }
     ).memory
-  }));
+  }), { module: "memory" });
   router.add("GET", "/api/v1/memories/:id", ({ userId, params }) => ({
     data: service.get(userId, params.id)
-  }));
+  }), { module: "memory" });
   router.add("PATCH", "/api/v1/memories/:id", ({ userId, params, body }) => ({
     data: service.update(userId, params.id, body)
-  }));
+  }), { module: "memory" });
   router.add("POST", "/api/v1/memories/:id/confirm", ({ userId, params }) => ({
     data: service.confirm(userId, params.id)
-  }));
+  }), { module: "memory" });
   router.add("DELETE", "/api/v1/memories/:id", ({ userId, params }) => {
     service.delete(userId, params.id);
     return { status: 204 };
-  });
+  }, { module: "memory" });
 }
 
 module.exports = { registerMemoryRoutes };

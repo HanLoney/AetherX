@@ -8,7 +8,7 @@
       icon: "✦",
       color: "pink",
       core: true,
-      tools: 0
+      tools: 4
     }),
     Object.freeze({
       id: "memory",
@@ -17,7 +17,7 @@
       icon: "◈",
       color: "pink",
       core: false,
-      tools: 16
+      tools: 12
     }),
     Object.freeze({
       id: "todo",
@@ -35,7 +35,7 @@
       icon: "图",
       color: "blue",
       core: false,
-      tools: 0
+      tools: 1
     }),
     Object.freeze({
       id: "time-awareness",
@@ -92,6 +92,7 @@
       tools: 3
     })
   ]);
+  let remoteModules = null;
 
   function readSettings() {
     try {
@@ -106,21 +107,80 @@
     const module = manifest.find((item) => item.id === id);
     if (!module) return false;
     if (module.core) return true;
+    if (remoteModules?.has(id)) return remoteModules.get(id).enabled === true;
     return readSettings()[id] !== false;
   }
 
-  function setEnabled(id, enabled) {
+  async function setEnabled(id, enabled) {
     const module = manifest.find((item) => item.id === id);
     if (!module || module.core) return false;
-    const settings = readSettings();
-    settings[id] = Boolean(enabled);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    if (typeof global.desktop?.updateModule === "function") {
+      const remoteSnapshot = await global.desktop.updateModule(id, Boolean(enabled));
+      applyRemoteSnapshot(remoteSnapshot);
+    } else {
+      const settings = readSettings();
+      settings[id] = Boolean(enabled);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    }
     global.dispatchEvent(
       new CustomEvent("xuan:modules-changed", {
-        detail: { id, enabled: Boolean(enabled) }
+        detail: { id, enabled: isEnabled(id), snapshot: snapshot() }
       })
     );
     return true;
+  }
+
+  async function hydrate(client = global.desktop, { emit = false } = {}) {
+    if (typeof client?.listModules !== "function") return snapshot();
+    let modules = await client.listModules();
+    const legacySettings = readLegacyModuleSettings();
+    if (legacySettings && typeof client.updateModule === "function") {
+      const disabledLegacyModules = modules.filter(
+        (module) =>
+          !module.core &&
+          module.updatedAt == null &&
+          Object.prototype.hasOwnProperty.call(legacySettings, module.id) &&
+          legacySettings[module.id] === false
+      );
+      for (const module of disabledLegacyModules) {
+        modules = await client.updateModule(module.id, false);
+      }
+    }
+    applyRemoteSnapshot(modules);
+    if (emit) {
+      global.dispatchEvent(
+        new CustomEvent("xuan:modules-changed", {
+          detail: { snapshot: snapshot() }
+        })
+      );
+    }
+    return snapshot();
+  }
+
+  function readLegacyModuleSettings() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function applyRemoteSnapshot(modules) {
+    if (!Array.isArray(modules)) return;
+    remoteModules = new Map(
+      modules
+        .filter((module) => module?.id)
+        .map((module) => [String(module.id), { ...module }])
+    );
+    const settings = readSettings();
+    for (const module of modules) {
+      if (!module?.id || module.core) continue;
+      settings[module.id] = module.enabled === true;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   }
 
   function isAutoApproveEnabled() {
@@ -139,14 +199,22 @@
   }
 
   function snapshot() {
-    return manifest.map((module) => ({
-      ...module,
-      enabled: isEnabled(module.id)
-    }));
+    return manifest.map((module) => {
+      const remote = remoteModules?.get(module.id);
+      return {
+        ...module,
+        ...(remote || {}),
+        enabled: isEnabled(module.id),
+        requestedEnabled: remote?.requestedEnabled ?? isEnabled(module.id),
+        dependencies: [...(remote?.dependencies || [])],
+        blockedBy: [...(remote?.blockedBy || [])]
+      };
+    });
   }
 
   global.XuanModules = Object.freeze({
     manifest,
+    hydrate,
     isEnabled,
     setEnabled,
     isAutoApproveEnabled,

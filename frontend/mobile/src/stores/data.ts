@@ -11,6 +11,7 @@ import { MobileHealthReporter } from "../lib/device-health";
 import { SyncCoordinator } from "../lib/sync";
 import { loadInstallationId, saveSyncCursor } from "../lib/storage";
 import { useSessionStore } from "./session";
+import { useModuleStore } from "./modules";
 
 const todos = ref<Todo[]>([]);
 const memories = ref<Memory[]>([]);
@@ -93,6 +94,10 @@ async function restoreCache() {
     galleryAlbumImages.value = cached.galleryAlbumImages || [];
     galleryAlbumTotal.value = cached.galleryAlbumTotal || galleryAlbumImages.value.length;
     journals.value = cached.journals || [];
+    const moduleStore = useModuleStore();
+    if (!moduleStore.isEnabled("todo")) todos.value = [];
+    if (!moduleStore.isEnabled("memory")) memories.value = [];
+    if (!moduleStore.isEnabled("autonomous-journal")) journals.value = [];
     lastUpdatedAt.value = cached.savedAt;
     conversationRevision.value += 1;
     if (galleryAlbumImages.value.length) void warmGalleryPreviews(galleryAlbumImages.value);
@@ -103,17 +108,21 @@ async function restoreCache() {
 
 async function refreshAll() {
   const api = useSessionStore().requireApi();
+  const moduleStore = useModuleStore();
+  await moduleStore.hydrate().catch(() => undefined);
   loading.value = true;
   syncState.value = "syncing";
   try {
     const [todoResult, memoryResult, conversationResult, profileResult, assistantResult, galleryResult, journalResult] = await Promise.all([
-      api.listTodos(),
-      api.listMemories(),
+      moduleStore.isEnabled("todo") ? api.listTodos() : Promise.resolve([]),
+      moduleStore.isEnabled("memory") ? api.listMemories() : Promise.resolve([]),
       api.conversationPage(0, CONVERSATION_PAGE_SIZE),
       api.profile(),
       api.assistantProfile(),
       api.gallerySummary(3).catch(() => ({ total: 0, items: [] })),
-      api.listJournals(50).catch(() => [])
+      moduleStore.isEnabled("autonomous-journal")
+        ? api.listJournals(50).catch(() => [])
+        : Promise.resolve([])
     ]);
     todos.value = todoResult;
     memories.value = memoryResult;
@@ -136,9 +145,10 @@ async function refreshAll() {
 
 async function refreshGroups(groups: Set<string>) {
   const api = useSessionStore().requireApi();
+  const moduleStore = useModuleStore();
   const jobs: Promise<void>[] = [];
-  if (groups.has("todos")) jobs.push(api.listTodos().then((value) => { todos.value = value; }));
-  if (groups.has("memories")) jobs.push(api.listMemories().then((value) => { memories.value = value; }));
+  if (groups.has("todos") && moduleStore.isEnabled("todo")) jobs.push(api.listTodos().then((value) => { todos.value = value; }));
+  if (groups.has("memories") && moduleStore.isEnabled("memory")) jobs.push(api.listMemories().then((value) => { memories.value = value; }));
   if (groups.has("conversations")) jobs.push(
     api.conversationPage(0, CONVERSATION_PAGE_SIZE).then(mergeConversationHead)
   );
@@ -148,7 +158,7 @@ async function refreshGroups(groups: Set<string>) {
     galleryImages.value = value.items;
     galleryTotal.value = value.total;
   }));
-  if (groups.has("journals")) jobs.push(api.listJournals(50).then((value) => {
+  if (groups.has("journals") && moduleStore.isEnabled("autonomous-journal")) jobs.push(api.listJournals(50).then((value) => {
     journals.value = value;
   }));
   await Promise.all(jobs);
@@ -278,6 +288,11 @@ async function startSync() {
       await resetAfterArchiveRestore(archiveReset.seq);
       return;
     }
+    if (changes.some((change) => change.entityType === "module_settings")) {
+      await useModuleStore().hydrate(true);
+      await refreshAll();
+      return;
+    }
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
   }, `${api.serverUrl}|${userId}`, (status) => {
@@ -317,6 +332,7 @@ async function resetAfterArchiveRestore(resetCursor: number) {
     }
     activeCacheScope = scope;
     await useSessionStore().refreshCurrentUser();
+    await useModuleStore().hydrate(true);
     await refreshAll();
     void preloadGallery().catch(() => undefined);
     await startSync();
@@ -367,6 +383,7 @@ function resetData(clearCache: boolean) {
 async function reconnectHub() {
   stopSyncTransport();
   resetData(false);
+  await useModuleStore().hydrate(true).catch(() => undefined);
   const restored = await restoreCache();
   void refreshAll().catch(() => {
     if (!restored) syncState.value = "error";

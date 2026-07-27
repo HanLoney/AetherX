@@ -7,9 +7,11 @@ import AvatarCropper from "../components/AvatarCropper.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
 import { useDataStore } from "../stores/data";
+import { useModuleStore } from "../stores/modules";
 
 const router = useRouter();
 const data = useDataStore();
+const modules = useModuleStore();
 const assistantCropper = ref<{ choose: () => void; complete: () => void } | null>(null);
 const avatarSaving = ref(false);
 const avatarError = ref("");
@@ -72,8 +74,12 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
       </div>
     </section>
 
-    <nav class="home-portals" aria-label="陪伴空间入口">
-      <button type="button" @click="router.push('/journals')">
+    <nav
+      class="home-portals"
+      :style="{ '--portal-count': 1 + Number(modules.isEnabled('autonomous-journal')) + Number(modules.isEnabled('memory')) }"
+      aria-label="陪伴空间入口"
+    >
+      <button v-if="modules.isEnabled('autonomous-journal')" type="button" @click="router.push('/journals')">
         <i><BookOpenText :size="17" /></i>
         <span><strong>手记</strong><small>她写下的日常</small></span>
       </button>
@@ -81,14 +87,14 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
         <i><Images :size="17" /></i>
         <span><strong>相册</strong><small>一起收藏的画面</small></span>
       </button>
-      <button type="button" @click="router.push('/memories')">
+      <button v-if="modules.isEnabled('memory')" type="button" @click="router.push('/memories')">
         <i><Sprout :size="17" /></i>
         <span><strong>成长</strong><small>慢慢成为的她</small></span>
       </button>
     </nav>
 
     <div class="home-mosaic">
-      <button class="journal-sheet" type="button" aria-label="浏览全部手记" @click="router.push('/journals')">
+      <button v-if="modules.isEnabled('autonomous-journal')" class="journal-sheet" type="button" aria-label="浏览全部手记" @click="router.push('/journals')">
         <header>
           <div>
             <small>最近手记</small>
@@ -300,7 +306,7 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
 
 .home-portals {
   display: grid;
-  grid-template-columns: repeat(3,minmax(0,1fr));
+  grid-template-columns: repeat(var(--portal-count,3),minmax(0,1fr));
   gap: 8px;
   margin-top: var(--home-module-gap);
 }
