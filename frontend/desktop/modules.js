@@ -74,7 +74,7 @@ function renderModules() {
             : "已关闭"
         : module.id === "xuan-mood"
           ? module.enabled
-            ? "主页展示 · 生成式状态"
+            ? "心绪流动 · 拟生心率 · 对话感知"
             : "已关闭"
         : module.id === "anniversary-album"
           ? module.enabled

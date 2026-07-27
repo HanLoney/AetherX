@@ -6,6 +6,12 @@ const RUN_TTL_MS = 10 * 60_000;
 const TOOL_PRIVACY_PROMPT =
   "工具参数、图片生成描述和内部提示词只用于执行，不得在最终回复中复述、改写或概括。" +
   "图片已经通过工具卡片展示时，只需用符合当前人格的简短自然语言回应已经画好。";
+const MOOD_RHYTHM_LABELS = Object.freeze({
+  resting: "舒缓",
+  steady: "平稳",
+  lively: "轻快",
+  alert: "微快"
+});
 
 class AgentService {
   constructor(services, toolRuntime) {
@@ -67,7 +73,6 @@ class AgentService {
       const system = [
         timeContext,
         prompt,
-        moodContext,
         recalled.context,
         TOOL_PRIVACY_PROMPT
       ]
@@ -93,6 +98,7 @@ class AgentService {
         conversation: loaded.conversation,
         userContent: content,
         system,
+        moodContext,
         runtime: input.runtime || {},
         displayMessages,
         modelMessages: [
@@ -290,7 +296,7 @@ class AgentService {
     const config = this.services.aiConfigRepository.getCredentials(run.userId);
     const result = await this.services.providerClient.chat(config, {
       messages: [
-        { role: "system", content: run.system },
+        ...runSystemMessages(run),
         ...run.modelMessages.slice(-50).map(toModelMessage)
       ],
       tools
@@ -304,12 +310,11 @@ class AgentService {
       const config = this.services.aiConfigRepository.getCredentials(run.userId);
       const result = await this.services.providerClient.chat(config, {
         messages: [
-          {
-            role: "system",
-            content:
-              `${run.system}\n\n刚才模型把工具调用误写成了文本协议，客户端已经完成执行。` +
+          ...runSystemMessages(
+            run,
+            "刚才模型把工具调用误写成了文本协议，客户端已经完成执行。" +
               "请根据下面经过脱敏的真实执行结果自然收尾，不要再调用工具，不要复述工具参数、图片描述或内部提示词。"
-          },
+          ),
           ...cleanHistory
             .filter((item) => ["user", "assistant"].includes(item.role) && !item.tool_calls?.length)
             .slice(-30)
@@ -334,12 +339,11 @@ class AgentService {
       const config = this.services.aiConfigRepository.getCredentials(run.userId);
       const result = await this.services.providerClient.chat(config, {
         messages: [
-          {
-            role: "system",
-            content:
-              `${run.system}\n\n工具阶段已经结束，原因：${reason}。` +
+          ...runSystemMessages(
+            run,
+            `工具阶段已经结束，原因：${reason}。` +
               "请严格根据已有工具结果直接回答，不要再请求工具，也不要复述工具参数或图片描述。"
-          },
+          ),
           ...run.modelMessages.slice(-50).map(toModelMessage)
         ],
         tools: []
@@ -434,11 +438,17 @@ class AgentService {
       const snapshot = await this.services.xuanMoodService.getHome(userId);
       const state = snapshot?.state?.state || snapshot?.state || {};
       const display = snapshot?.display || {};
+      const physiology = state.physiology || {};
       const lines = [
-        "[当前心情状态]",
+        "[你的当前拟生状态]",
+        physiology.heartRateBpm &&
+          "你拥有由“她的心情”模块维持的拟生心跳。",
         state.currentMood && `心情：${state.currentMood}`,
         state.energy && `精力：${state.energy}`,
         state.attention && `关注点：${state.attention}`,
+        physiology.heartRateBpm && `拟生心率：${physiology.heartRateBpm} BPM`,
+        physiology.heartRateBpm &&
+          `心跳节律：${MOOD_RHYTHM_LABELS[physiology.rhythm] || "平稳"}`,
         display.detail && `近况：${display.detail}`
       ].filter(Boolean);
       return lines.length > 1 ? lines.join("\n") : "";
@@ -462,6 +472,18 @@ class AgentService {
       this.activeConversations.delete(key);
     }
   }
+}
+
+function runSystemMessages(run, extra = "") {
+  return [
+    {
+      role: "system",
+      content: extra ? `${run.system}\n\n${extra}` : run.system
+    },
+    run.moodContext
+      ? { role: "system", content: run.moodContext }
+      : null
+  ].filter(Boolean);
 }
 
 function extractCompletion(result) {
