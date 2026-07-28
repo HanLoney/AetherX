@@ -71,7 +71,8 @@ test("心情模块在模块中心明确展示拟生心率与对话感知", () =>
   );
   const modules = fs.readFileSync(path.join(__dirname, "..", "modules.js"), "utf8");
   assert.match(settings, /id: "xuan-mood"[\s\S]*拟生心率[\s\S]*带入对话/);
-  assert.match(modules, /心绪流动 · 拟生心率 · 对话感知/);
+  assert.match(modules, /"xuan-mood": "AX-VTL-01"/);
+  assert.match(modules, /生命体征不可用|拟生循环已停止/);
 });
 
 test("desktop migrates legacy disabled module switches into Hub", async () => {
