@@ -96,6 +96,32 @@ test("health endpoint reports readiness", async () => {
   });
 });
 
+test("Hub persists ordinary write authorization without exposing its reserved storage row", async () => {
+  await withServer(async (baseUrl) => {
+    const initial = await request(baseUrl, "GET", "/api/v1/agent/permissions");
+    assert.equal(initial.response.status, 200);
+    assert.deepEqual(initial.payload.data, {
+      autoApproveWrites: false,
+      updatedAt: null
+    });
+
+    const updated = await request(baseUrl, "PUT", "/api/v1/agent/permissions", {
+      autoApproveWrites: true
+    });
+    assert.equal(updated.response.status, 200);
+    assert.equal(updated.payload.data.autoApproveWrites, true);
+    assert.equal(typeof updated.payload.data.updatedAt, "number");
+
+    const reloaded = await request(baseUrl, "GET", "/api/v1/agent/permissions");
+    assert.equal(reloaded.payload.data.autoApproveWrites, true);
+    const modules = await request(baseUrl, "GET", "/api/v1/modules");
+    assert.equal(
+      modules.payload.data.some((module) => module.id.startsWith("__agent_")),
+      false
+    );
+  });
+});
+
 test("time awareness uses the user timezone and measures elapsed interaction", () => {
   const now = Date.parse("2026-07-01T14:30:00+08:00");
   const lastInteraction = Date.parse("2026-07-01T12:15:00+08:00");

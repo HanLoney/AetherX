@@ -29,6 +29,36 @@ let xuanMood = null;
 let moodHeartbeat = null;
 let moduleRuntimeSync = Promise.resolve();
 
+async function traceModuleActivity(sourceModuleId, targetModuleId, operation, callback) {
+  if (typeof window.desktop?.recordModuleActivity !== "function") return callback();
+  const callId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const startedAt = Date.now();
+  const base = { callId, sourceModuleId, targetModuleId, operation, startedAt };
+  const started = window.desktop
+    .recordModuleActivity({ ...base, status: "running" })
+    .catch(() => null);
+  try {
+    const result = await callback();
+    void started.then((event) =>
+      event && window.desktop.recordModuleActivity({
+        ...base,
+        status: "success",
+        durationMs: Date.now() - startedAt
+      }).catch(() => undefined)
+    );
+    return result;
+  } catch (error) {
+    void started.then((event) =>
+      event && window.desktop.recordModuleActivity({
+        ...base,
+        status: "error",
+        durationMs: Date.now() - startedAt
+      }).catch(() => undefined)
+    );
+    throw error;
+  }
+}
+
 function runtimeOptions() {
   return {
     timeAwareness: window.XuanModules.isEnabled("time-awareness"),
@@ -998,7 +1028,12 @@ async function syncReminderRuntime() {
       loadModuleScript("reminder-engine.js")
     ]);
     reminderComposer = new window.AetherReminderComposer({
-      requestAI: (payload) => window.desktop.requestAI(payload),
+      requestAI: (payload) => traceModuleActivity(
+        "proactive-reminders",
+        "ai",
+        "生成提醒措辞",
+        () => window.desktop.requestAI(payload)
+      ),
       extractText: extractResponse,
       getSystemPrompt: () => systemPrompt,
       getRuntime: runtimeOptions,
@@ -1011,7 +1046,12 @@ async function syncReminderRuntime() {
         console.warn("Unable to generate a personalized reminder:", error.message)
     });
     reminderEngine = new window.AetherReminderEngine({
-      listTodos: (filters) => window.desktop.listTodos(filters),
+      listTodos: (filters) => traceModuleActivity(
+        "proactive-reminders",
+        "todo",
+        "检查即将开始的待办",
+        () => window.desktop.listTodos(filters)
+      ),
       onReminder: deliverReminder,
       isEnabled: () =>
         window.XuanModules.isEnabled("todo") &&
@@ -1039,11 +1079,21 @@ async function syncJournalRuntime() {
       getJournal: (type, periodKey) => window.desktop.getJournal(type, periodKey),
       getMaterial: (from, to) => window.desktop.getJournalMaterial(from, to),
       saveJournal: (journal) => window.desktop.saveJournal(journal),
-      requestAI: (payload) => window.desktop.requestAI(payload),
+      requestAI: (payload) => traceModuleActivity(
+        "autonomous-journal",
+        "ai",
+        "撰写自主手记",
+        () => window.desktop.requestAI(payload)
+      ),
       extractText: extractResponse,
       getSystemPrompt: () => systemPrompt,
       getRuntime: runtimeOptions,
-      generateImage: (payload) => window.desktop.generateImage(payload),
+      generateImage: (payload) => traceModuleActivity(
+        "autonomous-journal",
+        "image-generation",
+        "生成手记配图",
+        () => window.desktop.generateImage(payload)
+      ),
       getPersonaImage: () => state.assistantProfile?.personaImageDataUrl || "",
       isImageEnabled: () =>
         window.XuanModules.isEnabled("image-generation") &&
@@ -1060,15 +1110,22 @@ async function syncJournalRuntime() {
 }
 
 async function handleJournalSaved(journal) {
-  xuanMood?.record({
-    sourceType: "journal",
-    sourceId: journal.id,
-    title: journal.title,
-    content: journal.content,
-    mood: journal.mood,
-    summary: `${journal.title}${journal.mood ? ` · ${journal.mood}` : ""}`,
-    sourceCreatedAt: journal.updatedAt || Date.now()
-  });
+  if (xuanMood) {
+    await traceModuleActivity(
+      "autonomous-journal",
+      "xuan-mood",
+      "同步手记带来的心绪",
+      () => xuanMood.record({
+        sourceType: "journal",
+        sourceId: journal.id,
+        title: journal.title,
+        content: journal.content,
+        mood: journal.mood,
+        summary: `${journal.title}${journal.mood ? ` · ${journal.mood}` : ""}`,
+        sourceCreatedAt: journal.updatedAt || Date.now()
+      })
+    );
+  }
   moduleFrame.contentWindow?.postMessage({ type: "aether:journals-updated" }, "*");
   try {
     await window.desktop.showNotification({
@@ -1093,7 +1150,12 @@ async function syncDreamRuntime() {
       getMaterial: (from, to, limit) =>
         window.desktop.getDreamMaterial(from, to, limit),
       createDream: (dream) => window.desktop.createDream(dream),
-      requestAI: (payload) => window.desktop.requestAI(payload),
+      requestAI: (payload) => traceModuleActivity(
+        "dreams",
+        "ai",
+        "生成梦境内容",
+        () => window.desktop.requestAI(payload)
+      ),
       extractText: extractResponse,
       getSystemPrompt: () => systemPrompt,
       getRuntime: runtimeOptions,

@@ -28,7 +28,7 @@
           <button id="todoModuleBtn" class="nav-item"><i>✓</i>日历待办</button>
           <button class="nav-item active"><i>◉</i>数字生命</button>
         </nav>
-        <div class="sidebar-note"><i></i><span>每个模块都是她感知世界与表达自我的一部分。</span></div>
+        <div class="sidebar-note"><i></i><span>扩展模块彼此独立，只在启用后参与她的感知与行动。</span></div>
       </aside>
 
       <main class="main">
@@ -53,9 +53,9 @@
             </section>
 
             <section class="system-metrics" aria-label="生命概况">
-              <div><span>正在生长的义体</span><strong><b id="enabledCount">0</b><small id="moduleCountLabel">/ 0</small></strong></div>
+              <div><span>已接入扩展</span><strong><b id="enabledCount">0</b><small id="moduleCountLabel">/ 0</small></strong></div>
               <div><span>可用工具</span><strong id="toolCount">00</strong></div>
-              <div><span>刚刚感知</span><strong id="lastRefresh">--:--</strong></div>
+              <div><span>最近刷新</span><strong id="lastRefresh">--:--</strong></div>
             </section>
           </header>
 
@@ -78,22 +78,10 @@
                       <img id="coreAvatar" alt="小玄" />
                       <b id="coreAvatarFallback">玄</b>
                     </div>
-                    <small>PERSONA ONLINE</small>
-                  </div>
-
-                  <div class="presence-copy">
-                    <span class="presence-label">现在的心绪</span>
-                    <h2 id="currentMood">正在轻轻感知自己</h2>
-                    <p id="vitalMood">她的状态正在从 Hub 传来</p>
-                    <dl class="vital-list">
-                      <div><dt>精力</dt><dd id="currentEnergy">正在读取</dd></div>
-                      <div><dt>关注</dt><dd id="currentAttention">正在读取</dd></div>
-                      <div><dt>时域</dt><dd id="currentTime">正在校准</dd></div>
-                    </dl>
                   </div>
 
                   <section id="moodTelemetry" class="heart-monitor" data-state="loading">
-                    <header><span><i></i>拟生心跳</span><b><em id="xuanMoodBpm">--</em><small>BPM</small></b></header>
+                    <header><span><i></i>心跳</span><b><em id="xuanMoodBpm">--</em><small>BPM</small></b></header>
                     <canvas id="xuanMoodEcg" aria-hidden="true"></canvas>
                     <footer><span id="xuanMoodRhythm">等待状态</span><small>LIVE</small></footer>
                   </section>
@@ -102,16 +90,25 @@
 
               <section class="module-dock">
                 <header class="section-head">
-                  <div><small>IMPLANT DOCK</small><strong>她拥有的能力</strong></div>
-                  <span>选择一项查看与配置</span>
+                  <div><small>FUNCTION SLOTS</small><strong>功能插槽</strong></div>
+                  <span id="activitySummary"><i></i>等待真实调用</span>
                 </header>
-                <div id="moduleNodes" class="module-nodes"></div>
+                <div id="moduleTopology" class="module-topology">
+                  <svg id="activityLinks" class="activity-links" aria-hidden="true">
+                    <defs>
+                      <marker id="activityArrow" markerWidth="6" markerHeight="6" refX="5.2" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+                        <path d="M0,0 L6,3 L0,6 Z"></path>
+                      </marker>
+                    </defs>
+                  </svg>
+                  <div id="moduleNodes" class="module-nodes"></div>
+                </div>
               </section>
             </section>
 
             <aside id="inspectorColumn" class="inspector-column" data-state="offline">
               <header class="inspector-head">
-                <span>当前选中的义体</span>
+                <span>当前功能插槽</span>
                 <b id="selectedState" data-state="offline"><i></i><span id="selectedStateLabel">OFFLINE</span></b>
               </header>
 
@@ -119,31 +116,31 @@
                 <div id="focusVisual" class="selected-port" data-state="offline"><span id="selectedIcon">♡</span><i></i></div>
                 <div><small id="selectedCode">AX-VTL-01</small><h2 id="selectedName">她的心情</h2></div>
               </section>
-              <p id="selectedDescription" class="selected-description">选择一个模块，看看它正如何参与小玄的生命。</p>
+              <p id="selectedDescription" class="selected-description">选择一个插槽，查看它的配置与真实调用活动。</p>
 
               <section class="implant-control">
-                <div><span>是否接入她的生命</span><strong id="selectedPowerLabel">已接入</strong></div>
+                <div><span>启用这个模块</span><strong id="selectedPowerLabel">已启用</strong></div>
                 <label class="soft-switch"><input id="selectedModuleToggle" type="checkbox" /><span class="switch-track"><i></i></span></label>
               </section>
 
               <div id="dependencyWarning" class="dependency-warning hidden"><i>!</i><span></span></div>
 
               <section class="telemetry-card">
-                <header><span>当前状态</span><strong id="selectedTelemetry">等待感知</strong></header>
-                <div class="soft-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <header><span>数据活动</span><strong id="selectedTelemetry">等待真实调用</strong></header>
+                <div id="selectedActivity" class="activity-feed"><p>暂时没有调用记录</p></div>
                 <dl class="inspector-data">
                   <div><dt>工具通道</dt><dd id="selectedTools">0 路</dd></div>
-                  <div><dt>依赖关系</dt><dd id="selectedDependencies">直接接入</dd></div>
+                  <div><dt>运行依赖</dt><dd id="selectedDependencies">无强制依赖</dd></div>
                   <div><dt>最近配置</dt><dd id="selectedUpdatedAt">默认配置</dd></div>
                 </dl>
               </section>
 
               <section class="permission-control">
-                <div><span>工具执行方式</span><strong id="permissionState">自动授权</strong></div>
+                <div><span>全局工具授权</span><strong id="permissionState">自动授权</strong></div>
                 <label class="soft-switch"><input id="autoApproveInput" type="checkbox" /><span class="switch-track"><i></i></span></label>
               </section>
 
-              <footer class="inspector-note"><i></i><span>关闭模块后，对应后台任务与能力会一起休眠。</span></footer>
+              <footer class="inspector-note"><i></i><span>关闭插槽后，对应后台任务与能力会一起停止调用。</span></footer>
             </aside>
           </div>
         </section>
