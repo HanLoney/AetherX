@@ -49,12 +49,13 @@ test("功能插槽展示真实模块依赖、遥测和选择式配置", () => {
   assert.match(script, /setInterval\(refreshTelemetry, 20_000\)/);
 });
 
-test("十个模块使用统一的圆角线性 SVG 图标系统", () => {
+test("全部模块使用统一的圆角线性 SVG 图标系统", () => {
   assert.match(script, /const MODULE_ICON_PATHS = Object\.freeze/);
   for (const id of [
     "ai",
     "memory",
     "todo",
+    "wallet",
     "image-generation",
     "time-awareness",
     "xuan-mood",
@@ -71,7 +72,7 @@ test("十个模块使用统一的圆角线性 SVG 图标系统", () => {
   assert.doesNotMatch(script, /querySelector\("\.node-icon"\)\.textContent = module\.icon/);
 });
 
-test("功能插槽采用独立人格核心和三乘三扩展背板", () => {
+test("功能插槽采用独立人格核心和四列扩展背板", () => {
   assert.match(html, /class="presence-panel"/);
   assert.match(html, /class="module-dock"/);
   assert.match(html, /class="inspector-column"/);
@@ -86,7 +87,7 @@ test("功能插槽采用独立人格核心和三乘三扩展背板", () => {
   assert.match(css, /\.module-node\[data-state="online"\]/);
   assert.match(css, /\.module-node\[data-state="blocked"\]/);
   assert.match(css, /\.module-node::before/);
-  assert.match(css, /grid-template-columns:minmax\(126px,\.78fr\) repeat\(3,minmax\(126px,1fr\)\)/);
+  assert.match(css, /grid-template-columns:minmax\(118px,\.74fr\) repeat\(4,minmax\(108px,1fr\)\)/);
   assert.match(css, /grid-template-rows:repeat\(3,minmax\(54px,1fr\)\)/);
   assert.match(css, /\.core-module \{ grid-column:1; grid-row:1\/4/);
   assert.match(css, /\.core-module::after \{ content:none; \}/);

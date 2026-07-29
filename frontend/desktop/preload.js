@@ -58,6 +58,15 @@ contextBridge.exposeInMainWorld("desktop", {
   updateTodo: (id, changes) => ipcRenderer.invoke("todos:update", id, changes),
   deleteTodo: (id) => ipcRenderer.invoke("todos:delete", id),
   clearCompletedTodos: () => ipcRenderer.invoke("todos:clear-completed"),
+  getWalletSummary: () => ipcRenderer.invoke("wallet:summary"),
+  listWalletTransactions: (id, filters) =>
+    ipcRenderer.invoke("wallet:transactions", id, filters),
+  createWalletAccount: (input) => ipcRenderer.invoke("wallet:create", input),
+  updateWalletAccount: (id, changes) =>
+    ipcRenderer.invoke("wallet:update", id, changes),
+  adjustWalletAccount: (id, input) =>
+    ipcRenderer.invoke("wallet:adjust", id, input),
+  deleteWalletAccount: (id) => ipcRenderer.invoke("wallet:delete", id),
   getProfile: () => ipcRenderer.invoke("profile:get"),
   saveProfile: (profile) => ipcRenderer.invoke("profile:save", profile),
   updateProfile: (changes) => ipcRenderer.invoke("profile:update", changes),

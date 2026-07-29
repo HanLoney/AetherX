@@ -278,6 +278,47 @@ class XuanApiClient {
     return this.request("DELETE", "/api/v1/todos/completed");
   }
 
+  getWalletSummary() {
+    return this.request("GET", "/api/v1/wallet");
+  }
+
+  listWalletTransactions(id, filters = {}) {
+    const query = new URLSearchParams();
+    if (filters.limit !== undefined) query.set("limit", String(filters.limit));
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return this.request(
+      "GET",
+      `/api/v1/wallet/accounts/${encodeURIComponent(id)}/transactions${suffix}`
+    );
+  }
+
+  createWalletAccount(input) {
+    return this.request("POST", "/api/v1/wallet/accounts", input);
+  }
+
+  updateWalletAccount(id, changes) {
+    return this.request(
+      "PATCH",
+      `/api/v1/wallet/accounts/${encodeURIComponent(id)}`,
+      changes
+    );
+  }
+
+  adjustWalletAccount(id, input) {
+    return this.request(
+      "POST",
+      `/api/v1/wallet/accounts/${encodeURIComponent(id)}/adjust`,
+      input
+    );
+  }
+
+  deleteWalletAccount(id) {
+    return this.request(
+      "DELETE",
+      `/api/v1/wallet/accounts/${encodeURIComponent(id)}`
+    );
+  }
+
   getProfile() {
     return this.request("GET", "/api/v1/profile");
   }

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>钱包 · AetherX</title>
+    <link rel="stylesheet" href="wallet.css" />
+    <script src="interface-settings.js"></script>
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="titlebar">
+      <div class="drag-title">AetherX · 钱包</div>
+      <div class="window-actions">
+        <button id="minimizeBtn" class="window-btn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" class="window-btn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="window-btn close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="wallet-shell">
+      <header class="page-head">
+        <div>
+          <small>PERSONAL WALLET</small>
+          <h1>钱包</h1>
+        </div>
+        <button id="newAccountBtn" class="new-account-btn" type="button">
+          <span>＋</span>新建账户
+        </button>
+      </header>
+
+      <section class="wallet-layout">
+        <section class="wallet-ledger">
+          <article class="balance-hero">
+            <div class="balance-orbit orbit-a"></div>
+            <div class="balance-orbit orbit-b"></div>
+            <header>
+              <span><i></i>资产概览</span>
+              <small id="accountCount">0 个账户</small>
+            </header>
+            <div class="balance-copy">
+              <small id="primaryCurrencyLabel">CNY 总余额</small>
+              <strong id="primaryTotal">¥0.00</strong>
+            </div>
+            <div id="currencyTotals" class="currency-totals"></div>
+          </article>
+
+          <section class="account-section">
+            <header>
+              <div><small>ACCOUNTS</small><strong>账户</strong></div>
+              <span id="syncState"><i></i>已同步</span>
+            </header>
+            <div id="accountList" class="account-list"></div>
+          </section>
+        </section>
+
+        <aside class="transaction-panel">
+          <header class="transaction-panel-head">
+            <div class="ledger-identity">
+              <small>CURRENT ACCOUNT</small>
+              <h2 id="ledgerTitle">选择一个账户</h2>
+              <strong id="ledgerBalance">—</strong>
+            </div>
+            <div class="ledger-actions">
+              <button id="editAccountBtn" class="ledger-icon-btn" type="button" aria-label="编辑账户资料" disabled>
+                <svg viewBox="0 0 24 24"><path d="m14.5 5.5 4 4M5 19l3.5-.7L19 7.8a1.8 1.8 0 0 0 0-2.6l-.2-.2a1.8 1.8 0 0 0-2.6 0L5.7 15.5 5 19Z"/></svg>
+              </button>
+              <button id="addTransactionBtn" class="add-transaction-btn" type="button" aria-label="记录收入或支出" disabled><span>＋</span></button>
+            </div>
+          </header>
+          <p id="ledgerNote" class="ledger-note">从左边选择一个账户后，这里会展开它的完整变化。</p>
+          <section class="change-history">
+            <header>
+              <div><small>TRANSACTIONS</small><strong>收支流水</strong></div>
+              <span id="transactionCount">0 条</span>
+            </header>
+            <div id="transactionList" class="transaction-list"></div>
+          </section>
+          <footer><i></i><span>每笔收入与支出都会保留原因、余额变化和记录来源。</span></footer>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="accountDialog" class="wallet-dialog account-dialog">
+      <section class="dialog-card">
+        <header>
+          <div>
+            <small id="editorEyebrow">NEW SAVING</small>
+            <h2 id="editorTitle">新建账户</h2>
+          </div>
+          <button class="dialog-close" type="button" data-close-dialog="accountDialog" aria-label="关闭">×</button>
+        </header>
+        <form id="accountForm">
+            <label class="field">
+              <span>账户名称</span>
+              <input id="nameInput" maxlength="60" autocomplete="off" placeholder="例如：工资卡、旅行基金" required />
+            </label>
+            <div class="amount-fields">
+              <label class="field amount-field">
+                <span>当前余额</span>
+                <div><b id="currencySymbol">¥</b><input id="amountInput" inputmode="decimal" autocomplete="off" placeholder="0.00" required /></div>
+              </label>
+              <label class="field currency-field">
+                <span>币种</span>
+                <select id="currencyInput">
+                  <option value="CNY">CNY</option>
+                  <option value="USD">USD</option>
+                  <option value="HKD">HKD</option>
+                  <option value="JPY">JPY</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </label>
+            </div>
+            <label class="field note-field">
+              <span>备注 <small>可选</small></span>
+              <textarea id="noteInput" rows="2" maxlength="240" placeholder="这个账户长期用于什么？"></textarea>
+            </label>
+            <label class="field detail-field">
+              <span>初始余额说明 <small>会写入第一笔流水</small></span>
+              <input id="changeDetailInput" maxlength="160" autocomplete="off" placeholder="例如：已有存款转入" />
+            </label>
+
+            <p id="formMessage" class="form-message" role="status"></p>
+            <div class="editor-actions">
+              <button id="deleteAccountBtn" class="delete-btn hidden" type="button">删除记录</button>
+              <button id="saveAccountBtn" class="save-btn" type="submit">保存</button>
+            </div>
+        </form>
+      </section>
+    </dialog>
+
+    <dialog id="transactionDialog" class="wallet-dialog transaction-dialog">
+      <section class="dialog-card">
+        <header>
+          <div><small>NEW TRANSACTION</small><h2>记录一笔变动</h2></div>
+          <button class="dialog-close" type="button" data-close-dialog="transactionDialog" aria-label="关闭">×</button>
+        </header>
+        <form id="transactionForm">
+          <div class="transaction-kind" role="group" aria-label="变动类型">
+            <button type="button" data-kind="income" data-selected="true"><i>＋</i><span>收入<small>存入当前账户</small></span></button>
+            <button type="button" data-kind="expense" data-selected="false"><i>−</i><span>支出<small>从当前账户扣除</small></span></button>
+          </div>
+          <label class="field transaction-value-field">
+            <span>变动金额 <small id="transactionBalanceHint"></small></span>
+            <div><b id="transactionCurrencySymbol">¥</b><input id="transactionAmountInput" inputmode="decimal" autocomplete="off" placeholder="0.00" required /></div>
+          </label>
+          <label class="field">
+            <span>这笔钱的说明</span>
+            <input id="transactionDetailInput" maxlength="160" autocomplete="off" placeholder="例如：工资存入、购买设备" required />
+          </label>
+          <p id="transactionMessage" class="form-message" role="status"></p>
+          <button id="saveTransactionBtn" class="save-btn transaction-save-btn" type="submit">记入流水</button>
+        </form>
+      </section>
+    </dialog>
+
+    <template id="accountTemplate">
+      <button class="account-row" type="button">
+        <span class="account-icon"><svg viewBox="0 0 24 24"><path d="M5 8.5h14v10H5z"/><path d="M7 8.5V6.8A1.8 1.8 0 0 1 8.8 5h6.4A1.8 1.8 0 0 1 17 6.8v1.7M5 12h14"/></svg></span>
+        <span class="account-copy"><strong></strong><small></small></span>
+        <span class="account-amount"><strong></strong><small></small></span>
+        <i class="account-state"></i>
+      </button>
+    </template>
+
+    <template id="transactionTemplate">
+      <article class="transaction-row">
+        <i class="transaction-state"></i>
+        <span class="transaction-copy"><strong></strong><small></small></span>
+        <span class="transaction-amount"><strong></strong><small></small></span>
+      </article>
+    </template>
+
+    <script src="wallet.js"></script>
+  </body>
+</html>
