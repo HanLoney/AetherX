@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { AgentService } = require("../src/modules/agent/agent-service");
 const { ModuleActivityService } = require("../src/modules/module-activity/module-activity-service");
+const { moduleForTool } = require("../src/modules/module-settings/module-manifest");
 
 function fixture(completions, tool = { name: "todo.list", title: "查询待办", risk: "read" }) {
   const saved = [];
@@ -69,7 +70,7 @@ test("Agent Hub records real calls between the personality core and extensions",
   context.services.moduleActivityService = activity;
   context.services.moduleManager = {
     isEnabled: () => true,
-    moduleForTool: (name) => name.startsWith("todo") ? "todo" : ""
+    moduleForTool
   };
 
   await context.service.chat("user-1", { content: "看看待办", runtime: {} });

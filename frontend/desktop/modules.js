@@ -39,17 +39,18 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MODULE_SLOTS = Object.freeze({
   memory: { column: 2, row: 1 },
   todo: { column: 3, row: 1 },
-  "time-awareness": { column: 4, row: 1 },
+  wallet: { column: 4, row: 1 },
+  "time-awareness": { column: 5, row: 1 },
   "xuan-mood": { column: 2, row: 2 },
   "image-generation": { column: 3, row: 2 },
   "proactive-reminders": { column: 4, row: 2 },
-  "autonomous-journal": { column: 2, row: 3 },
+  "autonomous-journal": { column: 5, row: 2 },
   "anniversary-album": { column: 3, row: 3 },
   dreams: { column: 4, row: 3 }
 });
 
 const MODULE_CODES = Object.freeze({
-  ai: "AX-CORE-00", memory: "AX-MEM-12", todo: "AX-SCH-06",
+  ai: "AX-CORE-00", memory: "AX-MEM-12", todo: "AX-SCH-06", wallet: "AX-WAL-01",
   "image-generation": "AX-VIS-01", "time-awareness": "AX-TIM-00",
   "xuan-mood": "AX-VTL-01", "proactive-reminders": "AX-NOT-00",
   "autonomous-journal": "AX-JRN-03", "anniversary-album": "AX-ARC-05",
@@ -60,6 +61,7 @@ const MODULE_ICON_PATHS = Object.freeze({
   ai: '<path d="M5 6.5h14v9H9l-4 3v-12Z"/><path d="M8.5 10h5"/><path d="m16.5 2.5.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6Z"/>',
   memory: '<path d="M9 19.5H6.8a2.3 2.3 0 0 1-2.3-2.3v-2.4l-1.2-1.5 1.2-1.1V9.5A6.5 6.5 0 0 1 11 3h1a6 6 0 0 1 6 6v2.8a4.5 4.5 0 0 0 1.5 3.4v4.3H14V17"/><path d="M9 8.5a2 2 0 0 1 3.5-1.3A2 2 0 0 1 16 8.5c0 .8-.4 1.5-1 1.9.6.4 1 1.1 1 1.9a2 2 0 0 1-3.5 1.3A2 2 0 0 1 9 12.3c0-.8.4-1.5 1-1.9-.6-.4-1-1.1-1-1.9Z"/>',
   todo: '<rect x="4.5" y="5.5" width="15" height="14" rx="3"/><path d="M8 3.5v4M16 3.5v4M4.5 9.5h15M8.5 14l2 2 4-4"/>',
+  wallet: '<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-10Z"/><path d="M4.5 8h11.8A3.2 3.2 0 0 1 19.5 11.2V15H15a3 3 0 0 1 0-6h4.5"/><circle cx="15" cy="12" r=".7"/><path d="M7 5V4.5A1.5 1.5 0 0 1 8.5 3h8"/>',
   "image-generation": '<rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="1.5"/><path d="m5.5 17 4.5-4 3 2.5 2.5-2 3 3.5"/><path d="m17 1.8.55 1.65 1.65.55-1.65.55L17 6.2l-.55-1.65L14.8 4l1.65-.55Z"/>',
   "time-awareness": '<circle cx="12" cy="12" r="7.5"/><path d="M12 7.5V12l3 2M4 5.5 6.5 3M20 5.5 17.5 3"/><path d="M3 12a9 9 0 0 0 1.3 4.7M21 12a9 9 0 0 1-1.3 4.7"/>',
   "xuan-mood": '<path d="M12 20S4.5 15.5 4.5 9.7A4.2 4.2 0 0 1 12 7.1a4.2 4.2 0 0 1 7.5 2.6C19.5 15.5 12 20 12 20Z"/><path d="M7.5 12h2l1.2-2.3 2.1 5 1.2-2.7h2.5"/>',
@@ -70,7 +72,7 @@ const MODULE_ICON_PATHS = Object.freeze({
 });
 
 const MODULE_ACCENTS = Object.freeze({
-  ai: "143,135,189", memory: "105,159,205", todo: "92,174,145",
+  ai: "143,135,189", memory: "105,159,205", todo: "92,174,145", wallet: "194,151,82",
   "image-generation": "210,132,170", "time-awareness": "100,164,210",
   "xuan-mood": "218,126,164", "proactive-reminders": "198,146,88",
   "autonomous-journal": "126,145,201", "anniversary-album": "194,126,164",
@@ -79,6 +81,7 @@ const MODULE_ACCENTS = Object.freeze({
 
 const MODULE_NAVIGATION = Object.freeze({
   todo: ["todo", "index.html"], memory: ["memory", "memory.html"],
+  wallet: ["wallet", "wallet.html"],
   "anniversary-album": ["album", "album.html"], dreams: ["dreams", "dream.html"],
   "image-generation": ["image-generation", "image-generator.html"]
 });
@@ -109,6 +112,7 @@ function createNavigationButton(id, icon, label) {
 
 const navigationButtons = new Map([
   ["todo", todoModuleBtn],
+  ["wallet", createNavigationButton("wallet", "¥", "钱包")],
   ["memory", createNavigationButton("memory", "◈", "记忆中心")],
   ["anniversary-album", createNavigationButton("anniversary-album", "◇", "我们的纪念册")],
   ["dreams", createNavigationButton("dreams", "☾", "梦境")],
@@ -250,7 +254,7 @@ function dependencyDescription(module) {
 function collectionCount(value) {
   if (Array.isArray(value)) return value.length;
   if (Array.isArray(value?.items)) return value.items.length;
-  for (const key of ["total", "count", "totalCount"]) {
+  for (const key of ["total", "count", "totalCount", "accountCount"]) {
     if (Number.isFinite(Number(value?.[key]))) return Number(value[key]);
   }
   return 0;
@@ -340,6 +344,7 @@ async function refreshCollections() {
   await Promise.all([
     probeCollection("memory", () => window.desktop.listMemories({ status: "all" }), "条记忆"),
     probeCollection("todo", () => window.desktop.listTodos({}), "项日程"),
+    probeCollection("wallet", () => window.desktop.getWalletSummary(), "项存款"),
     probeCollection("image-generation", () => window.desktop.getAssistantGallerySummary({}), "张影像"),
     probeCollection("autonomous-journal", () => window.desktop.listJournals({}), "篇手记"),
     probeCollection("anniversary-album", () => window.desktop.listAlbumMoments({ status: "all" }), "段纪念"),

@@ -5,6 +5,9 @@ const { createSecretBox } = require("./infrastructure/secret-box");
 const { TodoRepository } = require("./modules/todos/todo-repository");
 const { TodoService } = require("./modules/todos/todo-service");
 const { registerTodoRoutes } = require("./modules/todos/todo-routes");
+const { WalletRepository } = require("./modules/wallet/wallet-repository");
+const { WalletService } = require("./modules/wallet/wallet-service");
+const { registerWalletRoutes } = require("./modules/wallet/wallet-routes");
 const { AiConfigRepository } = require("./modules/ai/ai-config-repository");
 const { AiProviderClient } = require("./modules/ai/ai-provider-client");
 const { registerAiRoutes } = require("./modules/ai/ai-routes");
@@ -158,6 +161,7 @@ function createApp(config) {
 
   const todoRepository = new TodoRepository(database);
   const todoService = new TodoService(todoRepository);
+  const walletService = new WalletService(new WalletRepository(database));
   const aiConfigRepository = new AiConfigRepository(database, secretBox);
   const aiProviderClient = new AiProviderClient();
   const profileService = new ProfileService(new ProfileRepository(database));
@@ -213,6 +217,7 @@ function createApp(config) {
   });
   const agentServices = {
     todoService,
+    walletService,
     aiConfigRepository,
     providerClient: aiProviderClient,
     profileService,
@@ -260,6 +265,7 @@ function createApp(config) {
   registerModuleSettingsRoutes(router, moduleManager);
   registerModuleActivityRoutes(router, moduleActivityService);
   registerTodoRoutes(router, todoService);
+  registerWalletRoutes(router, walletService);
   registerAiRoutes(
     router,
     aiConfigRepository,

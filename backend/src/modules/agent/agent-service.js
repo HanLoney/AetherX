@@ -289,7 +289,8 @@ class AgentService {
       : authorization === "automatic"
         ? "自动授权 · 执行中"
         : "已允许 · 执行中";
-    const targetModuleId = this.services.moduleManager?.moduleForTool(call.name) || "";
+    const targetModuleId = this.services.moduleManager
+      ?.moduleForTool(tool.name || call.name) || "";
     const trace = targetModuleId && this.services.moduleActivityService
       ? this.services.moduleActivityService.begin(run.userId, {
           sourceModuleId: "ai",

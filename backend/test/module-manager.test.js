@@ -41,11 +41,13 @@ test("模块状态按用户持久化，并在关闭依赖时级联停用", (cont
 
 test("Agent 工具列表只包含已启用模块，并保留核心画像工具", async () => {
   let todoEnabled = false;
+  let walletEnabled = false;
   const moduleManager = {
     snapshot: () => [
       { id: "ai", enabled: true },
       { id: "memory", enabled: true },
       { id: "todo", enabled: todoEnabled },
+      { id: "wallet", enabled: walletEnabled },
       { id: "image-generation", enabled: false },
       { id: "autonomous-journal", enabled: false },
       { id: "anniversary-album", enabled: false },
@@ -54,7 +56,9 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
     isEnabled: (_userId, moduleId) =>
       moduleId === "todo"
         ? todoEnabled
-        : moduleId === "memory" || moduleId === "ai",
+        : moduleId === "wallet"
+          ? walletEnabled
+          : moduleId === "memory" || moduleId === "ai",
     moduleForTool
   };
   const runtime = createAgentToolRuntime({
@@ -64,7 +68,18 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
         throw new Error("关闭图像模块后不应读取图像配置");
       }
     },
-    assistantMemoryService: { getProfile: () => ({}) }
+    assistantMemoryService: { getProfile: () => ({}) },
+    walletService: {
+      summary: () => ({ accountCount: 0, totals: {}, accounts: [] }),
+      create: (_userId, input) => ({
+        id: "wallet-1",
+        name: input.name,
+        amount: Number(input.amount),
+        currency: input.currency || "CNY",
+        note: "",
+        balanceMinor: Number(input.amount) * 100
+      })
+    }
   });
   const tools = await runtime.forUser("user-1", (registry) =>
     registry.modelTools().map((tool) => tool.function.name)
@@ -74,6 +89,7 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
   assert.ok(tools.includes("profile_get"));
   assert.ok(tools.includes("assistant_profile_get"));
   assert.ok(!tools.some((name) => name.startsWith("todo_")));
+  assert.ok(!tools.some((name) => name.startsWith("wallet_")));
   assert.ok(!tools.some((name) => name.startsWith("journal_")));
   assert.ok(!tools.some((name) => name.startsWith("album_")));
   assert.ok(!tools.some((name) => name.startsWith("dream_")));
@@ -87,5 +103,17 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
     const result = await registry.call("todo_list", {});
     assert.equal(result.ok, false);
     assert.equal(result.error.code, "MODULE_DISABLED");
+
+    walletEnabled = true;
+    assert.ok(registry.modelTools().some((tool) => tool.function.name === "wallet_list"));
+    assert.equal(moduleForTool("wallet.adjust"), "wallet");
+    const created = await registry.call("wallet_create", {
+      name: "旅行基金",
+      amount: 100
+    });
+    assert.equal(created.ok, true);
+    assert.equal(created.data.name, "旅行基金");
+    walletEnabled = false;
+    assert.ok(!registry.modelTools().some((tool) => tool.function.name === "wallet_list"));
   });
 });

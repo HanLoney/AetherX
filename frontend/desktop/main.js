@@ -278,6 +278,23 @@ function registerIpcHandlers() {
   ipcMain.handle("todos:delete", (_event, id) => api.deleteTodo(id));
   ipcMain.handle("todos:clear-completed", () => api.clearCompletedTodos());
 
+  ipcMain.handle("wallet:summary", () => api.getWalletSummary());
+  ipcMain.handle("wallet:transactions", (_event, id, filters) =>
+    api.listWalletTransactions(id, filters)
+  );
+  ipcMain.handle("wallet:create", (_event, input) =>
+    api.createWalletAccount(input)
+  );
+  ipcMain.handle("wallet:update", (_event, id, changes) =>
+    api.updateWalletAccount(id, changes)
+  );
+  ipcMain.handle("wallet:adjust", (_event, id, input) =>
+    api.adjustWalletAccount(id, input)
+  );
+  ipcMain.handle("wallet:delete", (_event, id) =>
+    api.deleteWalletAccount(id)
+  );
+
   ipcMain.handle("profile:get", () => api.getProfile());
   ipcMain.handle("profile:save", (_event, profile) => api.saveProfile(profile));
   ipcMain.handle("profile:update", (_event, changes) =>

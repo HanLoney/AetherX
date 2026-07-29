@@ -183,6 +183,10 @@ const imageModuleBtn = document.createElement("button");
 imageModuleBtn.id = "imageModuleBtn";
 imageModuleBtn.className = "nav-item";
 imageModuleBtn.innerHTML = `${navIcon('<rect x="4.5" y="6" width="15" height="12.5" rx="3"/><circle cx="9" cy="10.5" r="1.5"/><path d="m6.5 16 3.5-3 3 2.5 2-2 2.5 2.5M17.5 3.5v3M16 5h3"/>')}<span>图像生成</span>`;
+const walletModuleBtn = document.createElement("button");
+walletModuleBtn.id = "walletModuleBtn";
+walletModuleBtn.className = "nav-item";
+walletModuleBtn.innerHTML = `${navIcon('<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-10Z"/><path d="M4.5 8h11.8A3.2 3.2 0 0 1 19.5 11.2V15H15a3 3 0 0 1 0-6h4.5"/><circle cx="15" cy="12" r=".7"/>')}<span>钱包</span>`;
 const userProfileBtn = document.createElement("button");
 userProfileBtn.id = "userProfileBtn";
 userProfileBtn.className = "nav-item";
@@ -194,6 +198,7 @@ assistantProfileBtn.innerHTML = "<i>玄</i><span>AI 主页</span>";
 document.querySelector("#spaceNavGroup").append(
   userProfileBtn,
   assistantProfileBtn,
+  walletModuleBtn,
   memoryModuleBtn
 );
 document.querySelector("#createNavGroup").append(
@@ -227,7 +232,7 @@ const VIEW_TRANSITION_MS = 220;
 
 function setActiveNavigation(activeButton) {
   [aiNavBtn, document.querySelector("#todoModuleBtn"), userProfileBtn,
-    assistantProfileBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn,
+    assistantProfileBtn, walletModuleBtn, memoryModuleBtn, albumModuleBtn, dreamModuleBtn,
     imageModuleBtn,
     document.querySelector("#moduleSettingsBtn")].forEach((button) => {
     button.classList.toggle("active", button === activeButton);
@@ -312,6 +317,9 @@ async function showModuleWorkspace(moduleId, source, activeButton) {
     if (moduleId === "memory") {
       moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-memory" }, "*");
     }
+    if (moduleId === "wallet") {
+      moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-wallet" }, "*");
+    }
     return;
   }
   const transitionId = ++viewTransitionId;
@@ -337,6 +345,9 @@ async function showModuleWorkspace(moduleId, source, activeButton) {
   moduleViewHost.classList.remove("view-entering");
   if (moduleId === "memory") {
     moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-memory" }, "*");
+  }
+  if (moduleId === "wallet") {
+    moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-wallet" }, "*");
   }
 }
 
@@ -368,6 +379,9 @@ window.addEventListener("message", (event) => {
   }
   if (target === "memory" && window.XuanModules.isEnabled("memory")) {
     showModuleWorkspace("memory", "memory.html", memoryModuleBtn);
+  }
+  if (target === "wallet" && window.XuanModules.isEnabled("wallet")) {
+    showModuleWorkspace("wallet", "wallet.html", walletModuleBtn);
   }
   if (target === "album" && window.XuanModules.isEnabled("anniversary-album")) {
     showModuleWorkspace("album", "album.html", albumModuleBtn);
@@ -418,12 +432,14 @@ function syncModuleState() {
 async function syncModuleStateNow() {
   const todoEnabled = window.XuanModules.isEnabled("todo");
   const memoryEnabled = window.XuanModules.isEnabled("memory");
+  const walletEnabled = window.XuanModules.isEnabled("wallet");
   const albumEnabled = window.XuanModules.isEnabled("anniversary-album");
   const dreamsEnabled = window.XuanModules.isEnabled("dreams");
   const imageGenerationEnabled = window.XuanModules.isEnabled("image-generation");
   document.querySelector("#todoModuleBtn").classList.toggle("hidden", !todoEnabled);
   document.querySelector("#todoSuggestion").classList.toggle("hidden", !todoEnabled);
   memoryModuleBtn.classList.toggle("hidden", !memoryEnabled);
+  walletModuleBtn.classList.toggle("hidden", !walletEnabled);
   albumModuleBtn.classList.toggle("hidden", !albumEnabled);
   dreamModuleBtn.classList.toggle("hidden", !dreamsEnabled);
   imageModuleBtn.classList.toggle("hidden", !imageGenerationEnabled);
@@ -1831,6 +1847,11 @@ document.querySelector("#moduleSettingsBtn").addEventListener("click", () => {
     "modules.html",
     document.querySelector("#moduleSettingsBtn")
   );
+});
+walletModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("wallet")) {
+    showModuleWorkspace("wallet", "wallet.html", walletModuleBtn);
+  }
 });
 document.querySelector("#interfaceSettingsBtn").addEventListener("click", openInterfaceSettings);
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);

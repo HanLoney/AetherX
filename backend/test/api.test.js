@@ -2322,6 +2322,59 @@ test("complete conversations persist display and model message streams", async (
   });
 });
 
+test("wallet API stores multiple savings and supports precise balance adjustments", async () => {
+  await withServer(async (baseUrl) => {
+    const card = await request(baseUrl, "POST", "/api/v1/wallet/accounts", {
+      name: "工资卡",
+      amount: "1200.25",
+      currency: "CNY",
+      note: "主要存款",
+      detail: "期初余额"
+    });
+    assert.equal(card.response.status, 201);
+    assert.equal(card.payload.data.balanceMinor, 120025);
+
+    await request(baseUrl, "POST", "/api/v1/wallet/accounts", {
+      name: "旅行基金",
+      amount: "99.75"
+    });
+    const adjusted = await request(
+      baseUrl,
+      "POST",
+      `/api/v1/wallet/accounts/${card.payload.data.id}/adjust`,
+      { change: "50", detail: "本月结余存入" }
+    );
+    assert.equal(adjusted.payload.data.amount, 1250.25);
+    const transactions = await request(
+      baseUrl,
+      "GET",
+      `/api/v1/wallet/accounts/${card.payload.data.id}/transactions?limit=20`
+    );
+    assert.equal(transactions.response.status, 200);
+    assert.equal(transactions.payload.data.length, 2);
+    assert.equal(transactions.payload.data[0].eventType, "deposit");
+    assert.equal(transactions.payload.data[0].detail, "本月结余存入");
+    assert.equal(transactions.payload.data[0].source, "manual");
+    assert.equal(transactions.payload.data[0].balanceBeforeMinor, 120025);
+    assert.equal(transactions.payload.data[0].balanceAfterMinor, 125025);
+    assert.equal(transactions.payload.data[1].detail, "期初余额");
+
+    const summary = await request(baseUrl, "GET", "/api/v1/wallet");
+    assert.equal(summary.payload.data.accountCount, 2);
+    assert.deepEqual(summary.payload.data.totals.CNY, {
+      balanceMinor: 135000,
+      amount: 1350
+    });
+
+    const modules = await request(baseUrl, "GET", "/api/v1/modules");
+    assert.ok(modules.payload.data.some((module) => module.id === "wallet"));
+    await request(baseUrl, "PATCH", "/api/v1/modules/wallet", { enabled: false });
+    const blocked = await request(baseUrl, "GET", "/api/v1/wallet");
+    assert.equal(blocked.response.status, 403);
+    assert.equal(blocked.payload.error.code, "MODULE_DISABLED");
+  });
+});
+
 test("conversations expose newest-first pagination", async () => {
   await withServer(async (baseUrl) => {
     for (const title of ["较早会话", "中间会话", "最新会话"]) {
