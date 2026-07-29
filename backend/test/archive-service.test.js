@@ -16,6 +16,7 @@ const {
   continuityDigest,
   encodeMetadata,
   legacyContinuityDigest,
+  previousContinuityDigest,
   readMetadata,
   validateMetadata
 } = require("../src/modules/archive/archive-format");
@@ -44,6 +45,21 @@ test("存档摘要使用跨运行环境稳定的排序，并兼容旧版 localeC
   const normalized = validateMetadata(legacy);
   assert.equal(normalized.continuityDigest, stableDigest);
   assert.equal(normalized.digestAlgorithm, DIGEST_ALGORITHM);
+
+  const previousRecords = { ...records };
+  delete previousRecords.wallet_accounts;
+  delete previousRecords.wallet_transactions;
+  const previous = {
+    ...base,
+    records: previousRecords,
+    formatVersion: 3,
+    digestAlgorithm: DIGEST_ALGORITHM
+  };
+  previous.continuityDigest = previousContinuityDigest(previous);
+  const normalizedPrevious = validateMetadata(previous);
+  assert.deepEqual(normalizedPrevious.records.wallet_accounts, []);
+  assert.deepEqual(normalizedPrevious.records.wallet_transactions, []);
+  assert.equal(normalizedPrevious.continuityDigest, continuityDigest(normalizedPrevious));
 
   assert.throws(
     () => validateMetadata({
@@ -91,6 +107,8 @@ test("完整存档往返恢复 AI 连续性，同时保留登录与设备凭据"
   database.prepare("UPDATE users SET password_hash = 'new-password-hash' WHERE id = ?").run(userId);
   database.prepare("UPDATE auth_sessions SET token_hash = 'new-session-token' WHERE user_id = ?").run(userId);
   database.prepare("UPDATE paired_devices SET token_hash = 'new-device-token' WHERE user_id = ?").run(userId);
+  database.prepare("UPDATE wallet_accounts SET balance_minor = 1 WHERE user_id = ?").run(userId);
+  database.prepare("UPDATE wallet_transactions SET detail = '被改掉的流水' WHERE user_id = ?").run(userId);
 
   await assert.rejects(
     service.restoreRequest(userId, fs.createReadStream(entry.filePath), "wrong-password"),
@@ -185,6 +203,8 @@ test("完整存档往返恢复 AI 连续性，同时保留登录与设备凭据"
   assert.equal(database.prepare("SELECT password_hash FROM users WHERE id = ?").get(userId).password_hash, "new-password-hash");
   assert.equal(database.prepare("SELECT token_hash FROM auth_sessions WHERE user_id = ?").get(userId).token_hash, "new-session-token");
   assert.equal(database.prepare("SELECT token_hash FROM paired_devices WHERE user_id = ?").get(userId).token_hash, "new-device-token");
+  assert.equal(database.prepare("SELECT balance_minor FROM wallet_accounts WHERE user_id = ?").get(userId).balance_minor, 880050);
+  assert.equal(database.prepare("SELECT detail FROM wallet_transactions WHERE user_id = ?").get(userId).detail, "工资存入");
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM mobile_client_health WHERE user_id = ?").get(userId).count, 1);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sync_changes WHERE user_id = ? AND entity_type = 'archive_restore' AND operation = 'reset'").get(userId).count, 1);
   assert.equal(database.prepare("SELECT text FROM todos WHERE user_id = 'other-user'").get().text, "绝不能进入洛尼的存档");
@@ -220,6 +240,22 @@ function seedUser(database, secretBox, userId, now) {
   run("INSERT INTO paired_devices(id,user_id,name,public_key,token_hash,status,created_at,last_seen_at,revoked_at) VALUES (?,?,?,?,?,?,?,?,?)", "device-1", userId, "手机", "key", "old-device-token", "active", now, now, null);
   run("INSERT INTO mobile_client_health(id,user_id,paired_device_id,name,platform,model,os_version,app_version,protocol_version,sync_status,sync_cursor,sse_connected,foreground,latency_ms,last_error,last_heartbeat_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "install-1", userId, "device-1", "手机", "android", "model", "14", "1.0", 1, "online", 0, 1, 1, 20, "", now, now, now);
   run("INSERT INTO todos VALUES (?,?,?,?,?,?,?,?)", "todo-1", userId, "一起完成存档", now, now + 1, 0, now, now);
+  run("INSERT INTO wallet_accounts VALUES (?,?,?,?,?,?,?,?)", "wallet-1", userId, "长期存款", 880050, "CNY", "跟着完整存档一起恢复", now, now);
+  run(
+    "INSERT INTO wallet_transactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    "wallet-transaction-1",
+    userId,
+    "wallet-1",
+    "deposit",
+    80050,
+    800000,
+    880050,
+    "CNY",
+    "CNY",
+    "工资存入",
+    "chat",
+    now
+  );
   run("INSERT INTO ai_configs VALUES (?,?,?,?,?,?,?)", userId, "openai", "OpenAI", "https://example.com", "chat-model", secretBox.encrypt("chat-secret"), now);
   run("INSERT INTO ai_image_configs VALUES (?,?,?,?,?,?,?)", userId, "image", "Image", "https://example.com", "image-model", secretBox.encrypt("image-secret"), now);
   run("INSERT INTO conversations VALUES (?,?,?,?,?,?)", "conversation-1", userId, "存档", "完整记录", now, now);

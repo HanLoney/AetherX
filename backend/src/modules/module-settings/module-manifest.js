@@ -23,6 +23,12 @@ const MODULE_MANIFEST = Object.freeze([
     toolPrefixes: ["todo."]
   }),
   moduleDefinition({
+    id: "wallet",
+    name: "钱包",
+    description: "记录多项存款余额，并支持在对话中查询和调整。",
+    toolPrefixes: ["wallet."]
+  }),
+  moduleDefinition({
     id: "image-generation",
     name: "图像生成",
     description: "调用独立图像模型生成并保存图片。",

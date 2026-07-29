@@ -92,6 +92,38 @@ test("desktop module center reads and records real module activity", async () =>
   }
 });
 
+test("desktop wallet client supports summary, multiple records and balance adjustment", async () => {
+  const originalFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({ data: {} }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const client = new XuanApiClient({ baseUrl: "http://127.0.0.1:4318" });
+    await client.getWalletSummary();
+    await client.listWalletTransactions("wallet/id", { limit: 30 });
+    await client.createWalletAccount({ name: "工资卡", amount: "100" });
+    await client.updateWalletAccount("wallet/id", { amount: "120" });
+    await client.adjustWalletAccount("wallet/id", { change: "20" });
+    await client.deleteWalletAccount("wallet/id");
+
+    assert.deepEqual(requests.map((item) => [item.options.method, item.url]), [
+      ["GET", "http://127.0.0.1:4318/api/v1/wallet"],
+      ["GET", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid/transactions?limit=30"],
+      ["POST", "http://127.0.0.1:4318/api/v1/wallet/accounts"],
+      ["PATCH", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid"],
+      ["POST", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid/adjust"],
+      ["DELETE", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid"]
+    ]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("desktop renderer contains no second Agent loop or renderer tool registry", () => {
   const home = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
   const html = fs.readFileSync(path.join(__dirname, "..", "home.html"), "utf8");

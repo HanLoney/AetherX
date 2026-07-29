@@ -718,6 +718,41 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_module_settings_user
       ON module_settings(user_id, updated_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS wallet_accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      balance_minor INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'CNY',
+      note TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_accounts_user_updated
+      ON wallet_accounts(user_id, updated_at DESC, created_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS wallet_transactions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      change_minor INTEGER,
+      balance_before_minor INTEGER NOT NULL,
+      balance_after_minor INTEGER NOT NULL,
+      previous_currency TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(account_id) REFERENCES wallet_accounts(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_transactions_account_time
+      ON wallet_transactions(user_id, account_id, created_at DESC, id DESC);
   `
 ];
 

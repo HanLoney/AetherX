@@ -1,7 +1,8 @@
 const crypto = require("node:crypto");
 
-const FORMAT_VERSION = 3;
-const PREVIOUS_FORMAT_VERSION = 2;
+const FORMAT_VERSION = 4;
+const PREVIOUS_FORMAT_VERSION = 3;
+const OLDER_FORMAT_VERSION = 2;
 const LEGACY_FORMAT_VERSION = 1;
 const DIGEST_ALGORITHM = "sha256-canonical-codepoint-v2";
 const CURRENT_USER = "__CURRENT_USER__";
@@ -35,10 +36,15 @@ const TABLES = Object.freeze([
   "assistant_dream_sources",
   "ai_image_configs",
   "module_settings",
+  "wallet_accounts",
+  "wallet_transactions",
   "media_assets"
 ]);
 const PREVIOUS_TABLES = Object.freeze(
-  TABLES.filter((table) => table !== "module_settings")
+  TABLES.filter((table) => !["wallet_accounts", "wallet_transactions"].includes(table))
+);
+const OLDER_TABLES = Object.freeze(
+  PREVIOUS_TABLES.filter((table) => table !== "module_settings")
 );
 
 const INSERT_ORDER = Object.freeze([
@@ -64,6 +70,8 @@ const INSERT_ORDER = Object.freeze([
   "assistant_dream_sources",
   "ai_image_configs",
   "module_settings",
+  "wallet_accounts",
+  "wallet_transactions",
   "conversations",
   "messages",
   "memory_evidence",
@@ -118,12 +126,16 @@ function legacyContinuityDigest(input) {
   return digestWithComparator(
     input,
     (left, right) => left.localeCompare(right),
-    PREVIOUS_TABLES
+    OLDER_TABLES
   );
 }
 
 function previousContinuityDigest(input) {
   return digestWithComparator(input, codePointCompare, PREVIOUS_TABLES);
+}
+
+function olderContinuityDigest(input) {
+  return digestWithComparator(input, codePointCompare, OLDER_TABLES);
 }
 
 function normalizeRow(row) {
@@ -173,16 +185,21 @@ function readMetadata(payloadPath, fs) {
 function validateMetadata(metadata) {
   if (
     !metadata ||
-    ![LEGACY_FORMAT_VERSION, PREVIOUS_FORMAT_VERSION, FORMAT_VERSION].includes(
-      metadata.formatVersion
-    )
+    ![
+      LEGACY_FORMAT_VERSION,
+      OLDER_FORMAT_VERSION,
+      PREVIOUS_FORMAT_VERSION,
+      FORMAT_VERSION
+    ].includes(metadata.formatVersion)
   ) {
     throw archiveError(400, "ARCHIVE_VERSION_UNSUPPORTED", "这个存档版本暂不受支持。");
   }
   if (!metadata.records || typeof metadata.records !== "object") throw invalidArchive();
   const archiveTables = metadata.formatVersion === FORMAT_VERSION
     ? TABLES
-    : PREVIOUS_TABLES;
+    : metadata.formatVersion === PREVIOUS_FORMAT_VERSION
+      ? PREVIOUS_TABLES
+      : OLDER_TABLES;
   for (const table of archiveTables) {
     if (!Array.isArray(metadata.records[table])) throw invalidArchive();
   }
@@ -205,7 +222,9 @@ function validateMetadata(metadata) {
   }
   const actualDigest = metadata.formatVersion === FORMAT_VERSION
     ? continuityDigest(metadata)
-    : previousContinuityDigest(metadata);
+    : metadata.formatVersion === PREVIOUS_FORMAT_VERSION
+      ? previousContinuityDigest(metadata)
+      : olderContinuityDigest(metadata);
   if (metadata.formatVersion === LEGACY_FORMAT_VERSION && !metadata.digestAlgorithm) {
     if (!/^[a-f0-9]{64}$/i.test(String(metadata.continuityDigest || ""))) throw invalidArchive();
     // Version 1 sorted rows with localeCompare(), whose result changes across
@@ -220,8 +239,18 @@ function validateMetadata(metadata) {
   if (!Array.isArray(metadata.records.module_settings)) {
     metadata.records.module_settings = [];
   }
-  if (metadata.formatVersion !== FORMAT_VERSION) {
+  if (!Array.isArray(metadata.records.wallet_accounts)) {
+    metadata.records.wallet_accounts = [];
+  }
+  if (!Array.isArray(metadata.records.wallet_transactions)) {
+    metadata.records.wallet_transactions = [];
+  }
+  if (metadata.formatVersion < PREVIOUS_FORMAT_VERSION) {
     metadata.records.module_settings = [];
+  }
+  if (metadata.formatVersion !== FORMAT_VERSION) {
+    metadata.records.wallet_accounts = [];
+    metadata.records.wallet_transactions = [];
     metadata.continuityDigest = continuityDigest(metadata);
     metadata.digestAlgorithm = DIGEST_ALGORITHM;
   }
@@ -260,6 +289,7 @@ module.exports = {
   encodeMetadata,
   normalizeRow,
   legacyContinuityDigest,
+  previousContinuityDigest,
   readMetadata,
   validateMetadata
 };

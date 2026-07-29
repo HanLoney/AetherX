@@ -5,6 +5,7 @@ const contextStorage = new AsyncLocalStorage();
 const toolRoot = resolveToolRoot();
 const { ToolRegistry } = require(path.join(toolRoot, "tool-registry.js"));
 const { registerTodoTools } = require(path.join(toolRoot, "todo-tools.js"));
+const { registerWalletTools } = require(path.join(toolRoot, "wallet-tools.js"));
 const { registerMemoryTools } = require(path.join(toolRoot, "memory-tools.js"));
 const illustrator = require(path.join(toolRoot, "journal-illustrator.js"));
 const { registerJournalTools } = require(path.join(toolRoot, "journal-tools.js"));
@@ -30,6 +31,7 @@ function createAgentToolRuntime(services) {
     }
   });
   registerTodoTools(registry);
+  registerWalletTools(registry);
   registerMemoryTools(registry);
   registerJournalTools(registry, {
     illustrate: (content) => illustrateJournal(content)
@@ -76,6 +78,12 @@ function createServiceAdapter(userId, services) {
     createTodo: (input) => services.todoService.create(userId, input),
     updateTodo: (id, input) => services.todoService.update(userId, id, input),
     deleteTodo: (id) => services.todoService.delete(userId, id),
+
+    getWalletSummary: () => services.walletService.summary(userId),
+    createWalletAccount: (input) => services.walletService.create(userId, input, { source: "chat" }),
+    updateWalletAccount: (id, input) => services.walletService.update(userId, id, input, { source: "chat" }),
+    adjustWalletAccount: (id, input) => services.walletService.adjust(userId, id, input, { source: "chat" }),
+    deleteWalletAccount: (id) => services.walletService.delete(userId, id),
 
     listMemories: (filters = {}) => services.memoryService.list(userId, filters),
     createMemory: (input) => services.memoryService.create(userId, input),
