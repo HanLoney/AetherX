@@ -110,6 +110,9 @@ const { registerSyncRoutes } = require("./modules/sync/sync-routes");
 const { createAgentToolRuntime } = require("./modules/agent/agent-tool-runtime");
 const { AgentService } = require("./modules/agent/agent-service");
 const { registerAgentRoutes } = require("./modules/agent/agent-routes");
+const {
+  AgentPermissionRepository
+} = require("./modules/agent/agent-permission-repository");
 const { MediaRepository } = require("./modules/media/media-repository");
 const { MediaService } = require("./modules/media/media-service");
 const { registerMediaRoutes } = require("./modules/media/media-routes");
@@ -122,6 +125,12 @@ const { ModuleManager } = require("./modules/module-settings/module-manager");
 const {
   registerModuleSettingsRoutes
 } = require("./modules/module-settings/module-settings-routes");
+const {
+  ModuleActivityService
+} = require("./modules/module-activity/module-activity-service");
+const {
+  registerModuleActivityRoutes
+} = require("./modules/module-activity/module-activity-routes");
 
 function createApp(config) {
   const database = openDatabase(config.dataDir);
@@ -137,6 +146,8 @@ function createApp(config) {
   const syncService = new SyncService(syncRepository);
   const syncEventBroker = new SyncEventBroker(syncRepository);
   const moduleManager = new ModuleManager(new ModuleSettingsRepository(database));
+  const moduleActivityService = new ModuleActivityService();
+  const agentPermissionRepository = new AgentPermissionRepository(database);
   const router = createRouter({
     corsOrigin: config.corsOrigin,
     authenticate: (authorization) => authService.authenticate(authorization),
@@ -216,7 +227,9 @@ function createApp(config) {
     dreamService,
     conversationService,
     mediaService,
-    moduleManager
+    moduleManager,
+    moduleActivityService,
+    agentPermissionRepository
   };
   const agentService = new AgentService(
     agentServices,
@@ -245,6 +258,7 @@ function createApp(config) {
   registerDeviceRoutes(router, deviceService);
   registerSyncRoutes(router, syncService, syncEventBroker, deviceService);
   registerModuleSettingsRoutes(router, moduleManager);
+  registerModuleActivityRoutes(router, moduleActivityService);
   registerTodoRoutes(router, todoService);
   registerAiRoutes(
     router,
@@ -253,7 +267,7 @@ function createApp(config) {
     timeAwarenessService,
     moduleManager
   );
-  registerAgentRoutes(router, agentService);
+  registerAgentRoutes(router, agentService, agentPermissionRepository);
   registerProfileRoutes(router, profileService);
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);

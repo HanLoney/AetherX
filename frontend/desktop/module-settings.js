@@ -49,7 +49,7 @@
     Object.freeze({
       id: "xuan-mood",
       name: "她的心情",
-      description: "让她拥有连续变化的心绪、精力、关注点与拟生心率，并把当前状态带入对话。",
+      description: "让她拥有连续变化的心绪、精力、关注点与心率，并把当前状态带入对话。",
       icon: "♡",
       color: "pink",
       core: false,
@@ -93,6 +93,7 @@
     })
   ]);
   let remoteModules = null;
+  let remotePermissions = null;
 
   function readSettings() {
     try {
@@ -131,22 +132,36 @@
   }
 
   async function hydrate(client = global.desktop, { emit = false } = {}) {
-    if (typeof client?.listModules !== "function") return snapshot();
-    let modules = await client.listModules();
     const legacySettings = readLegacyModuleSettings();
-    if (legacySettings && typeof client.updateModule === "function") {
-      const disabledLegacyModules = modules.filter(
-        (module) =>
-          !module.core &&
-          module.updatedAt == null &&
-          Object.prototype.hasOwnProperty.call(legacySettings, module.id) &&
-          legacySettings[module.id] === false
-      );
-      for (const module of disabledLegacyModules) {
-        modules = await client.updateModule(module.id, false);
+    if (typeof client?.listModules === "function") {
+      let modules = await client.listModules();
+      if (legacySettings && typeof client.updateModule === "function") {
+        const disabledLegacyModules = modules.filter(
+          (module) =>
+            !module.core &&
+            module.updatedAt == null &&
+            Object.prototype.hasOwnProperty.call(legacySettings, module.id) &&
+            legacySettings[module.id] === false
+        );
+        for (const module of disabledLegacyModules) {
+          modules = await client.updateModule(module.id, false);
+        }
       }
+      applyRemoteSnapshot(modules);
     }
-    applyRemoteSnapshot(modules);
+    if (typeof client?.getAgentPermissions === "function") {
+      let permissions = await client.getAgentPermissions();
+      if (
+        permissions?.updatedAt == null &&
+        legacySettings &&
+        typeof client.updateAgentPermissions === "function"
+      ) {
+        permissions = await client.updateAgentPermissions({
+          autoApproveWrites: legacySettings.autoApproveTools !== false
+        });
+      }
+      applyRemotePermissions(permissions);
+    }
     if (emit) {
       global.dispatchEvent(
         new CustomEvent("xuan:modules-changed", {
@@ -183,19 +198,40 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   }
 
+  function applyRemotePermissions(permissions) {
+    if (!permissions || typeof permissions !== "object") return;
+    remotePermissions = {
+      autoApproveWrites: permissions.autoApproveWrites === true,
+      updatedAt: permissions.updatedAt ?? null
+    };
+    const settings = readSettings();
+    settings.autoApproveTools = remotePermissions.autoApproveWrites;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  }
+
   function isAutoApproveEnabled() {
+    if (remotePermissions) return remotePermissions.autoApproveWrites;
     return readSettings().autoApproveTools !== false;
   }
 
-  function setAutoApprove(enabled) {
-    const settings = readSettings();
-    settings.autoApproveTools = Boolean(enabled);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  async function setAutoApprove(enabled) {
+    const next = Boolean(enabled);
+    if (typeof global.desktop?.updateAgentPermissions === "function") {
+      const permissions = await global.desktop.updateAgentPermissions({
+        autoApproveWrites: next
+      });
+      applyRemotePermissions(permissions);
+    } else {
+      const settings = readSettings();
+      settings.autoApproveTools = next;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    }
     global.dispatchEvent(
       new CustomEvent("xuan:permissions-changed", {
-        detail: { autoApproveTools: Boolean(enabled) }
+        detail: { autoApproveTools: isAutoApproveEnabled() }
       })
     );
+    return isAutoApproveEnabled();
   }
 
   function snapshot() {

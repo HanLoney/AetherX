@@ -196,6 +196,16 @@ class XuanApiClient {
     );
   }
 
+  getAgentPermissions() {
+    return this.request("GET", "/api/v1/agent/permissions");
+  }
+
+  updateAgentPermissions(input) {
+    return this.request("PUT", "/api/v1/agent/permissions", {
+      autoApproveWrites: input?.autoApproveWrites === true
+    });
+  }
+
   listModules() {
     return this.request("GET", "/api/v1/modules");
   }
@@ -206,6 +216,20 @@ class XuanApiClient {
       `/api/v1/modules/${encodeURIComponent(id)}`,
       { enabled: enabled === true }
     );
+  }
+
+  listModuleActivity(filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/modules/activity${query.size ? `?${query}` : ""}`
+    );
+  }
+
+  recordModuleActivity(input) {
+    return this.request("POST", "/api/v1/modules/activity", input);
   }
 
   getAiImageConfig() {

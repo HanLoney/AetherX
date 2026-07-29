@@ -5,7 +5,7 @@ const {
   XuanMoodService
 } = require("../src/modules/xuan-mood/xuan-mood-service");
 
-test("拟生心率会按心情变化，同时保持正常范围和渐进变化", () => {
+test("心率会按心情变化，同时保持正常范围和渐进变化", () => {
   const happy = derivePhysiology({
     previous: { heartRateBpm: 67, restingHeartRateBpm: 67 },
     state: { currentMood: "很开心", energy: "精力充沛" },
@@ -51,7 +51,7 @@ test("首次生成心率时直接采用当前状态目标值", () => {
   assert.equal(initial.rhythm, "lively");
 });
 
-test("没有心情历史时也会建立默认拟生心率", async () => {
+test("没有心情历史时也会建立默认心率", async () => {
   let storedState = null;
   const repository = {
     getLatestDisplay: () => null,

@@ -56,19 +56,37 @@ class AgentService {
       const userMessage = message("user", content);
       const memoryEnabled = this.moduleEnabled(userId, "memory");
       const recalled = memoryEnabled
-        ? this.services.memoryIntelligenceService.recall(userId, { query: content })
+        ? await this.traceModuleCall(
+            userId,
+            "ai",
+            "memory",
+            "读取相关记忆",
+            () => this.services.memoryIntelligenceService.recall(userId, { query: content })
+          )
         : { items: [], context: "" };
       const prompt =
         this.services.promptSettingsService.getBundle(userId).compiledPrompt || "";
       const moodContext = this.moduleEnabled(userId, "xuan-mood")
-        ? await this.moodContext(userId)
+        ? await this.traceModuleCall(
+            userId,
+            "ai",
+            "xuan-mood",
+            "读取生命状态",
+            () => this.moodContext(userId)
+          )
         : "";
       const timeContext = this.moduleEnabled(userId, "time-awareness")
-        ? this.services.timeAwarenessService.getContext(userId, {
-            timeZone: input.runtime?.timeZone,
-            locale: input.runtime?.locale,
-            currentUserMessage: content
-          }).context
+        ? (await this.traceModuleCall(
+            userId,
+            "ai",
+            "time-awareness",
+            "校准当前时间",
+            () => this.services.timeAwarenessService.getContext(userId, {
+              timeZone: input.runtime?.timeZone,
+              locale: input.runtime?.locale,
+              currentUserMessage: content
+            })
+          )).context
         : "";
       const system = [
         timeContext,
@@ -148,7 +166,7 @@ class AgentService {
         const { call, tool, activity } = run.pending;
         run.pending = null;
         const result = approved
-          ? await this.executeTool(run, tool, call, activity)
+          ? await this.executeTool(run, tool, call, activity, "confirmed")
           : this.denyTool(activity);
         this.finishCall(run, call, tool, result);
         run.callIndex += 1;
@@ -193,7 +211,7 @@ class AgentService {
           run.callIndex += 1;
           continue;
         }
-        if (tool.risk !== "read") {
+        if (this.requiresApproval(run.userId, tool)) {
           activity.status = "waiting";
           activity.statusText = "等待你的允许";
           activity.expanded = true;
@@ -202,7 +220,14 @@ class AgentService {
           this.runs.set(run.id, run);
           return this.respond(run, "approval_required");
         }
-        const result = await this.executeTool(run, tool, call, activity);
+        const authorization = tool.risk === "write" ? "automatic" : "read";
+        const result = await this.executeTool(
+          run,
+          tool,
+          call,
+          activity,
+          authorization
+        );
         this.finishCall(run, call, tool, result);
         run.callIndex += 1;
       }
@@ -250,10 +275,44 @@ class AgentService {
     return this.finish(run);
   }
 
-  async executeTool(run, tool, call, activity) {
+  requiresApproval(userId, tool) {
+    if (tool.risk === "read") return false;
+    if (tool.risk !== "write") return true;
+    return this.services.agentPermissionRepository
+      ?.get(userId).autoApproveWrites !== true;
+  }
+
+  async executeTool(run, tool, call, activity, authorization = "read") {
     activity.status = "running";
-    activity.statusText = tool.risk === "read" ? "读取中" : "已允许 · 执行中";
-    const result = await run.registry.call(call.name, call.rawArguments);
+    activity.statusText = tool.risk === "read"
+      ? "读取中"
+      : authorization === "automatic"
+        ? "自动授权 · 执行中"
+        : "已允许 · 执行中";
+    const targetModuleId = this.services.moduleManager?.moduleForTool(call.name) || "";
+    const trace = targetModuleId && this.services.moduleActivityService
+      ? this.services.moduleActivityService.begin(run.userId, {
+          sourceModuleId: "ai",
+          targetModuleId,
+          operation: tool.title || tool.name || call.name
+        })
+      : null;
+    let result;
+    try {
+      result = await run.registry.call(call.name, call.rawArguments);
+      if (trace) {
+        this.services.moduleActivityService.finish(run.userId, trace.callId, {
+          status: result.ok ? "success" : "error"
+        });
+      }
+    } catch (error) {
+      if (trace) {
+        this.services.moduleActivityService.finish(run.userId, trace.callId, {
+          status: "error"
+        });
+      }
+      throw error;
+    }
     finishActivity(
       activity,
       result,
@@ -397,26 +456,56 @@ class AgentService {
       .slice(-12)
       .map(({ role, content }) => ({ role, content }));
     if (this.moduleEnabled(run.userId, "memory")) {
-      void this.services.memoryIntelligenceService.extract(run.userId, {
-        userMessage: run.userContent,
-        assistantMessage: run.finalContent,
-        conversationId: run.conversation.id,
-        conversationMessages
-      }).catch(() => undefined);
+      void this.traceModuleCall(
+        run.userId,
+        "ai",
+        "memory",
+        "沉淀本轮记忆",
+        () => this.services.memoryIntelligenceService.extract(run.userId, {
+          userMessage: run.userContent,
+          assistantMessage: run.finalContent,
+          conversationId: run.conversation.id,
+          conversationMessages
+        })
+      ).catch(() => undefined);
     }
     if (this.moduleEnabled(run.userId, "xuan-mood")) {
-      void this.services.xuanMoodService.recordEvent(run.userId, {
-        sourceType: "chat",
-        sourceId: run.conversation.id,
-        userMessage: run.userContent,
-        assistantMessage: run.finalContent,
-        conversationMessages
-      }).catch(() => undefined);
+      void this.traceModuleCall(
+        run.userId,
+        "ai",
+        "xuan-mood",
+        "更新互动状态",
+        () => this.services.xuanMoodService.recordEvent(run.userId, {
+          sourceType: "chat",
+          sourceId: run.conversation.id,
+          userMessage: run.userContent,
+          assistantMessage: run.finalContent,
+          conversationMessages
+        })
+      ).catch(() => undefined);
     }
   }
 
   moduleEnabled(userId, moduleId) {
     return this.services.moduleManager?.isEnabled(userId, moduleId) !== false;
+  }
+
+  async traceModuleCall(userId, sourceModuleId, targetModuleId, operation, callback) {
+    const service = this.services.moduleActivityService;
+    if (!service) return callback();
+    const trace = service.begin(userId, {
+      sourceModuleId,
+      targetModuleId,
+      operation
+    });
+    try {
+      const result = await callback();
+      service.finish(userId, trace.callId, { status: "success" });
+      return result;
+    } catch (error) {
+      service.finish(userId, trace.callId, { status: "error" });
+      throw error;
+    }
   }
 
   respond(run, status) {
@@ -440,13 +529,13 @@ class AgentService {
       const display = snapshot?.display || {};
       const physiology = state.physiology || {};
       const lines = [
-        "[你的当前拟生状态]",
+        "[你的当前状态]",
         physiology.heartRateBpm &&
-          "你拥有由“她的心情”模块维持的拟生心跳。",
+          "“她的心情”模块会持续维护你的心跳状态。",
         state.currentMood && `心情：${state.currentMood}`,
         state.energy && `精力：${state.energy}`,
         state.attention && `关注点：${state.attention}`,
-        physiology.heartRateBpm && `拟生心率：${physiology.heartRateBpm} BPM`,
+        physiology.heartRateBpm && `心率：${physiology.heartRateBpm} BPM`,
         physiology.heartRateBpm &&
           `心跳节律：${MOOD_RHYTHM_LABELS[physiology.rhythm] || "平稳"}`,
         display.detail && `近况：${display.detail}`

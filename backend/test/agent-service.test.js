@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { AgentService } = require("../src/modules/agent/agent-service");
+const { ModuleActivityService } = require("../src/modules/module-activity/module-activity-service");
 
 function fixture(completions, tool = { name: "todo.list", title: "查询待办", risk: "read" }) {
   const saved = [];
@@ -59,7 +60,29 @@ test("Agent Hub owns the complete read-tool loop and conversation persistence", 
   assert.ok(saved.length >= 1);
 });
 
-test("Agent Hub 会把她自己的拟生心率明确交给模型", async () => {
+test("Agent Hub records real calls between the personality core and extensions", async () => {
+  const context = fixture([
+    { choices: [{ message: { content: null, tool_calls: [{ id: "call-trace", function: { name: "todo_list", arguments: "{}" } }] } }] },
+    { choices: [{ message: { content: "目前没有待办。" } }] }
+  ]);
+  const activity = new ModuleActivityService();
+  context.services.moduleActivityService = activity;
+  context.services.moduleManager = {
+    isEnabled: () => true,
+    moduleForTool: (name) => name.startsWith("todo") ? "todo" : ""
+  };
+
+  await context.service.chat("user-1", { content: "看看待办", runtime: {} });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const completed = activity.list("user-1").events.filter((event) => event.status === "success");
+  assert.ok(completed.some((event) => event.sourceModuleId === "ai" && event.targetModuleId === "memory"));
+  assert.ok(completed.some((event) => event.sourceModuleId === "ai" && event.targetModuleId === "xuan-mood"));
+  assert.ok(completed.some((event) => event.sourceModuleId === "ai" && event.targetModuleId === "time-awareness"));
+  assert.ok(completed.some((event) => event.sourceModuleId === "ai" && event.targetModuleId === "todo"));
+});
+
+test("Agent Hub 会把她自己的心率明确交给模型", async () => {
   const context = fixture([
     { choices: [{ message: { content: "现在是 72 BPM，跳得很平稳喵～" } }] }
   ]);
@@ -77,8 +100,8 @@ test("Agent Hub 会把她自己的拟生心率明确交给模型", async () => {
   );
   assert.equal(systemMessages.length, 2);
   const state = systemMessages[1].content;
-  assert.match(state, /你拥有.*拟生心跳/);
-  assert.match(state, /拟生心率：72 BPM/);
+  assert.match(state, /持续维护你的心跳状态/);
+  assert.match(state, /心率：72 BPM/);
   assert.match(state, /心跳节律：平稳/);
   assert.doesNotMatch(state, /询问你的心跳|直接结合这个数值|不要声称/);
 });
@@ -95,6 +118,48 @@ test("Agent Hub pauses write tools for approval and resumes the same run", async
   assert.equal(completed.status, "completed");
   assert.equal(calls.length, 1);
   assert.equal(completed.displayMessages.at(-1).content, "已经替你记下啦～");
+});
+
+test("Agent Hub automatically executes ordinary writes when Hub authorization is enabled", async () => {
+  const context = fixture([
+    { choices: [{ message: { content: null, tool_calls: [{ id: "call-auto", function: { name: "todo_create", arguments: "{}" } }] } }] },
+    { choices: [{ message: { content: "已经直接替你记下啦～" } }] }
+  ], { name: "todo.create", title: "新建待办", risk: "write" });
+  context.services.agentPermissionRepository = {
+    get: () => ({ autoApproveWrites: true, updatedAt: 1 })
+  };
+
+  const result = await context.service.chat("user-1", {
+    content: "建个待办",
+    runtime: {}
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.runId, null);
+  assert.equal(context.calls.length, 1);
+  const activity = result.displayMessages.find(
+    (item) => item.role === "tool" && item.title === "新建待办"
+  );
+  assert.equal(activity.status, "success");
+  assert.match(activity.statusText, /执行成功/);
+});
+
+test("Agent Hub always confirms destructive tools even when ordinary writes are authorized", async () => {
+  const context = fixture([
+    { choices: [{ message: { content: null, tool_calls: [{ id: "call-delete", function: { name: "todo_delete", arguments: "{\"id\":\"todo-1\"}" } }] } }] },
+    { choices: [{ message: { content: "已经删除啦。" } }] }
+  ], { name: "todo.delete", title: "删除待办", risk: "destructive" });
+  context.services.agentPermissionRepository = {
+    get: () => ({ autoApproveWrites: true, updatedAt: 1 })
+  };
+
+  const pending = await context.service.chat("user-1", {
+    content: "删除待办",
+    runtime: {}
+  });
+
+  assert.equal(pending.status, "approval_required");
+  assert.equal(context.calls.length, 0);
 });
 
 test("Agent Hub prevents two devices from writing the same conversation concurrently", async () => {

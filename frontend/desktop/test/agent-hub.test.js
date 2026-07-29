@@ -30,6 +30,68 @@ test("desktop chat delegates messages and approvals to Agent Hub", async () => {
   }
 });
 
+test("desktop reads and updates the Hub-owned tool authorization policy", async () => {
+  const originalFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({
+      data: { autoApproveWrites: options?.method === "PUT", updatedAt: 1 }
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const client = new XuanApiClient({ baseUrl: "http://127.0.0.1:4318" });
+    await client.getAgentPermissions();
+    await client.updateAgentPermissions({ autoApproveWrites: true });
+
+    assert.equal(
+      requests[0].url,
+      "http://127.0.0.1:4318/api/v1/agent/permissions"
+    );
+    assert.equal(requests[0].options.method, "GET");
+    assert.equal(requests[1].options.method, "PUT");
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+      autoApproveWrites: true
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("desktop module center reads and records real module activity", async () => {
+  const originalFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({ data: { events: [], nextCursor: 4 } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const client = new XuanApiClient({ baseUrl: "http://127.0.0.1:4318" });
+    await client.listModuleActivity({ after: 3, limit: 20 });
+    await client.recordModuleActivity({
+      callId: "call-1",
+      sourceModuleId: "ai",
+      targetModuleId: "memory",
+      operation: "读取相关记忆",
+      status: "running"
+    });
+    assert.equal(
+      requests[0].url,
+      "http://127.0.0.1:4318/api/v1/modules/activity?after=3&limit=20"
+    );
+    assert.equal(requests[1].url, "http://127.0.0.1:4318/api/v1/modules/activity");
+    assert.equal(JSON.parse(requests[1].options.body).targetModuleId, "memory");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("desktop renderer contains no second Agent loop or renderer tool registry", () => {
   const home = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
   const html = fs.readFileSync(path.join(__dirname, "..", "home.html"), "utf8");
@@ -64,15 +126,15 @@ test("desktop optional modules are hydrated from Hub and loaded through lifecycl
   assert.match(settings, /global\.desktop\?\.updateModule/);
 });
 
-test("心情模块在模块中心明确展示拟生心率与对话感知", () => {
+test("心情模块在模块中心明确展示心率与对话感知", () => {
   const settings = fs.readFileSync(
     path.join(__dirname, "..", "module-settings.js"),
     "utf8"
   );
   const modules = fs.readFileSync(path.join(__dirname, "..", "modules.js"), "utf8");
-  assert.match(settings, /id: "xuan-mood"[\s\S]*拟生心率[\s\S]*带入对话/);
+  assert.match(settings, /id: "xuan-mood"[\s\S]*心率[\s\S]*带入对话/);
   assert.match(modules, /"xuan-mood": "AX-VTL-01"/);
-  assert.match(modules, /生命体征不可用|拟生循环已停止/);
+  assert.match(modules, /生命体征不可用|心跳已暂停/);
 });
 
 test("desktop migrates legacy disabled module switches into Hub", async () => {
@@ -114,4 +176,49 @@ test("desktop migrates legacy disabled module switches into Hub", async () => {
 
   assert.deepEqual(updates, [{ id: "todo", enabled: false }]);
   assert.equal(window.XuanModules.isEnabled("todo"), false);
+});
+
+test("desktop migrates and persists the legacy automatic authorization switch in Hub", async () => {
+  const values = new Map([
+    ["xuan-module-settings-v1", JSON.stringify({ autoApproveTools: true })]
+  ]);
+  const localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value)
+  };
+  const updates = [];
+  const client = {
+    listModules: async () => [
+      { id: "ai", core: true, enabled: true, updatedAt: null }
+    ],
+    getAgentPermissions: async () => ({
+      autoApproveWrites: false,
+      updatedAt: null
+    }),
+    updateAgentPermissions: async ({ autoApproveWrites }) => {
+      updates.push(autoApproveWrites);
+      return { autoApproveWrites, updatedAt: updates.length };
+    }
+  };
+  const window = {
+    localStorage,
+    desktop: client,
+    dispatchEvent() {}
+  };
+  const CustomEvent = class CustomEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "..", "module-settings.js"), "utf8"),
+    { window, localStorage, CustomEvent }
+  );
+
+  await window.XuanModules.hydrate(client);
+  assert.equal(window.XuanModules.isAutoApproveEnabled(), true);
+  await window.XuanModules.setAutoApprove(false);
+  assert.equal(window.XuanModules.isAutoApproveEnabled(), false);
+  assert.deepEqual(updates, [true, false]);
 });
