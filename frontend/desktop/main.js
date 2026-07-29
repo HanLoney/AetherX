@@ -247,9 +247,19 @@ function registerIpcHandlers() {
   ipcMain.handle("agent:approve", (_event, id, approved) =>
     api.approveAgentRun(id, approved)
   );
+  ipcMain.handle("agent:permissions:get", () => api.getAgentPermissions());
+  ipcMain.handle("agent:permissions:update", (_event, input) =>
+    api.updateAgentPermissions(input)
+  );
   ipcMain.handle("modules:list", () => api.listModules());
   ipcMain.handle("modules:update", (_event, id, enabled) =>
     api.updateModule(id, enabled)
+  );
+  ipcMain.handle("modules:activity:list", (_event, filters) =>
+    api.listModuleActivity(filters)
+  );
+  ipcMain.handle("modules:activity:record", (_event, input) =>
+    api.recordModuleActivity(input)
   );
   ipcMain.handle("ai:image-config:get", () => api.getAiImageConfig());
   ipcMain.handle("ai:image-config:save", (_event, input) =>

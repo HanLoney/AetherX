@@ -4,7 +4,11 @@ if (new URLSearchParams(window.location.search).has("embedded")) {
 }
 
 const bioshell = document.querySelector("#bioshell");
+const moduleTopology = document.querySelector("#moduleTopology");
 const moduleNodes = document.querySelector("#moduleNodes");
+const activityLinks = document.querySelector("#activityLinks");
+const activitySummary = document.querySelector("#activitySummary");
+const selectedActivity = document.querySelector("#selectedActivity");
 const nodeTemplate = document.querySelector("#moduleNodeTemplate");
 const todoModuleBtn = document.querySelector("#todoModuleBtn");
 const autoApproveInput = document.querySelector("#autoApproveInput");
@@ -12,11 +16,37 @@ const selectedModuleToggle = document.querySelector("#selectedModuleToggle");
 const focusVisual = document.querySelector("#focusVisual");
 const inspectorColumn = document.querySelector("#inspectorColumn");
 const telemetry = new Map();
+const activityByCall = new Map();
+
 let selectedModuleId = "xuan-mood";
+let moduleSnapshot = [];
 let moodHeartbeat = null;
 let refreshTimer = 0;
+let activityTimer = 0;
+let linkFrame = 0;
 let refreshQueued = false;
+let activityPolling = false;
+let activityInitialized = false;
+let activityCursor = 0;
 let unsubscribeSync = null;
+let topologyObserver = null;
+
+const ACTIVITY_GLOW_MS = 7_000;
+const ACTIVITY_RETENTION_MS = 10 * 60_000;
+const ACTIVE_CALL_TIMEOUT_MS = 2 * 60_000;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const MODULE_SLOTS = Object.freeze({
+  memory: { column: 2, row: 1 },
+  todo: { column: 3, row: 1 },
+  "time-awareness": { column: 4, row: 1 },
+  "xuan-mood": { column: 2, row: 2 },
+  "image-generation": { column: 3, row: 2 },
+  "proactive-reminders": { column: 4, row: 2 },
+  "autonomous-journal": { column: 2, row: 3 },
+  "anniversary-album": { column: 3, row: 3 },
+  dreams: { column: 4, row: 3 }
+});
 
 const MODULE_CODES = Object.freeze({
   ai: "AX-CORE-00", memory: "AX-MEM-12", todo: "AX-SCH-06",
@@ -40,15 +70,10 @@ const MODULE_ICON_PATHS = Object.freeze({
 });
 
 const MODULE_ACCENTS = Object.freeze({
-  ai: "143,135,189",
-  memory: "105,159,205",
-  todo: "92,174,145",
-  "image-generation": "210,132,170",
-  "time-awareness": "100,164,210",
-  "xuan-mood": "218,126,164",
-  "proactive-reminders": "198,146,88",
-  "autonomous-journal": "126,145,201",
-  "anniversary-album": "194,126,164",
+  ai: "143,135,189", memory: "105,159,205", todo: "92,174,145",
+  "image-generation": "210,132,170", "time-awareness": "100,164,210",
+  "xuan-mood": "218,126,164", "proactive-reminders": "198,146,88",
+  "autonomous-journal": "126,145,201", "anniversary-album": "194,126,164",
   dreams: "132,122,190"
 });
 
@@ -58,9 +83,16 @@ const MODULE_NAVIGATION = Object.freeze({
   "image-generation": ["image-generation", "image-generator.html"]
 });
 
+const ACTIVITY_LABELS = Object.freeze({
+  running: "传输中", waiting: "等待中", success: "已完成", error: "异常"
+});
+
 function navigate(target, fallback) {
-  if (document.body.classList.contains("embedded")) window.parent.postMessage({ type: "xuan:navigate", target }, "*");
-  else window.location.href = fallback;
+  if (document.body.classList.contains("embedded")) {
+    window.parent.postMessage({ type: "xuan:navigate", target }, "*");
+  } else {
+    window.location.href = fallback;
+  }
 }
 
 function createNavigationButton(id, icon, label) {
@@ -96,12 +128,20 @@ function stateLabel(module) {
   return module.enabled ? "ONLINE" : "OFFLINE";
 }
 
+function displayName(moduleOrId) {
+  const module = typeof moduleOrId === "string"
+    ? moduleSnapshot.find((item) => item.id === moduleOrId)
+    : moduleOrId;
+  if (!module) return String(moduleOrId || "未知模块");
+  return module.id === "ai" ? "人格核心" : module.name;
+}
+
 function defaultTelemetry(module) {
-  if (module.blockedBy?.length) return "依赖链断开";
-  if (!module.enabled) return "插槽未接入";
-  if (module.id === "ai") return "人格核心 / 调度在线";
-  if (module.tools) return `${module.tools} 路工具通道`;
-  return "状态链路在线";
+  if (module.blockedBy?.length) return "运行依赖未启用";
+  if (!module.enabled) return "插槽已关闭";
+  if (module.id === "ai") return "人格核心在线";
+  if (telemetry.has(module.id)) return telemetry.get(module.id);
+  return "暂无调用记录";
 }
 
 function moduleAccent(module, state = moduleState(module)) {
@@ -116,22 +156,37 @@ function moduleIcon(id) {
 }
 
 function renderBody() {
-  const modules = window.XuanModules.snapshot();
-  if (!modules.some((module) => module.id === selectedModuleId)) selectedModuleId = modules[0]?.id || "ai";
+  moduleSnapshot = window.XuanModules.snapshot();
+  if (!moduleSnapshot.some((module) => module.id === selectedModuleId)) {
+    selectedModuleId = moduleSnapshot[0]?.id || "ai";
+  }
   moduleNodes.replaceChildren();
 
-  modules.forEach((module, index) => {
+  const ordered = [
+    moduleSnapshot.find((module) => module.id === "ai"),
+    ...Object.keys(MODULE_SLOTS).map((id) => moduleSnapshot.find((module) => module.id === id))
+  ].filter(Boolean);
+
+  ordered.forEach((module) => {
     const state = moduleState(module);
     const node = nodeTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.moduleId = module.id;
     node.dataset.state = state;
     node.dataset.selected = String(module.id === selectedModuleId);
     node.style.setProperty("--node-rgb", moduleAccent(module, state));
+    if (module.core) {
+      node.classList.add("core-module");
+    } else {
+      const slot = MODULE_SLOTS[module.id];
+      node.dataset.slot = `${slot.column - 1}-${slot.row}`;
+      node.style.gridColumn = String(slot.column);
+      node.style.gridRow = String(slot.row);
+    }
     node.querySelector(".node-icon").innerHTML = moduleIcon(module.id);
     node.querySelector(".node-label small").textContent = MODULE_CODES[module.id] || module.id.toUpperCase();
-    node.querySelector(".node-label strong").textContent = module.name;
+    node.querySelector(".node-label strong").textContent = displayName(module);
     node.querySelector(".node-state b").textContent = stateLabel(module);
-    node.setAttribute("aria-label", `检查${module.name}义体`);
+    node.setAttribute("aria-label", `查看${displayName(module)}功能插槽`);
     node.addEventListener("click", () => {
       selectedModuleId = module.id;
       renderBody();
@@ -139,17 +194,22 @@ function renderBody() {
     moduleNodes.append(node);
   });
 
-  const enabled = modules.filter((module) => module.enabled);
+  const extensions = moduleSnapshot.filter((module) => !module.core);
+  const enabled = extensions.filter((module) => module.enabled);
   setText("#enabledCount", String(enabled.length));
-  setText("#moduleCountLabel", `/ ${modules.length}`);
-  setText("#toolCount", String(enabled.reduce((sum, module) => sum + module.tools, 0)).padStart(2, "0"));
+  setText("#moduleCountLabel", `/ ${extensions.length}`);
+  setText("#toolCount", String(moduleSnapshot.filter((module) => module.enabled).reduce((sum, module) => sum + module.tools, 0)).padStart(2, "0"));
   autoApproveInput.checked = window.XuanModules.isAutoApproveEnabled();
   setText("#permissionState", autoApproveInput.checked ? "自动授权" : "逐次确认");
-  navigationButtons.forEach((button, id) => button.classList.toggle("hidden", !window.XuanModules.isEnabled(id)));
-  renderInspector(modules.find((module) => module.id === selectedModuleId), modules);
+  navigationButtons.forEach((button, id) => {
+    button.classList.toggle("hidden", !window.XuanModules.isEnabled(id));
+  });
+  renderActivityState();
+  renderInspector(moduleSnapshot.find((module) => module.id === selectedModuleId));
+  scheduleLinkRender();
 }
 
-function renderInspector(module, modules) {
+function renderInspector(module) {
   if (!module) return;
   const state = moduleState(module);
   const selectedState = document.querySelector("#selectedState");
@@ -160,43 +220,49 @@ function renderInspector(module, modules) {
   focusVisual.style.setProperty("--selected-rgb", moduleAccent(module, state));
   document.querySelector("#selectedIcon").innerHTML = moduleIcon(module.id);
   setText("#selectedCode", MODULE_CODES[module.id] || module.id.toUpperCase());
-  setText("#selectedName", module.name);
+  setText("#selectedName", displayName(module));
   setText("#selectedDescription", module.description);
-  setText("#selectedTelemetry", telemetry.get(module.id) || defaultTelemetry(module));
-  setText("#selectedTools", module.tools ? `${module.tools} 路` : "无工具调用");
-  setText("#selectedDependencies", dependencyDescription(module, modules));
-  setText("#selectedUpdatedAt", module.updatedAt ? formatDateTime(module.updatedAt) : module.core ? "固化核心" : "默认配置");
-  setText("#selectedPowerLabel", module.core ? "核心常驻" : module.enabled ? "已接入" : module.blockedBy?.length ? "依赖受阻" : "未接入");
+  setText("#selectedTelemetry", activityTelemetry(module) || defaultTelemetry(module));
+  setText("#selectedTools", module.tools ? `${module.tools} 路` : "无工具通道");
+  setText("#selectedDependencies", dependencyDescription(module));
+  setText("#selectedUpdatedAt", module.updatedAt ? formatDateTime(module.updatedAt) : module.core ? "核心常驻" : "默认配置");
+  setText("#selectedPowerLabel", module.core ? "始终在线" : module.enabled ? "已启用" : module.blockedBy?.length ? "依赖受阻" : "已关闭");
   selectedModuleToggle.checked = module.enabled;
   selectedModuleToggle.disabled = module.core;
   selectedModuleToggle.dataset.moduleId = module.id;
 
   const warning = document.querySelector("#dependencyWarning");
   if (module.blockedBy?.length) {
-    const names = module.blockedBy.map((id) => modules.find((item) => item.id === id)?.name || id);
-    warning.querySelector("span").textContent = `需要先接入：${names.join("、")}`;
+    const names = module.blockedBy.map((id) => displayName(id));
+    warning.querySelector("span").textContent = `需要先启用：${names.join("、")}`;
     warning.classList.remove("hidden");
   } else {
     warning.classList.add("hidden");
   }
+  renderSelectedActivity(module.id);
 }
 
-function dependencyDescription(module, modules) {
-  if (!module.dependencies?.length) return module.core ? "神经总线根节点" : "直接接入人格核心";
-  return module.dependencies.map((id) => modules.find((item) => item.id === id)?.name || id).join(" + ");
+function dependencyDescription(module) {
+  if (!module.dependencies?.length) return module.core ? "调度根节点" : "无强制依赖";
+  return module.dependencies.map((id) => displayName(id)).join(" + ");
 }
 
 function collectionCount(value) {
   if (Array.isArray(value)) return value.length;
   if (Array.isArray(value?.items)) return value.items.length;
-  for (const key of ["total", "count", "totalCount"]) if (Number.isFinite(Number(value?.[key]))) return Number(value[key]);
+  for (const key of ["total", "count", "totalCount"]) {
+    if (Number.isFinite(Number(value?.[key]))) return Number(value[key]);
+  }
   return 0;
 }
 
 async function probeCollection(id, request, noun) {
   if (!window.XuanModules.isEnabled(id) || typeof request !== "function") return;
-  try { telemetry.set(id, `${collectionCount(await request())} ${noun}`); }
-  catch { telemetry.set(id, "遥测不可用"); }
+  try {
+    telemetry.set(id, `${collectionCount(await request())} ${noun}`);
+  } catch {
+    telemetry.set(id, "遥测不可用");
+  }
 }
 
 async function refreshProfile() {
@@ -224,10 +290,11 @@ async function refreshMood() {
   const monitor = document.querySelector("#moodTelemetry");
   if (!window.XuanModules.isEnabled("xuan-mood")) {
     monitor.dataset.state = "offline";
-    moodHeartbeat?.destroy(); moodHeartbeat = null;
-    setText("#xuanMoodBpm", "--"); setText("#xuanMoodRhythm", "插槽离线");
-    setText("#currentMood", "心绪感知已停用"); setText("#vitalMood", "心绪模块休眠后，她不会记录情绪变化。"); setText("#currentEnergy", "--"); setText("#currentAttention", "--");
-    telemetry.set("xuan-mood", "拟生循环已停止");
+    moodHeartbeat?.destroy();
+    moodHeartbeat = null;
+    setText("#xuanMoodBpm", "--");
+    setText("#xuanMoodRhythm", "模块已关闭");
+    telemetry.set("xuan-mood", "心跳已暂停");
     return;
   }
   try {
@@ -235,31 +302,38 @@ async function refreshMood() {
     const state = snapshot?.state?.state || snapshot?.state || {};
     const bpm = state.physiology?.heartRateBpm;
     monitor.dataset.state = "online";
-    const currentMood = state.currentMood || snapshot?.display?.title || "安静感知中";
-    setText("#currentMood", currentMood);
-    setText("#vitalMood", "她的心绪会随着你们的真实互动持续变化。");
-    setText("#currentEnergy", state.energy || "稳定");
-    setText("#currentAttention", state.attention || state.focus || "当前对话");
-    telemetry.set("xuan-mood", bpm ? `${bpm} BPM / ${state.physiology.rhythm || "steady"}` : "心绪链路在线");
-    if (!moodHeartbeat) moodHeartbeat = new window.AetherMoodHeartbeat({ canvas: document.querySelector("#xuanMoodEcg"), bpmElement: document.querySelector("#xuanMoodBpm"), rhythmElement: document.querySelector("#xuanMoodRhythm") });
+    telemetry.set("xuan-mood", bpm ? `${bpm} BPM / ${state.physiology.rhythm || "steady"}` : "心绪状态在线");
+    if (!moodHeartbeat) {
+      moodHeartbeat = new window.AetherMoodHeartbeat({
+        canvas: document.querySelector("#xuanMoodEcg"),
+        bpmElement: document.querySelector("#xuanMoodBpm"),
+        rhythmElement: document.querySelector("#xuanMoodRhythm")
+      });
+    }
     moodHeartbeat.setSnapshot(snapshot);
   } catch {
     monitor.dataset.state = "error";
-    setText("#xuanMoodBpm", "--"); setText("#xuanMoodRhythm", "状态中断");
-    setText("#vitalMood", "暂时无法读取她的心绪变化。");
+    setText("#xuanMoodBpm", "--");
+    setText("#xuanMoodRhythm", "状态中断");
     telemetry.set("xuan-mood", "生命体征不可用");
   }
 }
 
 async function refreshTime() {
   if (!window.XuanModules.isEnabled("time-awareness")) {
-    setText("#currentTime", "时间感知已停用"); telemetry.set("time-awareness", "时域同步已关闭"); return;
+    telemetry.set("time-awareness", "时域同步已关闭");
+    return;
   }
   try {
-    const result = await window.desktop.getTimeAwarenessContext({ now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai", locale: navigator.language || "zh-CN" });
-    setText("#currentTime", `${result.localTime || "--:--"} · ${result.timeZone || "本地时区"}`);
+    const result = await window.desktop.getTimeAwarenessContext({
+      now: Date.now(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+      locale: navigator.language || "zh-CN"
+    });
     telemetry.set("time-awareness", `${result.localTime || "同步"} / ${result.timeZone || "LOCAL"}`);
-  } catch { setText("#currentTime", "时域校准失败"); telemetry.set("time-awareness", "时域链路异常"); }
+  } catch {
+    telemetry.set("time-awareness", "时域链路异常");
+  }
 }
 
 async function refreshCollections() {
@@ -271,7 +345,7 @@ async function refreshCollections() {
     probeCollection("anniversary-album", () => window.desktop.listAlbumMoments({ status: "all" }), "段纪念"),
     probeCollection("dreams", () => window.desktop.listDreams({}), "场梦境")
   ]);
-  telemetry.set("proactive-reminders", window.XuanModules.isEnabled("proactive-reminders") ? "待办触发链在线" : "提醒回路已关闭");
+  telemetry.set("proactive-reminders", window.XuanModules.isEnabled("proactive-reminders") ? "提醒任务在线" : "提醒任务已关闭");
 }
 
 async function refreshTelemetry() {
@@ -280,11 +354,350 @@ async function refreshTelemetry() {
   try {
     await Promise.allSettled([refreshProfile(), refreshMood(), refreshTime(), refreshCollections()]);
     bioshell.dataset.link = "online";
-    setStatusText("神经总线在线"); setText("#hubStatus", "ONLINE"); setText("#lastRefresh", formatClock(Date.now()));
+    setStatusText("Hub 已连接");
+    setText("#hubStatus", "ONLINE");
+    setText("#lastRefresh", formatClock(Date.now()));
   } catch {
     bioshell.dataset.link = "error";
-    setStatusText("神经总线异常"); setText("#hubStatus", "FAULT");
-  } finally { refreshQueued = false; renderBody(); }
+    setStatusText("Hub 连接异常");
+    setText("#hubStatus", "FAULT");
+  } finally {
+    refreshQueued = false;
+    renderBody();
+  }
+}
+
+function mergeModuleActivity(events = []) {
+  for (const event of events) {
+    if (!event?.callId) continue;
+    const previous = activityByCall.get(event.callId);
+    if (previous && isTerminalActivity(previous.status) && !isTerminalActivity(event.status)) {
+      continue;
+    }
+    activityByCall.set(event.callId, {
+      ...(previous || {}),
+      ...event,
+      startedAt: Number(event.startedAt || previous?.startedAt || event.createdAt || Date.now()),
+      createdAt: Number(event.createdAt || previous?.createdAt || Date.now())
+    });
+  }
+  const oldest = Date.now() - ACTIVITY_RETENTION_MS;
+  for (const [callId, activity] of activityByCall) {
+    if (Math.max(activity.createdAt || 0, activity.startedAt || 0) < oldest) {
+      activityByCall.delete(callId);
+    }
+  }
+}
+
+async function refreshModuleActivity(initial = false) {
+  if (activityPolling || typeof window.desktop?.listModuleActivity !== "function") return;
+  activityPolling = true;
+  try {
+    const filters = initial || !activityInitialized
+      ? { limit: 60 }
+      : { after: activityCursor, limit: 60 };
+    const result = await window.desktop.listModuleActivity(filters);
+    mergeModuleActivity(result?.events);
+    activityCursor = Number(result?.nextCursor || activityCursor || 0);
+    activityInitialized = true;
+    renderActivityState();
+  } catch {
+    activitySummary.dataset.state = "error";
+    replaceStatusText(activitySummary, "调用遥测暂不可用");
+  } finally {
+    activityPolling = false;
+  }
+}
+
+function isTerminalActivity(status) {
+  return status === "success" || status === "error";
+}
+
+function recentActivities() {
+  return [...activityByCall.values()].sort((left, right) => {
+    return (right.createdAt || right.startedAt || 0) - (left.createdAt || left.startedAt || 0);
+  });
+}
+
+function visibleActivities() {
+  const now = Date.now();
+  const visible = recentActivities().filter((activity) => {
+    const age = now - Number(activity.createdAt || activity.startedAt || now);
+    return isTerminalActivity(activity.status)
+      ? age <= ACTIVITY_GLOW_MS
+      : now - Number(activity.startedAt || now) <= ACTIVE_CALL_TIMEOUT_MS;
+  });
+  const perDirection = new Map();
+  for (const activity of visible) {
+    const key = `${activity.sourceModuleId}>${activity.targetModuleId}`;
+    const previous = perDirection.get(key);
+    if (!previous || activityPriority(activity) > activityPriority(previous)) {
+      perDirection.set(key, activity);
+    }
+  }
+  return [...perDirection.values()].sort((left, right) => activityPriority(right) - activityPriority(left)).slice(0, 6);
+}
+
+function activityPriority(activity) {
+  const statusWeight = { running: 4, waiting: 3, error: 2, success: 1 }[activity.status] || 0;
+  return statusWeight * 1e15 + Number(activity.createdAt || activity.startedAt || 0);
+}
+
+function renderActivityState() {
+  const visible = visibleActivities();
+  const nodeStates = new Map();
+  for (const activity of visible) {
+    for (const id of [activity.sourceModuleId, activity.targetModuleId]) {
+      const current = nodeStates.get(id);
+      if (!current || activityPriority(activity) > activityPriority(current)) nodeStates.set(id, activity);
+    }
+  }
+  moduleNodes.querySelectorAll(".module-node").forEach((node) => {
+    const activity = nodeStates.get(node.dataset.moduleId);
+    if (activity) node.dataset.activity = activity.status;
+    else delete node.dataset.activity;
+  });
+
+  const running = visible.filter((activity) => ["running", "waiting"].includes(activity.status));
+  if (running.length) {
+    activitySummary.dataset.state = "running";
+    replaceStatusText(activitySummary, `${running.length} 路调用进行中`);
+  } else if (visible[0]) {
+    activitySummary.dataset.state = visible[0].status;
+    replaceStatusText(activitySummary, `刚刚完成 · ${shortOperation(visible[0].operation)}`);
+  } else {
+    activitySummary.dataset.state = "idle";
+    replaceStatusText(activitySummary, "等待真实调用");
+  }
+  const selected = moduleSnapshot.find((module) => module.id === selectedModuleId);
+  if (selected) {
+    setText("#selectedTelemetry", activityTelemetry(selected) || defaultTelemetry(selected));
+    renderSelectedActivity(selected.id);
+  }
+  scheduleLinkRender();
+}
+
+function renderSelectedActivity(moduleId) {
+  const activities = recentActivities()
+    .filter((activity) => activity.sourceModuleId === moduleId || activity.targetModuleId === moduleId)
+    .slice(0, 3);
+  if (!activities.length) {
+    selectedActivity.innerHTML = "<p>暂时没有调用记录</p>";
+    return;
+  }
+  selectedActivity.replaceChildren(...activities.map((activity) => {
+    const row = document.createElement("div");
+    row.className = "activity-row";
+    row.dataset.status = activity.status;
+    const dot = document.createElement("i");
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    const detail = document.createElement("span");
+    const timing = document.createElement("time");
+    title.textContent = shortOperation(activity.operation);
+    const outgoing = activity.sourceModuleId === moduleId;
+    detail.textContent = `${outgoing ? "发往" : "来自"} ${displayName(outgoing ? activity.targetModuleId : activity.sourceModuleId)} · ${ACTIVITY_LABELS[activity.status] || activity.status}`;
+    timing.textContent = activityTiming(activity);
+    copy.append(title, detail);
+    row.append(dot, copy, timing);
+    return row;
+  }));
+}
+
+function activityTelemetry(module) {
+  const activity = recentActivities().find((item) => {
+    return item.sourceModuleId === module.id || item.targetModuleId === module.id;
+  });
+  if (!activity) return "";
+  return `${shortOperation(activity.operation)} · ${activityTiming(activity)}`;
+}
+
+function activityTiming(activity) {
+  if (activity.status === "running") return "LIVE";
+  if (activity.status === "waiting") return "WAIT";
+  if (activity.status === "error") return activity.durationMs == null ? "ERR" : `${activity.durationMs} ms`;
+  return activity.durationMs == null ? "DONE" : `${activity.durationMs} ms`;
+}
+
+function shortOperation(operation) {
+  const value = String(operation || "模块调用");
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
+function scheduleLinkRender() {
+  cancelAnimationFrame(linkFrame);
+  linkFrame = requestAnimationFrame(renderActivityLinks);
+}
+
+function renderActivityLinks() {
+  activityLinks.querySelectorAll(".data-link").forEach((path) => path.remove());
+  const topologyRect = moduleTopology.getBoundingClientRect();
+  if (!topologyRect.width || !topologyRect.height) return;
+  activityLinks.setAttribute("viewBox", `0 0 ${topologyRect.width} ${topologyRect.height}`);
+  activityLinks.setAttribute("preserveAspectRatio", "none");
+
+  visibleActivities().forEach((activity) => {
+    const source = moduleNodes.querySelector(`[data-module-id="${activity.sourceModuleId}"] .node-icon`);
+    const target = moduleNodes.querySelector(`[data-module-id="${activity.targetModuleId}"] .node-icon`);
+    if (!source || !target) return;
+    const dataPath = connectionDataPath(
+      source,
+      target,
+      source.closest(".module-node"),
+      target.closest(".module-node"),
+      topologyRect
+    );
+    const glow = createActivityPath(activity, dataPath, true);
+    const path = createActivityPath(activity, dataPath, false);
+    const flow = ["running", "waiting"].includes(activity.status)
+      ? createActivityFlow(activity, dataPath)
+      : null;
+    activityLinks.append(...[glow, path, flow].filter(Boolean));
+  });
+}
+
+function createActivityPath(activity, dataPath, glow) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.classList.add("data-link");
+    if (glow) path.classList.add("data-link-glow");
+    path.dataset.status = activity.status;
+    path.dataset.callId = activity.callId;
+    path.setAttribute("d", dataPath);
+    return path;
+}
+
+function createActivityFlow(activity, dataPath) {
+  const path = createActivityPath(activity, dataPath, false);
+  path.classList.add("data-link-flow");
+  path.setAttribute("pathLength", "100");
+  return path;
+}
+
+function portGeometry(element, topologyRect) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.left - topologyRect.left + rect.width / 2,
+    y: rect.top - topologyRect.top + rect.height / 2,
+    radius: Math.max(rect.width, rect.height) / 2 + 3
+  };
+}
+
+function nodeGeometry(element, topologyRect) {
+  const rect = element.getBoundingClientRect();
+  return {
+    left: rect.left - topologyRect.left,
+    right: rect.right - topologyRect.left,
+    top: rect.top - topologyRect.top,
+    bottom: rect.bottom - topologyRect.top
+  };
+}
+
+function connectionDataPath(source, target, sourceNode, targetNode, topologyRect) {
+  const sourceIsCore = sourceNode.dataset.moduleId === "ai";
+  const targetIsCore = targetNode.dataset.moduleId === "ai";
+  const extensionNode = sourceIsCore ? targetNode : targetIsCore ? sourceNode : null;
+  const extensionColumn = Number(String(extensionNode?.dataset.slot || "").split("-")[0]);
+  if (extensionNode && extensionColumn === 1) {
+    return adjacentCoreConnectionPath(
+      portGeometry(source, topologyRect),
+      portGeometry(target, topologyRect)
+    );
+  }
+  return roundedOrthogonalPath(
+    orthogonalConnectionRoute(source, target, sourceNode, targetNode, topologyRect),
+    7
+  );
+}
+
+function adjacentCoreConnectionPath(fromPort, toPort) {
+  const dx = toPort.x - fromPort.x;
+  const dy = toPort.y - fromPort.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const from = {
+    x: fromPort.x + ux * fromPort.radius,
+    y: fromPort.y + uy * fromPort.radius
+  };
+  const to = {
+    x: toPort.x - ux * toPort.radius,
+    y: toPort.y - uy * toPort.radius
+  };
+  const direction = Math.sign(to.x - from.x) || 1;
+  const bend = Math.max(12, Math.abs(to.x - from.x) * .46);
+  return `M ${from.x} ${from.y} C ${from.x + direction * bend} ${from.y}, ${to.x - direction * bend} ${to.y}, ${to.x} ${to.y}`;
+}
+
+function orthogonalConnectionRoute(source, target, sourceNode, targetNode, topologyRect) {
+  const fromPort = portGeometry(source, topologyRect);
+  const toPort = portGeometry(target, topologyRect);
+  const fromNode = nodeGeometry(sourceNode, topologyRect);
+  const toNode = nodeGeometry(targetNode, topologyRect);
+  const sourceSide = sourceNode.dataset.moduleId === "ai" ? 1 : -1;
+  const targetSide = targetNode.dataset.moduleId === "ai" ? 1 : -1;
+  const from = {
+    x: fromPort.x + sourceSide * fromPort.radius,
+    y: fromPort.y
+  };
+  const to = {
+    x: toPort.x + targetSide * toPort.radius,
+    y: toPort.y
+  };
+  const sourceRailX = sourceSide > 0 ? fromNode.right + 5 : fromNode.left - 5;
+  const targetRailX = targetSide > 0 ? toNode.right + 5 : toNode.left - 5;
+  let laneY;
+  if (Math.abs(from.y - to.y) < 12) {
+    laneY = Math.min(fromNode.top, toNode.top) - 6;
+  } else if (to.y < from.y) {
+    laneY = fromNode.top - 6;
+  } else {
+    laneY = fromNode.bottom + 6;
+  }
+  laneY = Math.max(7, Math.min(topologyRect.height - 7, laneY));
+  return compactPoints([
+    from,
+    { x: sourceRailX, y: from.y },
+    { x: sourceRailX, y: laneY },
+    { x: targetRailX, y: laneY },
+    { x: targetRailX, y: to.y },
+    to
+  ]);
+}
+
+function compactPoints(points) {
+  return points.filter((point, index) => {
+    if (!index) return true;
+    const previous = points[index - 1];
+    return Math.abs(point.x - previous.x) > .5 || Math.abs(point.y - previous.y) > .5;
+  });
+}
+
+function roundedOrthogonalPath(points, radius) {
+  if (points.length < 2) return "";
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const corner = points[index];
+    const next = points[index + 1];
+    const incoming = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const outgoing = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const curve = Math.min(radius, incoming / 2, outgoing / 2);
+    if (!curve) {
+      path += ` L ${corner.x} ${corner.y}`;
+      continue;
+    }
+    const before = {
+      x: corner.x + (previous.x - corner.x) * (curve / incoming),
+      y: corner.y + (previous.y - corner.y) * (curve / incoming)
+    };
+    const after = {
+      x: corner.x + (next.x - corner.x) * (curve / outgoing),
+      y: corner.y + (next.y - corner.y) * (curve / outgoing)
+    };
+    path += ` L ${before.x} ${before.y} Q ${corner.x} ${corner.y} ${after.x} ${after.y}`;
+  }
+  const last = points.at(-1);
+  return `${path} L ${last.x} ${last.y}`;
 }
 
 selectedModuleToggle.addEventListener("change", async () => {
@@ -295,39 +708,89 @@ selectedModuleToggle.addEventListener("change", async () => {
     window.parent?.postMessage({ type: "xuan:module-state-changed", id, enabled: window.XuanModules.isEnabled(id) }, "*");
     await refreshTelemetry();
   } catch (error) {
-    telemetry.set(id, error.message || "义体配置失败");
+    telemetry.set(id, error.message || "模块配置失败");
     renderBody();
   }
 });
 
-autoApproveInput.addEventListener("change", () => {
-  window.XuanModules.setAutoApprove(autoApproveInput.checked);
-  setText("#permissionState", autoApproveInput.checked ? "自动授权" : "逐次确认");
+autoApproveInput.addEventListener("change", async () => {
+  autoApproveInput.disabled = true;
+  try {
+    await window.XuanModules.setAutoApprove(autoApproveInput.checked);
+  } catch (error) {
+    telemetry.set(selectedModuleId, error.message || "授权策略保存失败");
+  } finally {
+    autoApproveInput.disabled = false;
+    renderBody();
+  }
 });
 
-function setText(selector, value) { const element = document.querySelector(selector); if (element) element.textContent = value; }
-function setStatusText(value) { const element = document.querySelector("#runtimeStatus"); const beacon = element.querySelector("i"); element.replaceChildren(beacon, document.createTextNode(value)); }
-function formatClock(value) { return new Intl.DateTimeFormat("zh-CN", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }).format(value); }
-function formatDateTime(value) { return new Intl.DateTimeFormat("zh-CN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false }).format(value); }
+function setText(selector, value) {
+  const element = document.querySelector(selector);
+  if (element) element.textContent = value;
+}
+
+function replaceStatusText(element, value) {
+  const beacon = element.querySelector("i");
+  element.replaceChildren(beacon, document.createTextNode(value));
+}
+
+function setStatusText(value) {
+  replaceStatusText(document.querySelector("#runtimeStatus"), value);
+}
+
+function formatClock(value) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  }).format(value);
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false
+  }).format(value);
+}
 
 document.querySelector("#homeBtn").addEventListener("click", () => navigate("chat", "home.html"));
-todoModuleBtn.addEventListener("click", () => { if (window.XuanModules.isEnabled("todo")) navigate("todo", "index.html"); });
+todoModuleBtn.addEventListener("click", () => {
+  if (window.XuanModules.isEnabled("todo")) navigate("todo", "index.html");
+});
 document.querySelector("#minimizeBtn").addEventListener("click", () => window.desktop.minimize());
 document.querySelector("#maximizeBtn").addEventListener("click", () => window.desktop.maximize());
 document.querySelector("#closeBtn").addEventListener("click", () => window.desktop.close());
-window.addEventListener("xuan:modules-changed", () => { renderBody(); void refreshTelemetry(); });
+window.addEventListener("resize", scheduleLinkRender);
+window.addEventListener("xuan:modules-changed", () => {
+  renderBody();
+  void refreshTelemetry();
+});
 window.addEventListener("xuan:permissions-changed", renderBody);
-window.addEventListener("beforeunload", () => { clearInterval(refreshTimer); unsubscribeSync?.(); moodHeartbeat?.destroy(); });
+window.addEventListener("beforeunload", () => {
+  clearInterval(refreshTimer);
+  clearInterval(activityTimer);
+  cancelAnimationFrame(linkFrame);
+  topologyObserver?.disconnect();
+  unsubscribeSync?.();
+  moodHeartbeat?.destroy();
+});
 
 async function initializeModules() {
   await window.XuanModules.hydrate(window.desktop);
   renderBody();
-  await refreshTelemetry();
+  topologyObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(scheduleLinkRender)
+    : null;
+  topologyObserver?.observe(moduleTopology);
+  await Promise.allSettled([refreshTelemetry(), refreshModuleActivity(true)]);
   refreshTimer = setInterval(refreshTelemetry, 20_000);
-  if (typeof window.desktop?.onSyncChanges === "function") unsubscribeSync = window.desktop.onSyncChanges(() => setTimeout(refreshTelemetry, 600));
+  activityTimer = setInterval(refreshModuleActivity, 1_100);
+  if (typeof window.desktop?.onSyncChanges === "function") {
+    unsubscribeSync = window.desktop.onSyncChanges(() => setTimeout(refreshTelemetry, 600));
+  }
 }
 
 initializeModules().catch((error) => {
   bioshell.dataset.link = "error";
-  setText("#hubStatus", "FAULT"); setStatusText(error.message || "神经总线异常"); renderBody();
+  setText("#hubStatus", "FAULT");
+  setStatusText(error.message || "Hub 连接异常");
+  renderBody();
 });

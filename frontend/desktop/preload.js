@@ -38,9 +38,16 @@ contextBridge.exposeInMainWorld("desktop", {
   agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
   approveAgentRun: (id, approved) =>
     ipcRenderer.invoke("agent:approve", id, approved),
+  getAgentPermissions: () => ipcRenderer.invoke("agent:permissions:get"),
+  updateAgentPermissions: (input) =>
+    ipcRenderer.invoke("agent:permissions:update", input),
   listModules: () => ipcRenderer.invoke("modules:list"),
   updateModule: (id, enabled) =>
     ipcRenderer.invoke("modules:update", id, enabled),
+  listModuleActivity: (filters) =>
+    ipcRenderer.invoke("modules:activity:list", filters),
+  recordModuleActivity: (input) =>
+    ipcRenderer.invoke("modules:activity:record", input),
   getAIImageConfig: () => ipcRenderer.invoke("ai:image-config:get"),
   saveAIImageConfig: (config) =>
     ipcRenderer.invoke("ai:image-config:save", config),
