@@ -282,6 +282,9 @@ function registerIpcHandlers() {
   ipcMain.handle("wallet:transactions", (_event, id, filters) =>
     api.listWalletTransactions(id, filters)
   );
+  ipcMain.handle("wallet:transaction-update", (_event, accountId, transactionId, changes) =>
+    api.updateWalletTransaction(accountId, transactionId, changes)
+  );
   ipcMain.handle("wallet:create", (_event, input) =>
     api.createWalletAccount(input)
   );

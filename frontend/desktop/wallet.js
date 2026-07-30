@@ -10,6 +10,7 @@ const state = {
   transactions: [],
   transactionLoadId: 0,
   transactionKind: "income",
+  editingTransactionId: "",
   transactionSaving: false,
   saving: false,
   deleteArmed: false,
@@ -47,6 +48,8 @@ const elements = {
   deleteBtn: document.querySelector("#deleteAccountBtn"),
   newBtn: document.querySelector("#newAccountBtn"),
   transactionDialog: document.querySelector("#transactionDialog"),
+  transactionDialogEyebrow: document.querySelector("#transactionDialogEyebrow"),
+  transactionDialogTitle: document.querySelector("#transactionDialogTitle"),
   transactionForm: document.querySelector("#transactionForm"),
   transactionKindButtons: [...document.querySelectorAll(".transaction-kind button")],
   transactionCurrencySymbol: document.querySelector("#transactionCurrencySymbol"),
@@ -229,6 +232,7 @@ function renderTransactions({ loading = false } = {}) {
     row.querySelector(".transaction-amount strong").textContent = transactionAmount(transaction);
     row.querySelector(".transaction-amount small").textContent =
       `余额 ${formatMoney(transaction.balanceBefore, transaction.previousCurrency)} → ${formatMoney(transaction.balanceAfter, transaction.currency)}`;
+    row.querySelector(".transaction-edit").addEventListener("click", () => beginTransaction(transaction));
     elements.transactionList.append(row);
   }
 }
@@ -293,18 +297,38 @@ function setTransactionKind(kind) {
   }
 }
 
-function beginTransaction() {
+function beginTransaction(transaction = null) {
   const account = selectedAccount();
   if (!account) return;
-  setTransactionKind("income");
+  state.editingTransactionId = transaction?.id || "";
+  const detailOnly = transaction && (
+    transaction.changeMinor == null || (transaction.changeMinor === 0 && transaction.eventType !== "create")
+  );
+  elements.transactionDialog.dataset.mode = detailOnly
+    ? "edit-detail"
+    : transaction
+      ? "edit"
+      : "create";
+  elements.transactionDialogEyebrow.textContent = transaction ? "EDIT TRANSACTION" : "NEW TRANSACTION";
+  elements.transactionDialogTitle.textContent = transaction ? "修改这笔流水" : "记录一笔变动";
+  setTransactionKind(transaction?.changeMinor < 0 ? "expense" : "income");
+  for (const button of elements.transactionKindButtons) {
+    button.disabled = Boolean(detailOnly || (transaction?.eventType === "create" && button.dataset.kind === "expense"));
+  }
   elements.transactionCurrencySymbol.textContent = CURRENCY_SYMBOLS[account.currency] || account.currency;
   elements.transactionBalanceHint.textContent = `当前 ${formatMoney(account.amount, account.currency)}`;
-  elements.transactionAmountInput.value = "";
-  elements.transactionDetailInput.value = "";
+  elements.transactionAmountInput.disabled = Boolean(detailOnly);
+  elements.transactionAmountInput.value = transaction?.change == null
+    ? ""
+    : Math.abs(transaction.change).toFixed(2);
+  elements.transactionDetailInput.value = transaction?.detail || "";
   elements.transactionMessage.textContent = "";
   elements.transactionMessage.className = "form-message";
+  elements.saveTransactionBtn.textContent = transaction ? "保存修改" : "记入流水";
   elements.transactionDialog.showModal();
-  window.setTimeout(() => elements.transactionAmountInput.focus(), 0);
+  window.setTimeout(() => (
+    detailOnly ? elements.transactionDetailInput : elements.transactionAmountInput
+  ).focus(), 0);
 }
 
 async function refresh({ preserveSelection = true } = {}) {
@@ -388,7 +412,7 @@ async function saveTransaction(event) {
   const account = selectedAccount();
   if (!account || state.transactionSaving) return;
   const amount = elements.transactionAmountInput.value.trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
+  if (!elements.transactionAmountInput.disabled && (!/^\d+(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0)) {
     elements.transactionMessage.className = "form-message error";
     elements.transactionMessage.textContent = "请输入大于零、最多两位小数的金额。";
     return;
@@ -398,10 +422,15 @@ async function saveTransaction(event) {
   elements.saveTransactionBtn.textContent = "记录中…";
   elements.transactionMessage.textContent = "";
   try {
-    await window.desktop.adjustWalletAccount(account.id, {
-      change: state.transactionKind === "expense" ? `-${amount}` : amount,
-      detail: elements.transactionDetailInput.value.trim()
-    });
+    const input = { detail: elements.transactionDetailInput.value.trim() };
+    if (!elements.transactionAmountInput.disabled) {
+      input.change = state.transactionKind === "expense" ? `-${amount}` : amount;
+    }
+    if (state.editingTransactionId) {
+      await window.desktop.updateWalletTransaction(account.id, state.editingTransactionId, input);
+    } else {
+      await window.desktop.adjustWalletAccount(account.id, input);
+    }
     await refresh();
     elements.transactionDialog.close();
   } catch (error) {
@@ -410,7 +439,7 @@ async function saveTransaction(event) {
   } finally {
     state.transactionSaving = false;
     elements.saveTransactionBtn.disabled = false;
-    elements.saveTransactionBtn.textContent = "记入流水";
+    elements.saveTransactionBtn.textContent = state.editingTransactionId ? "保存修改" : "记入流水";
   }
 }
 
@@ -418,7 +447,7 @@ elements.form.addEventListener("submit", saveAccount);
 elements.transactionForm.addEventListener("submit", saveTransaction);
 elements.newBtn.addEventListener("click", beginCreate);
 elements.editAccountBtn.addEventListener("click", beginEdit);
-elements.addTransactionBtn.addEventListener("click", beginTransaction);
+elements.addTransactionBtn.addEventListener("click", () => beginTransaction());
 elements.deleteBtn.addEventListener("click", deleteAccount);
 for (const button of elements.transactionKindButtons) {
   button.addEventListener("click", () => setTransactionKind(button.dataset.kind));
