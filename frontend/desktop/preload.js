@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld("desktop", {
   getWalletSummary: () => ipcRenderer.invoke("wallet:summary"),
   listWalletTransactions: (id, filters) =>
     ipcRenderer.invoke("wallet:transactions", id, filters),
+  updateWalletTransaction: (accountId, transactionId, changes) =>
+    ipcRenderer.invoke("wallet:transaction-update", accountId, transactionId, changes),
   createWalletAccount: (input) => ipcRenderer.invoke("wallet:create", input),
   updateWalletAccount: (id, changes) =>
     ipcRenderer.invoke("wallet:update", id, changes),

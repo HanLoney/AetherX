@@ -753,6 +753,87 @@ const MIGRATIONS = [
     );
     CREATE INDEX IF NOT EXISTS idx_wallet_transactions_account_time
       ON wallet_transactions(user_id, account_id, created_at DESC, id DESC);
+  `,
+  `
+    INSERT INTO wallet_transactions(
+      id, user_id, account_id, event_type, change_minor,
+      balance_before_minor, balance_after_minor, previous_currency,
+      currency, detail, source, created_at
+    )
+    SELECT
+      'wallet-opening-' || account.id,
+      account.user_id,
+      account.id,
+      'create',
+      COALESCE(
+        (
+          SELECT first_transaction.balance_before_minor
+          FROM wallet_transactions AS first_transaction
+          WHERE first_transaction.user_id = account.user_id
+            AND first_transaction.account_id = account.id
+          ORDER BY first_transaction.created_at ASC, first_transaction.rowid ASC
+          LIMIT 1
+        ),
+        account.balance_minor
+      ),
+      0,
+      COALESCE(
+        (
+          SELECT first_transaction.balance_before_minor
+          FROM wallet_transactions AS first_transaction
+          WHERE first_transaction.user_id = account.user_id
+            AND first_transaction.account_id = account.id
+          ORDER BY first_transaction.created_at ASC, first_transaction.rowid ASC
+          LIMIT 1
+        ),
+        account.balance_minor
+      ),
+      COALESCE(
+        (
+          SELECT first_transaction.previous_currency
+          FROM wallet_transactions AS first_transaction
+          WHERE first_transaction.user_id = account.user_id
+            AND first_transaction.account_id = account.id
+          ORDER BY first_transaction.created_at ASC, first_transaction.rowid ASC
+          LIMIT 1
+        ),
+        account.currency
+      ),
+      COALESCE(
+        (
+          SELECT first_transaction.previous_currency
+          FROM wallet_transactions AS first_transaction
+          WHERE first_transaction.user_id = account.user_id
+            AND first_transaction.account_id = account.id
+          ORDER BY first_transaction.created_at ASC, first_transaction.rowid ASC
+          LIMIT 1
+        ),
+        account.currency
+      ),
+      '期初余额（历史数据补全）',
+      'manual',
+      MIN(
+        account.created_at,
+        COALESCE(
+          (
+            SELECT first_transaction.created_at - 1
+            FROM wallet_transactions AS first_transaction
+            WHERE first_transaction.user_id = account.user_id
+              AND first_transaction.account_id = account.id
+            ORDER BY first_transaction.created_at ASC, first_transaction.rowid ASC
+            LIMIT 1
+          ),
+          account.created_at
+        )
+      )
+    FROM wallet_accounts AS account
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM wallet_transactions AS existing
+      WHERE existing.user_id = account.user_id
+        AND existing.account_id = account.id
+        AND existing.event_type = 'create'
+    );
   `
 ];
 

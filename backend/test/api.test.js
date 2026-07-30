@@ -2358,12 +2358,22 @@ test("wallet API stores multiple savings and supports precise balance adjustment
     assert.equal(transactions.payload.data[0].balanceBeforeMinor, 120025);
     assert.equal(transactions.payload.data[0].balanceAfterMinor, 125025);
     assert.equal(transactions.payload.data[1].detail, "期初余额");
+    const corrected = await request(
+      baseUrl,
+      "PATCH",
+      `/api/v1/wallet/accounts/${card.payload.data.id}/transactions/${transactions.payload.data[0].id}`,
+      { change: "-25", detail: "更正为设备支出" }
+    );
+    assert.equal(corrected.response.status, 200);
+    assert.equal(corrected.payload.data.transaction.eventType, "withdrawal");
+    assert.equal(corrected.payload.data.transaction.balanceAfterMinor, 117525);
+    assert.equal(corrected.payload.data.account.amount, 1175.25);
 
     const summary = await request(baseUrl, "GET", "/api/v1/wallet");
     assert.equal(summary.payload.data.accountCount, 2);
     assert.deepEqual(summary.payload.data.totals.CNY, {
-      balanceMinor: 135000,
-      amount: 1350
+      balanceMinor: 127500,
+      amount: 1275
     });
 
     const modules = await request(baseUrl, "GET", "/api/v1/modules");

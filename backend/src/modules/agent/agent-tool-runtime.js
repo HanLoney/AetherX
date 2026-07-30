@@ -80,9 +80,12 @@ function createServiceAdapter(userId, services) {
     deleteTodo: (id) => services.todoService.delete(userId, id),
 
     getWalletSummary: () => services.walletService.summary(userId),
+    listWalletTransactions: (id, filters) => services.walletService.listTransactions(userId, id, filters),
     createWalletAccount: (input) => services.walletService.create(userId, input, { source: "chat" }),
     updateWalletAccount: (id, input) => services.walletService.update(userId, id, input, { source: "chat" }),
     adjustWalletAccount: (id, input) => services.walletService.adjust(userId, id, input, { source: "chat" }),
+    updateWalletTransaction: (accountId, transactionId, input) =>
+      services.walletService.updateTransaction(userId, accountId, transactionId, input),
     deleteWalletAccount: (id) => services.walletService.delete(userId, id),
 
     listMemories: (filters = {}) => services.memoryService.list(userId, filters),

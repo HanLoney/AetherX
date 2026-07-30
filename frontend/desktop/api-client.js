@@ -292,6 +292,14 @@ class XuanApiClient {
     );
   }
 
+  updateWalletTransaction(accountId, transactionId, changes) {
+    return this.request(
+      "PATCH",
+      `/api/v1/wallet/accounts/${encodeURIComponent(accountId)}/transactions/${encodeURIComponent(transactionId)}`,
+      changes
+    );
+  }
+
   createWalletAccount(input) {
     return this.request("POST", "/api/v1/wallet/accounts", input);
   }

@@ -126,6 +126,62 @@ class WalletRepository {
       .all(userId, accountId, limit)
       .map(mapTransaction);
   }
+
+  listTransactionsChronological(userId, accountId) {
+    return this.database
+      .prepare(
+        `SELECT id, account_id, event_type, change_minor,
+                balance_before_minor, balance_after_minor,
+                previous_currency, currency, detail, source, created_at
+         FROM wallet_transactions
+         WHERE user_id = ? AND account_id = ?
+         ORDER BY created_at ASC, rowid ASC`
+      )
+      .all(userId, accountId)
+      .map(mapTransaction);
+  }
+
+  findTransaction(userId, accountId, transactionId) {
+    return mapTransaction(
+      this.database
+        .prepare(
+          `SELECT id, account_id, event_type, change_minor,
+                  balance_before_minor, balance_after_minor,
+                  previous_currency, currency, detail, source, created_at
+           FROM wallet_transactions
+           WHERE user_id = ? AND account_id = ? AND id = ?`
+        )
+        .get(userId, accountId, transactionId)
+    );
+  }
+
+  updateTransaction(userId, accountId, transactionId, changes) {
+    this.database
+      .prepare(
+        `UPDATE wallet_transactions
+         SET event_type = ?, change_minor = ?, detail = ?
+         WHERE user_id = ? AND account_id = ? AND id = ?`
+      )
+      .run(
+        changes.eventType,
+        changes.changeMinor,
+        changes.detail,
+        userId,
+        accountId,
+        transactionId
+      );
+    return this.findTransaction(userId, accountId, transactionId);
+  }
+
+  updateTransactionBalances(userId, accountId, transactionId, balanceBeforeMinor, balanceAfterMinor) {
+    this.database
+      .prepare(
+        `UPDATE wallet_transactions
+         SET balance_before_minor = ?, balance_after_minor = ?
+         WHERE user_id = ? AND account_id = ? AND id = ?`
+      )
+      .run(balanceBeforeMinor, balanceAfterMinor, userId, accountId, transactionId);
+  }
 }
 
 function mapAccount(row) {

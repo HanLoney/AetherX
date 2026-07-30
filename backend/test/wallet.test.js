@@ -67,8 +67,25 @@ test("钱包按用户保存多项存款，并使用整数分精确汇总", (cont
   assert.equal(transactions[1].source, "chat");
   assert.equal(transactions[2].detail, "期初工资结余");
   assert.equal(transactions[2].source, "chat");
+  const corrected = service.updateTransaction("user-1", card.id, transactions[1].id, {
+    change: "-34.56",
+    detail: "更正为旧车支出"
+  });
+  assert.equal(corrected.account.amount, 1200);
+  assert.equal(corrected.transaction.eventType, "withdrawal");
+  assert.equal(corrected.transaction.changeMinor, -3456);
+  assert.equal(corrected.transaction.balanceBeforeMinor, 123456);
+  assert.equal(corrected.transaction.balanceAfterMinor, 120000);
+  const recalculated = service.listTransactions("user-1", card.id);
+  assert.equal(recalculated[0].balanceBeforeMinor, 120000);
+  assert.equal(recalculated[0].balanceAfterMinor, 120000);
   assert.throws(
-    () => service.adjust("user-1", card.id, { change: "-1300.01" }),
+    () => service.updateTransaction("user-1", card.id, transactions[2].id, { change: "10" }),
+    (error) => error.code === "WALLET_HISTORY_BALANCE_NEGATIVE"
+  );
+  assert.equal(service.get("user-1", card.id).amount, 1200);
+  assert.throws(
+    () => service.adjust("user-1", card.id, { change: "-1200.01" }),
     (error) => error.code === "WALLET_BALANCE_NEGATIVE"
   );
 
@@ -83,4 +100,71 @@ test("钱包金额拒绝浮点精度、无效格式和超范围数据", () => {
   assert.throws(() => parseAmountMinor("1.234", "金额"), /最多两位小数/);
   assert.throws(() => parseAmountMinor("1e5", "金额"), /最多两位小数/);
   assert.throws(() => parseAmountMinor("-1", "金额"), /最多两位小数/);
+});
+
+test("旧账户会补齐期初余额，并能安全修改历史流水", (context) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aetherx-wallet-legacy-"));
+  let database = openDatabase(dataDir);
+  context.after(() => {
+    database?.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  database.prepare(
+    `INSERT INTO users(id, username, display_name, password_hash, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run("legacy-user", "legacy-wallet", "旧钱包", "hash", 1, 1);
+  database.prepare(
+    `INSERT INTO wallet_accounts(
+       id, user_id, name, balance_minor, currency, note, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run("legacy-account", "legacy-user", "小金库", 134078, "CNY", "", 100, 400);
+  const insertTransaction = database.prepare(
+    `INSERT INTO wallet_transactions(
+       id, user_id, account_id, event_type, change_minor,
+       balance_before_minor, balance_after_minor, previous_currency,
+       currency, detail, source, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  insertTransaction.run(
+    "legacy-refund", "legacy-user", "legacy-account", "deposit", 900,
+    64400, 65300, "CNY", "CNY", "奶茶退款", "chat", 200
+  );
+  insertTransaction.run(
+    "legacy-delivery", "legacy-user", "legacy-account", "withdrawal", -1162,
+    65300, 64138, "CNY", "CNY", "寄快递", "chat", 300
+  );
+  insertTransaction.run(
+    "legacy-sale", "legacy-user", "legacy-account", "deposit", 69940,
+    64138, 134078, "CNY", "CNY", "闲鱼到账", "chat", 400
+  );
+  database.prepare(
+    "DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)"
+  ).run();
+  database.close();
+  database = openDatabase(dataDir);
+
+  const service = new WalletService(new WalletRepository(database));
+  const chronological = database.prepare(
+    `SELECT event_type, change_minor, balance_before_minor, balance_after_minor
+     FROM wallet_transactions
+     WHERE account_id = ?
+     ORDER BY created_at ASC, rowid ASC`
+  ).all("legacy-account");
+  assert.deepEqual({ ...chronological[0] }, {
+    event_type: "create",
+    change_minor: 64400,
+    balance_before_minor: 0,
+    balance_after_minor: 64400
+  });
+  const corrected = service.updateTransaction(
+    "legacy-user",
+    "legacy-account",
+    "legacy-sale",
+    { change: "699.42", detail: "卖了旧小电动车" }
+  );
+  assert.equal(corrected.account.balanceMinor, 134080);
+  assert.equal(corrected.account.amount, 1340.8);
+  assert.equal(corrected.transaction.changeMinor, 69942);
+  assert.equal(corrected.transaction.balanceBeforeMinor, 64138);
+  assert.equal(corrected.transaction.balanceAfterMinor, 134080);
 });
