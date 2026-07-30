@@ -135,7 +135,7 @@
     <dialog id="transactionDialog" class="wallet-dialog transaction-dialog">
       <section class="dialog-card">
         <header>
-          <div><small>NEW TRANSACTION</small><h2>记录一笔变动</h2></div>
+          <div><small id="transactionDialogEyebrow">NEW TRANSACTION</small><h2 id="transactionDialogTitle">记录一笔变动</h2></div>
           <button class="dialog-close" type="button" data-close-dialog="transactionDialog" aria-label="关闭">×</button>
         </header>
         <form id="transactionForm">
@@ -171,6 +171,9 @@
         <i class="transaction-state"></i>
         <span class="transaction-copy"><strong></strong><small></small></span>
         <span class="transaction-amount"><strong></strong><small></small></span>
+        <button class="transaction-edit" type="button" aria-label="编辑这笔流水">
+          <svg viewBox="0 0 24 24"><path d="m14.5 5.5 4 4M5 19l3.5-.7L19 7.8a1.8 1.8 0 0 0 0-2.6l-.2-.2a1.8 1.8 0 0 0-2.6 0L5.7 15.5 5 19Z"/></svg>
+        </button>
       </article>
     </template>
 

@@ -44,6 +44,56 @@ class WalletService {
     return this.repository.listTransactions(userId, id, limit);
   }
 
+  getTransaction(userId, accountId, transactionId) {
+    this.get(userId, accountId);
+    const transaction = this.repository.findTransaction(userId, accountId, transactionId);
+    if (!transaction) {
+      throw new HttpError(404, "WALLET_TRANSACTION_NOT_FOUND", "没有找到这笔钱包流水。");
+    }
+    return transaction;
+  }
+
+  updateTransaction(userId, accountId, transactionId, input = {}) {
+    const account = this.get(userId, accountId);
+    const current = this.getTransaction(userId, accountId, transactionId);
+    const detail = input.detail === undefined ? current.detail : validateDetail(input.detail);
+    let changeMinor = current.changeMinor;
+    if (input.change !== undefined) {
+      changeMinor = parseAmountMinor(input.change, "流水金额", { signed: true });
+      if (current.eventType === "create" && changeMinor < 0) {
+        throw new HttpError(400, "WALLET_INITIAL_BALANCE_NEGATIVE", "初始余额不能改成负数。");
+      }
+      if (current.eventType !== "create" && !changeMinor) {
+        throw new HttpError(400, "WALLET_CHANGE_REQUIRED", "收入或支出金额不能为零。");
+      }
+    }
+    if (detail === current.detail && changeMinor === current.changeMinor) {
+      return { account, transaction: current };
+    }
+    const eventType = input.change === undefined
+      ? current.eventType
+      : current.eventType === "create"
+      ? "create"
+      : changeMinor == null || changeMinor === 0
+        ? "edit"
+        : changeMinor > 0
+          ? "deposit"
+          : "withdrawal";
+    return this.repository.transaction(() => {
+      this.ensureOpeningTransaction(userId, account);
+      this.repository.updateTransaction(userId, accountId, transactionId, {
+        eventType,
+        changeMinor,
+        detail
+      });
+      const updatedAccount = this.recalculateAccount(userId, accountId);
+      return {
+        account: updatedAccount,
+        transaction: this.repository.findTransaction(userId, accountId, transactionId)
+      };
+    });
+  }
+
   create(userId, input = {}, options = {}) {
     const now = Date.now();
     const draft = {
@@ -151,6 +201,54 @@ class WalletService {
       detail: input.detail,
       source: normalizeSource(input.source),
       createdAt: input.createdAt || Date.now()
+    });
+  }
+
+  recalculateAccount(userId, accountId) {
+    const transactions = this.repository.listTransactionsChronological(userId, accountId);
+    let balanceMinor = 0;
+    for (const transaction of transactions) {
+      const before = balanceMinor;
+      if (transaction.changeMinor != null) balanceMinor += transaction.changeMinor;
+      if (balanceMinor < 0) {
+        throw new HttpError(
+          400,
+          "WALLET_HISTORY_BALANCE_NEGATIVE",
+          `修改“${transaction.detail}”后，后续余额会变成负数。`
+        );
+      }
+      if (balanceMinor > MAX_BALANCE_MINOR) {
+        throw new HttpError(400, "WALLET_AMOUNT_TOO_LARGE", "修改后的账户余额超出可记录范围。");
+      }
+      this.repository.updateTransactionBalances(
+        userId,
+        accountId,
+        transaction.id,
+        before,
+        balanceMinor
+      );
+    }
+    return this.repository.update(userId, accountId, { balanceMinor });
+  }
+
+  ensureOpeningTransaction(userId, account) {
+    const transactions = this.repository.listTransactionsChronological(userId, account.id);
+    if (transactions.some((transaction) => transaction.eventType === "create")) return;
+    const first = transactions[0] || null;
+    const openingBalanceMinor = first?.balanceBeforeMinor ?? account.balanceMinor;
+    const currency = first?.previousCurrency || account.currency;
+    this.repository.recordTransaction(userId, {
+      id: randomUUID(),
+      accountId: account.id,
+      eventType: "create",
+      changeMinor: openingBalanceMinor,
+      balanceBeforeMinor: 0,
+      balanceAfterMinor: openingBalanceMinor,
+      previousCurrency: currency,
+      currency,
+      detail: "期初余额（历史数据补全）",
+      source: "manual",
+      createdAt: Math.min(account.createdAt, first ? first.createdAt - 1 : account.createdAt)
     });
   }
 }

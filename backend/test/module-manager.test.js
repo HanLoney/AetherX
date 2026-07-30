@@ -71,6 +71,17 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
     assistantMemoryService: { getProfile: () => ({}) },
     walletService: {
       summary: () => ({ accountCount: 0, totals: {}, accounts: [] }),
+      listTransactions: () => ([{
+        id: "transaction-1",
+        accountId: "wallet-1",
+        change: -10,
+        changeMinor: -1000,
+        detail: "原支出"
+      }]),
+      updateTransaction: (_userId, accountId, transactionId, input) => ({
+        account: { id: accountId, name: "旅行基金", amount: 80, currency: "CNY" },
+        transaction: { id: transactionId, detail: input.detail, change: input.change }
+      }),
       create: (_userId, input) => ({
         id: "wallet-1",
         name: input.name,
@@ -113,6 +124,17 @@ test("Agent 工具列表只包含已启用模块，并保留核心画像工具",
     });
     assert.equal(created.ok, true);
     assert.equal(created.data.name, "旅行基金");
+    const history = await registry.call("wallet_transactions", { id: "wallet-1" });
+    assert.equal(history.ok, true);
+    assert.equal(history.data[0].id, "transaction-1");
+    const corrected = await registry.call("wallet_transaction_update", {
+      accountId: "wallet-1",
+      transactionId: "transaction-1",
+      change: -20,
+      detail: "更正后的支出"
+    });
+    assert.equal(corrected.ok, true);
+    assert.equal(corrected.data.transaction.detail, "更正后的支出");
     walletEnabled = false;
     assert.ok(!registry.modelTools().some((tool) => tool.function.name === "wallet_list"));
   });

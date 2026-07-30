@@ -106,6 +106,10 @@ test("desktop wallet client supports summary, multiple records and balance adjus
     const client = new XuanApiClient({ baseUrl: "http://127.0.0.1:4318" });
     await client.getWalletSummary();
     await client.listWalletTransactions("wallet/id", { limit: 30 });
+    await client.updateWalletTransaction("wallet/id", "transaction/id", {
+      change: "-20",
+      detail: "更正支出"
+    });
     await client.createWalletAccount({ name: "工资卡", amount: "100" });
     await client.updateWalletAccount("wallet/id", { amount: "120" });
     await client.adjustWalletAccount("wallet/id", { change: "20" });
@@ -114,6 +118,7 @@ test("desktop wallet client supports summary, multiple records and balance adjus
     assert.deepEqual(requests.map((item) => [item.options.method, item.url]), [
       ["GET", "http://127.0.0.1:4318/api/v1/wallet"],
       ["GET", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid/transactions?limit=30"],
+      ["PATCH", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid/transactions/transaction%2Fid"],
       ["POST", "http://127.0.0.1:4318/api/v1/wallet/accounts"],
       ["PATCH", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid"],
       ["POST", "http://127.0.0.1:4318/api/v1/wallet/accounts/wallet%2Fid/adjust"],

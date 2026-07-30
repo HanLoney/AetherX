@@ -8,6 +8,9 @@ function registerWalletRoutes(router, service) {
   router.add("GET", "/api/v1/wallet/accounts/:id/transactions", ({ userId, params, query }) => ({
     data: service.listTransactions(userId, params.id, query)
   }), { module: "wallet" });
+  router.add("PATCH", "/api/v1/wallet/accounts/:id/transactions/:transactionId", ({ userId, params, body }) => ({
+    data: service.updateTransaction(userId, params.id, params.transactionId, body)
+  }), { module: "wallet" });
   router.add("POST", "/api/v1/wallet/accounts", ({ userId, body }) => ({
     status: 201,
     data: service.create(userId, body, { source: "manual" })
