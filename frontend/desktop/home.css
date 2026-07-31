@@ -179,6 +179,7 @@ button { color: inherit; cursor: pointer; }
 
 .nav-list {
   min-height: 0;
+  flex: 0 1 auto;
   overflow-y: auto;
   display: grid;
   align-content: start;
@@ -282,10 +283,11 @@ button { color: inherit; cursor: pointer; }
 .nav-item.disabled { opacity: .55; cursor: default; }
 
 .history-panel {
-  min-height: 0;
-  flex: 1;
+  min-height: 120px;
+  flex: 1 1 150px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   margin: 12px 3px 10px;
   padding: 10px 7px 7px;
   border: 1px solid rgba(119, 113, 144, .08);
@@ -318,6 +320,7 @@ button { color: inherit; cursor: pointer; }
 
 .history-list {
   min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
   display: grid;
   align-content: start;
@@ -363,6 +366,7 @@ button { color: inherit; cursor: pointer; }
 .provider-card {
   width: 100%;
   min-height: 54px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 9px;
