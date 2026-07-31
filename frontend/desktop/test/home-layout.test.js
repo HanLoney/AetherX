@@ -21,6 +21,16 @@ test("sidebar uses compact navigation rows and a distinct active state", () => {
   assert.match(css, /\.nav-group-label\s*\{/);
 });
 
+test("history conversations keep visible space when navigation grows", () => {
+  assert.match(css, /\.nav-list\s*\{[^}]*flex:\s*0 1 auto;/s);
+  assert.match(
+    css,
+    /\.history-panel\s*\{[^}]*min-height:\s*120px;[^}]*flex:\s*1 1 150px;[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(css, /\.history-list\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.provider-card\s*\{[^}]*flex:\s*0 0 auto;/s);
+});
+
 test("functional navigation uses one consistent SVG icon system", () => {
   assert.match(html, /<svg viewBox="0 0 24 24">/);
   assert.match(javascript, /function navIcon\(paths\)/);
