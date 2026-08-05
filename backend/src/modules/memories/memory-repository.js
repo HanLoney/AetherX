@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { runInSavepoint } = require("../../infrastructure/transaction");
 const {
   expandQueryTerms,
   scoreTextMatch
@@ -86,9 +87,7 @@ class MemoryRepository {
   create(userId, memory) {
     const now = Date.now();
     const id = randomUUID();
-    const ownsTransaction = !this.database.isTransaction;
-    if (ownsTransaction) this.database.exec("BEGIN");
-    try {
+    return runInSavepoint(this.database, () => {
       this.database
         .prepare(
           `INSERT INTO memories(
@@ -121,12 +120,8 @@ class MemoryRepository {
           memory.mergeCount
         );
       this.writeFts(id, userId, memory.content, memory.entities);
-      if (ownsTransaction) this.database.exec("COMMIT");
       return this.find(userId, id);
-    } catch (error) {
-      if (ownsTransaction) this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   update(userId, id, changes) {
@@ -134,9 +129,7 @@ class MemoryRepository {
     if (!current) return null;
     const next = { ...current, ...changes, updatedAt: Date.now() };
     if (changes.status === "active") next.lastConfirmedAt = Date.now();
-    const ownsTransaction = !this.database.isTransaction;
-    if (ownsTransaction) this.database.exec("BEGIN");
-    try {
+    return runInSavepoint(this.database, () => {
       this.database
         .prepare(
           `UPDATE memories SET domain = ?, memory_type = ?, content = ?,
@@ -171,18 +164,12 @@ class MemoryRepository {
           .run(id);
       }
       this.writeFts(id, userId, next.content, next.entities);
-      if (ownsTransaction) this.database.exec("COMMIT");
       return this.find(userId, id);
-    } catch (error) {
-      if (ownsTransaction) this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   delete(userId, id) {
-    const ownsTransaction = !this.database.isTransaction;
-    if (ownsTransaction) this.database.exec("BEGIN");
-    try {
+    return runInSavepoint(this.database, () => {
       if (this.fullTextSearchEnabled) {
         this.database
           .prepare(
@@ -193,12 +180,8 @@ class MemoryRepository {
       const changes = this.database
         .prepare("DELETE FROM memories WHERE user_id = ? AND id = ?")
         .run(userId, id).changes;
-      if (ownsTransaction) this.database.exec("COMMIT");
       return changes;
-    } catch (error) {
-      if (ownsTransaction) this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   writeFts(id, userId, content, entities) {

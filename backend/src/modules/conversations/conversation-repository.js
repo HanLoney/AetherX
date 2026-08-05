@@ -1,5 +1,7 @@
 const { randomUUID } = require("node:crypto");
 
+const { runInSavepoint } = require("../../infrastructure/transaction");
+
 class ConversationRepository {
   constructor(database) {
     this.database = database;
@@ -107,18 +109,7 @@ class ConversationRepository {
         .prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
         .run(now, conversationId);
     };
-    if (this.database.isTransaction) {
-      write();
-      return;
-    }
-    this.database.exec("BEGIN");
-    try {
-      write();
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    runInSavepoint(this.database, write);
   }
 
   delete(userId, id) {
