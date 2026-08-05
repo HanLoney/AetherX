@@ -1,3 +1,5 @@
+const { runInSavepoint } = require("../../infrastructure/transaction");
+
 class WalletRepository {
   constructor(database) {
     this.database = database;
@@ -76,16 +78,7 @@ class WalletRepository {
   }
 
   transaction(callback) {
-    if (this.database.isTransaction) return callback();
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = callback();
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    return runInSavepoint(this.database, callback);
   }
 
   recordTransaction(userId, transaction) {
