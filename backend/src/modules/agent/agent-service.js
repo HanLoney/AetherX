@@ -33,15 +33,10 @@ class AgentService {
     if (!content) {
       throw new HttpError(400, "AGENT_MESSAGE_REQUIRED", "消息不能为空。");
     }
-    const loaded = input.conversationId
-      ? this.services.conversationService.get(userId, String(input.conversationId))
-      : {
-          conversation: this.services.conversationService.create(userId, {
-            title: content.slice(0, 60)
-          }),
-          displayMessages: [],
-          modelMessages: []
-        };
+    const primaryConversation = this.services.conversationService.create(userId, {
+      title: content.slice(0, 60)
+    });
+    const loaded = this.services.conversationService.get(userId, primaryConversation.id);
     const conversationKey = `${userId}:${loaded.conversation.id}`;
     if (this.activeConversations.has(conversationKey)) {
       throw new HttpError(

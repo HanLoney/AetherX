@@ -173,39 +173,103 @@ describe.sequential("Android Local Hub Agent", () => {
     });
   });
 
-  it("loads only the selected conversation messages through the native bridge", async () => {
+  it("merges legacy conversations into the replicated primary conversation", async () => {
     const hub = new FakeLocalHub();
-    hub.seed("conversations", { id: "conversation-a", title: "A", created_at: 1, updated_at: 2 });
-    hub.seed("conversations", { id: "conversation-b", title: "B", created_at: 1, updated_at: 3 });
+    hub.seed("conversations", { id: "conversation-a", title: "A", summary: "", created_at: 1, updated_at: 2 });
+    hub.seed("conversations", { id: "conversation-b", title: "B", summary: "", created_at: 1, updated_at: 3 });
     hub.seed("messages", {
       id: "message-a",
       conversation_id: "conversation-a",
       stream_type: "display",
-      position: 0,
+      position: 4,
       role: "user",
       content: "A message",
       payload_json: "{}",
-      created_at: 2
+      created_at: 1
     });
     hub.seed("messages", {
       id: "message-b",
       conversation_id: "conversation-b",
       stream_type: "display",
-      position: 0,
+      position: 8,
       role: "user",
       content: "B message",
       payload_json: "{}",
+      created_at: 2
+    });
+    hub.seed("messages", {
+      id: "message-model",
+      conversation_id: "conversation-a",
+      stream_type: "model",
+      position: 7,
+      role: "assistant",
+      content: "model context",
+      payload_json: "{}",
       created_at: 3
     });
-
-    const result = await new LocalHubClient(USER, hub as never).conversation("conversation-a");
-
-    expect(result.displayMessages.map((message) => message.id)).toEqual(["message-a"]);
-    expect(hub.listDocumentInputs.at(-1)).toMatchObject({
-      entityType: "messages",
-      payloadField: "conversation_id",
-      payloadValue: "conversation-a"
+    hub.seed("memory_evidence", {
+      id: "evidence-a",
+      user_id: "__CURRENT_USER__",
+      memory_id: "memory-a",
+      conversation_id: "conversation-a",
+      evidence: "legacy evidence",
+      evidence_hash: "a".repeat(64),
+      confidence: 0.9,
+      created_at: 4
     });
+
+    const client = new LocalHubClient(USER, hub as never);
+    await expect(client.listConversations()).resolves.toMatchObject([{ id: "conversation-b" }]);
+    const result = await client.conversation("conversation-b");
+
+    expect(result.displayMessages.map((message) => message.id)).toEqual(["message-a", "message-b"]);
+    expect(result.modelMessages.map((message) => message.id)).toEqual(["message-model"]);
+    expect(hub.rows("conversations").map((row) => row.id)).toEqual(["conversation-b"]);
+    expect(hub.rows("messages").map((row) => [row.id, row.conversation_id, row.position])).toEqual([
+      ["message-a", "conversation-b", 0],
+      ["message-b", "conversation-b", 1],
+      ["message-model", "conversation-b", 0]
+    ]);
+    expect(hub.rows("memory_evidence")[0].conversation_id).toBe("conversation-b");
+    expect(hub.batches.flat().map((mutation) => `${mutation.entityType}:${mutation.operation || "upsert"}`)).toEqual([
+      "conversations:upsert",
+      "messages:upsert",
+      "messages:upsert",
+      "messages:upsert",
+      "memory_evidence:upsert",
+      "conversations:delete"
+    ]);
+    await expect(client.createConversation("不应新建")).resolves.toMatchObject({ id: "conversation-b" });
+  });
+
+  it("chunks large legacy conversation migrations before deleting old conversations", async () => {
+    const hub = new FakeLocalHub();
+    hub.seed("conversations", { id: "conversation-old", title: "Old", summary: "", created_at: 1, updated_at: 1 });
+    hub.seed("conversations", { id: "conversation-primary", title: "Primary", summary: "", created_at: 2, updated_at: 2 });
+    for (let index = 0; index < 205; index += 1) {
+      hub.seed("messages", {
+        id: `message-${String(index).padStart(3, "0")}`,
+        conversation_id: "conversation-old",
+        stream_type: "display",
+        position: 205 - index,
+        role: "user",
+        content: `message ${index}`,
+        payload_json: "{}",
+        created_at: index
+      });
+    }
+
+    await new LocalHubClient(USER, hub as never).listConversations();
+
+    expect(hub.batches.map((batch) => batch.length)).toEqual([100, 100, 7]);
+    expect(hub.batches.flat().at(-1)).toMatchObject({
+      entityType: "conversations",
+      entityId: "conversation-old",
+      operation: "delete"
+    });
+    expect(hub.rows("conversations").map((row) => row.id)).toEqual(["conversation-primary"]);
+    expect(hub.rows("messages")).toHaveLength(205);
+    expect(hub.rows("messages").every((row) => row.conversation_id === "conversation-primary")).toBe(true);
   });
 
   it("keeps core profile tools while excluding disabled extension tools", async () => {

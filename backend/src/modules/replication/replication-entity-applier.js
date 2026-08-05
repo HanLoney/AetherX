@@ -564,16 +564,6 @@ class ReplicationEntityApplier {
         "消息引用的会话尚不存在或属于其他账号。"
       );
     }
-    const current = this.database
-      .prepare("SELECT conversation_id FROM messages WHERE id = ?")
-      .get(operation.entityId);
-    if (current && current.conversation_id !== conversationId) {
-      throw new HttpError(
-        409,
-        "REPLICATION_ENTITY_ID_CONFLICT",
-        "同一消息 ID 不能移动到另一个会话。"
-      );
-    }
     const content = payload.content === null
       ? null
       : text(payload.content, "content", 100_000);
@@ -584,6 +574,7 @@ class ReplicationEntityApplier {
          content, payload_json, created_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
+         conversation_id = excluded.conversation_id,
          stream_type = excluded.stream_type,
          position = excluded.position,
          role = excluded.role,

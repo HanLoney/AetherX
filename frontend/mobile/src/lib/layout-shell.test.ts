@@ -151,8 +151,12 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain("headerless");
     expect(chatSource).toContain('class="chat-floating-controls"');
     expect(chatSource).toContain("data.refreshConversationPage(true)");
-    expect(chatSource).toContain("data.loadRemainingConversations()");
-    expect(chatSource).toContain("正在继续加载更早的对话");
+    expect(chatSource).not.toContain("data.loadRemainingConversations()");
+    expect(chatSource).not.toContain("开始新对话");
+    expect(chatSource).not.toContain("对话记录");
+    expect(chatSource).not.toContain("history-drawer");
+    expect(chatSource).not.toContain("history-list");
+    expect(chatSource).toContain("一直在这一段对话里延续共同的上下文");
     expect(chatSource).not.toContain("data.refreshAll().catch");
     expect(chatSource).toContain("backdrop-filter:blur(26px) saturate(165%)");
     expect(chatSource).toContain("border-radius:22px 22px 22px 7px");
