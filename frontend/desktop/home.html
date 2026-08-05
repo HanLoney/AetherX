@@ -80,6 +80,15 @@
               <h1 id="workspaceAssistantName" class="conversation-title">小玄</h1>
             </div>
             <div class="top-actions">
+              <span id="hubPill" class="hub-pill loading" title="正在读取当前 Hub">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <rect x="3.5" y="4" width="13" height="4.5" rx="1.7"></rect>
+                  <rect x="3.5" y="11.5" width="13" height="4.5" rx="1.7"></rect>
+                  <path d="M6.5 6.25h.01M6.5 13.75h.01M9 6.25h4.5M9 13.75h4.5"></path>
+                </svg>
+                <strong id="hubLabel">Hub</strong>
+                <small id="hubStateLabel">读取中</small>
+              </span>
               <span id="statusPill" class="status-pill idle">
                 <i></i><span id="statusLabel">尚未配置</span>
               </span>
@@ -216,11 +225,16 @@
               <div class="pairing-phone-illustration" aria-hidden="true">
                 <svg viewBox="0 0 64 64"><rect x="18" y="7" width="28" height="50" rx="9"/><path d="M28 13h8M29 50h6"/><path class="pairing-wave" d="M10 27c5-5 5-11 0-16M54 27c-5-5-5-11 0-16"/></svg>
               </div>
-              <p>在手机端选择“连接已有电脑”，再粘贴这里生成的连接码。</p>
-              <button id="generatePairingBtn" class="device-primary-button" type="button">生成连接码</button>
+              <p>先选择用途。普通连接码用于手机客户端登录；备用 Hub 配对码用于把完整数据副本留在手机。</p>
+              <button id="generatePairingBtn" class="device-primary-button" type="button">生成手机客户端连接码</button>
+              <button id="generateHubPairingBtn" class="device-text-button" type="button">生成备用 Hub 配对码</button>
             </div>
 
             <div id="pairingActive" class="pairing-active hidden">
+              <div class="pairing-kind-switch" role="group" aria-label="连接码类型">
+                <button id="clientPairingModeBtn" type="button" aria-pressed="true">手机客户端连接码</button>
+                <button id="hubPairingModeBtn" type="button" aria-pressed="false">备用 Hub 配对码</button>
+              </div>
               <div class="pairing-status-row">
                 <span id="pairingStatusDot" class="pairing-status-dot waiting"></span>
                 <div><strong id="pairingStatusTitle">等待手机申请</strong><small id="pairingStatusDetail">把连接码粘贴到手机端</small></div>
@@ -232,9 +246,9 @@
                   <span id="pairingQrPlaceholder">正在生成二维码…</span>
                 </div>
                 <div class="pairing-manual">
-                  <strong>用手机扫码连接</strong>
-                  <p>手机端打开“连接电脑”并扫描。无法扫码时，也可以复制连接码。</p>
-                  <label for="pairingCode">一次性连接码</label>
+                  <strong id="pairingShareTitle">用手机扫码连接</strong>
+                  <p id="pairingShareDescription">手机端打开“连接电脑”并扫描。无法扫码时，也可以复制连接码。</p>
+                  <label id="pairingCodeLabel" for="pairingCode">手机客户端连接码（aetherx://pair）</label>
                   <div class="pairing-code-box">
                     <textarea id="pairingCode" rows="3" readonly spellcheck="false"></textarea>
                     <button id="copyPairingCodeBtn" type="button">复制</button>
@@ -246,7 +260,6 @@
                 <div><small>手机连接申请</small><strong id="pairingDeviceName">未命名设备</strong></div>
                 <button id="approvePairingBtn" type="button">批准连接</button>
               </div>
-              <button id="regeneratePairingBtn" class="device-text-button" type="button">换一个连接码</button>
             </div>
             <p id="deviceManagerNotice" class="device-manager-notice hidden" role="status"></p>
           </section>

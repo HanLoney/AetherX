@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from "vue";
-import type { Conversation, ConversationPage, GalleryImage, Journal, Memory, SyncChange, Todo } from "../lib/api";
+import type { AetherApi, Conversation, ConversationPage, GalleryImage, Journal, Memory, SyncChange, Todo } from "../lib/api";
 import {
   clearMobileDataCache,
   createMobileDataSnapshot,
@@ -9,6 +9,7 @@ import {
 } from "../lib/mobile-cache";
 import { MobileHealthReporter } from "../lib/device-health";
 import { SyncCoordinator } from "../lib/sync";
+import { useLocalHub, type LocalHubStatus } from "../lib/local-hub";
 import { loadInstallationId, saveSyncCursor } from "../lib/storage";
 import { useSessionStore } from "./session";
 import { useModuleStore } from "./modules";
@@ -33,21 +34,33 @@ const conversationRevision = ref(0);
 const syncState = ref<"idle" | "syncing" | "online" | "error">("idle");
 let sync: SyncCoordinator | null = null;
 let healthReporter: MobileHealthReporter | null = null;
+let controlSync: SyncCoordinator | null = null;
+let controlHealthReporter: MobileHealthReporter | null = null;
 let syncCursor = 0;
 let sseConnected = false;
+let controlSyncCursor = 0;
+let controlSseConnected = false;
+let controlSyncRetrying = false;
 let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
 let conversationPagePromise: Promise<ConversationPage> | null = null;
 let activeCacheScope = "";
 let archiveResetPromise: Promise<void> | null = null;
 let lastArchiveResetCursor = 0;
+let localHubSyncError = "";
+let localHubOperation = {
+  stage: "idle",
+  progress: 0,
+  message: "",
+  updatedAt: 0
+};
 const CONVERSATION_PAGE_SIZE = 12;
 
 function currentCacheScope() {
   const session = useSessionStore();
-  const userId = session.user.value?.id;
-  if (!userId) return "";
-  return `${session.requireApi().serverUrl}|${userId}`;
+  const userName = session.user.value?.username;
+  if (!userName) return "";
+  return `${session.spaceId.value || session.requireApi().serverUrl}|${userName}`;
 }
 
 function snapshot() {
@@ -276,11 +289,18 @@ function changeGroups(changes: SyncChange[]) {
 }
 
 async function startSync() {
-  if (sync) return;
   const session = useSessionStore();
   const api = session.requireApi();
   const userId = session.user.value?.id;
   if (!userId) throw new Error("登录状态已经失效，请重新登录。");
+  if ((api as AetherApi & { isLocalHub?: boolean }).isLocalHub) {
+    syncState.value = "online";
+    sseConnected = false;
+    await startControlSync(session, userId);
+    return;
+  }
+  if (sync) return;
+  stopControlSyncTransport();
   const installationId = await loadInstallationId();
   sync = new SyncCoordinator(api, async (changes) => {
     const archiveReset = changes.find((change) => change.entityType === "archive_restore" && change.operation === "reset");
@@ -295,25 +315,266 @@ async function startSync() {
     }
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
-  }, `${api.serverUrl}|${userId}`, (status) => {
+  }, `${session.spaceId.value || api.serverUrl}|${session.user.value?.username || userId}`, (status) => {
     syncCursor = status.cursor;
     sseConnected = status.connected;
     if (status.state === "online") syncState.value = "online";
     else if (status.state === "retrying") syncState.value = "error";
-    void healthReporter?.report().catch(() => undefined);
-  }, installationId);
+    void reportMobileHealth();
+  }, installationId, (command) => handleHubCommand(command));
   try {
     await sync.start();
     healthReporter = new MobileHealthReporter(api, () => ({
       syncStatus: syncState.value,
       syncCursor,
       sseConnected,
-      lastError: syncState.value === "error" ? "实时同步通道正在重连" : ""
+      lastError: localHubSyncError || (syncState.value === "error" ? "实时同步通道正在重连" : ""),
+      ...localHubHeartbeat()
     }));
     healthReporter.start();
   } catch {
     syncState.value = "error";
   }
+}
+
+async function startControlSync(
+  session: ReturnType<typeof useSessionStore>,
+  userId: string
+) {
+  if (controlSync) return;
+  const connection = session.createDesktopControlConnection();
+  if (!connection) {
+    throw new Error("手机 Hub 已启用，但找不到电脑 Hub 的控制连接，请重新配对。");
+  }
+  const installationId = await loadInstallationId();
+  controlSync = new SyncCoordinator(
+    connection.api,
+    () => undefined,
+    `${session.spaceId.value || connection.api.serverUrl}|control|${connection.nodeId}|${session.user.value?.username || userId}`,
+    (status) => {
+      controlSyncCursor = status.cursor;
+      controlSseConnected = status.connected;
+      controlSyncRetrying = status.state === "retrying";
+      void controlHealthReporter?.report().catch(() => undefined);
+    },
+    installationId,
+    (command) => handleHubCommand(command),
+    { controlOnly: true }
+  );
+  await controlSync.start();
+  controlHealthReporter = new MobileHealthReporter(connection.api, () => ({
+    syncStatus: syncState.value,
+    syncCursor: controlSyncCursor,
+    sseConnected: controlSseConnected,
+    lastError: localHubSyncError || (controlSyncRetrying ? "电脑 Hub 控制通道正在重连" : ""),
+    ...localHubHeartbeat()
+  }));
+  controlHealthReporter.start();
+}
+
+async function handleHubCommand(command: Record<string, unknown>) {
+  if (!["synchronize-local-hub", "switch-local-hub", "switch-desktop-hub"].includes(String(command.type || ""))) return;
+  const session = useSessionStore();
+  const localHub = useLocalHub();
+  const localStatus = localHub.status.value || await localHub.refresh();
+  if (!localStatus?.configured || localStatus.localNodeId !== String(command.nodeId || "")) return;
+  if (Array.isArray(command.endpoints) && command.endpoints.length) {
+    await localHub.updatePeerEndpoints({
+      endpoints: command.endpoints as Array<Record<string, unknown>>
+    });
+  }
+  if (command.type === "switch-local-hub" || command.type === "switch-desktop-hub") {
+    await handleRemoteHubSwitch(session, localHub, String(command.type));
+    return;
+  }
+  const syncingToDesktop = localStatus.role === "active";
+  const wasBootstrapIncomplete = localStatus.bootstrap?.status !== "completed" || localStatus.pendingMediaCount > 0;
+  localHubOperation = {
+    stage: "starting",
+    progress: 5,
+    message: syncingToDesktop ? "已收到同步到电脑 Hub 的指令" : "已收到同步到手机 Hub 的指令",
+    updatedAt: Date.now()
+  };
+  void reportMobileHealth();
+  const progressTimer = window.setInterval(() => {
+    void refreshLocalHubOperation(localHub).catch(() => undefined);
+  }, 1_000);
+  try {
+    await localHub.resume();
+    await localHub.refresh();
+    localHubOperation = {
+      stage: "completed",
+      progress: 100,
+      message: syncingToDesktop
+        ? "电脑 Hub 已追平手机端最新变更"
+        : "手机 Hub 已追平电脑端最新变更",
+      updatedAt: Date.now()
+    };
+    localHubSyncError = "";
+  } catch (cause) {
+    const recovered = await localHub.refresh().catch(() => null);
+    if (wasBootstrapIncomplete && recovered?.bootstrap?.status === "completed" && recovered.pendingMediaCount === 0) {
+      localHubSyncError = "";
+      localHubOperation = deriveLocalHubProgress(recovered, false);
+    } else {
+      const error = cause as (Error & { code?: string }) | null;
+      localHubSyncError = error instanceof Error
+        ? error.code && !error.message.includes(error.code)
+          ? `${error.message}（${error.code}）`
+          : error.message
+        : "手机 Hub 手动同步失败";
+      localHubOperation = {
+        ...localHubOperation,
+        stage: "error",
+        message: localHubSyncError,
+        updatedAt: Date.now()
+      };
+    }
+  } finally {
+    window.clearInterval(progressTimer);
+  }
+  void reportMobileHealth();
+}
+
+async function handleRemoteHubSwitch(
+  session: ReturnType<typeof useSessionStore>,
+  localHub: ReturnType<typeof useLocalHub>,
+  commandType: string
+) {
+  const toLocal = commandType === "switch-local-hub";
+  localHubSyncError = "";
+  localHubOperation = {
+    stage: toLocal ? "switch_syncing" : "switch_returning",
+    progress: toLocal ? 18 : 24,
+    message: toLocal ? "正在追平最新变更并准备完整性校验" : "正在把活动节点安全交还给电脑 Hub",
+    updatedAt: Date.now()
+  };
+  await reportMobileHealth();
+  try {
+    let current = localHub.status.value || await localHub.refresh();
+    localHubOperation = {
+      stage: "switch_syncing",
+      progress: 32,
+      message: toLocal ? "正在把手机副本追平到电脑 Hub" : "正在把手机端最新变更同步回电脑 Hub",
+      updatedAt: Date.now()
+    };
+    await reportMobileHealth();
+    await localHub.resume();
+    current = await localHub.refresh();
+    if (toLocal) {
+      if (current?.role === "active" && current.state === "stable") return;
+      localHubOperation = {
+        stage: "switch_verifying",
+        progress: 46,
+        message: "正在核对操作链、记录根与原图根",
+        updatedAt: Date.now()
+      };
+      await reportMobileHealth();
+      await session.activateLocalHub();
+    } else {
+      if (current?.role === "standby" && current.state === "stable") return;
+      await session.activateDesktopHub();
+    }
+    localHubSyncError = "";
+    localHubOperation = {
+      stage: "switch_completed",
+      progress: 100,
+      message: toLocal ? "手机 Hub 已成为当前 Hub" : "电脑 Hub 已重新成为当前 Hub",
+      updatedAt: Date.now()
+    };
+    await reportMobileHealth();
+  } catch (cause) {
+    const error = cause as (Error & { code?: string }) | null;
+    localHubSyncError = error instanceof Error
+      ? error.code && !error.message.includes(error.code)
+        ? `${error.message}（${error.code}）`
+        : error.message
+      : "Hub 切换失败";
+    localHubOperation = {
+      stage: "switch_error",
+      progress: 0,
+      message: localHubSyncError,
+      updatedAt: Date.now()
+    };
+    await reportMobileHealth();
+  }
+}
+
+async function refreshLocalHubOperation(localHub: ReturnType<typeof useLocalHub>) {
+  const current = await localHub.refresh();
+  if (!current) return;
+  const progress = deriveLocalHubProgress(current, true);
+  if (progress.stage === "completed") localHubSyncError = "";
+  if (progress.stage === "completed" || localHubOperation.stage !== "error") {
+    localHubOperation = progress;
+  }
+  await reportMobileHealth();
+}
+
+async function reportMobileHealth() {
+  await Promise.all([
+    healthReporter?.report(),
+    controlHealthReporter?.report()
+  ]);
+}
+
+function localHubHeartbeat() {
+  const current = useLocalHub().status.value;
+  if (!current?.configured) return {};
+  const currentProgress = deriveLocalHubProgress(current, false);
+  const switchProgressFresh = localHubOperation.stage.startsWith("switch_") &&
+    Date.now() - localHubOperation.updatedAt < 12_000;
+  const operation = switchProgressFresh
+    ? localHubOperation
+    : currentProgress.stage === "completed"
+      ? currentProgress
+    : localHubOperation.updatedAt
+      ? localHubOperation
+      : currentProgress;
+  return {
+    localHubNodeId: current.localNodeId,
+    localHubStage: operation.stage,
+    localHubProgress: operation.progress,
+    localHubStatus: current.bootstrap?.status || current.role,
+    localHubDocuments: current.documentCount,
+    localHubMediaBytes: current.mediaBytes,
+    localHubMediaTotalBytes: current.mediaTotalBytes,
+    localHubPendingMedia: current.pendingMediaCount,
+    localHubUpdatedAt: operation.updatedAt || Date.now(),
+    localHubEndpoints: current.networkEndpoints || []
+  };
+}
+
+function deriveLocalHubProgress(current: LocalHubStatus, operationActive: boolean) {
+  const updatedAt = Date.now();
+  const bootstrap = current.bootstrap;
+  if (!bootstrap) {
+    return operationActive
+      ? { stage: "syncing_structure", progress: 15, message: "正在重新拉取完整结构化数据", updatedAt }
+      : { stage: "ready_to_resume", progress: 15, message: "结构化数据尚未迁入，可继续恢复", updatedAt };
+  }
+  if (bootstrap.status === "waiting_blobs") {
+    const total = Math.max(0, Number(current.mediaTotalBytes || 0));
+    const received = Math.max(0, Math.min(total, Number(current.mediaBytes || 0)));
+    const ratio = total > 0 ? received / total : current.pendingMediaCount ? 0 : 1;
+    return {
+      stage: operationActive ? "syncing_media" : "paused_media",
+      progress: Math.round(35 + ratio * 50),
+      message: current.pendingMediaCount
+        ? `${operationActive ? "正在迁入" : "待继续迁入"}原图 · 剩余 ${current.pendingMediaCount} 项`
+        : operationActive ? "正在核对原图" : "原图待继续核对",
+      updatedAt
+    };
+  }
+  if (bootstrap.status === "restored") {
+    return operationActive
+      ? { stage: "verifying", progress: 92, message: "正在进行完整性校验", updatedAt }
+      : { stage: "ready_to_verify", progress: 92, message: "原图已迁入，等待最终校验", updatedAt };
+  }
+  if (operationActive) {
+    return { stage: "syncing_changes", progress: 96, message: "正在追平最新变更", updatedAt };
+  }
+  return { stage: "completed", progress: 100, message: "手机 Hub 副本完整", updatedAt };
 }
 
 async function resetAfterArchiveRestore(resetCursor: number) {
@@ -346,12 +607,27 @@ function stopSync() {
 }
 
 function stopSyncTransport() {
+  stopDataSyncTransport();
+  stopControlSyncTransport();
+}
+
+function stopDataSyncTransport() {
   sync?.stop();
   sync = null;
   healthReporter?.stop();
   healthReporter = null;
   syncCursor = 0;
   sseConnected = false;
+}
+
+function stopControlSyncTransport() {
+  controlSync?.stop();
+  controlSync = null;
+  controlHealthReporter?.stop();
+  controlHealthReporter = null;
+  controlSyncCursor = 0;
+  controlSseConnected = false;
+  controlSyncRetrying = false;
 }
 
 function resetData(clearCache: boolean) {
@@ -380,8 +656,8 @@ function resetData(clearCache: boolean) {
   if (clearCache && scope) void clearMobileDataCache(scope);
 }
 
-async function reconnectHub() {
-  stopSyncTransport();
+async function reconnectHub(preserveControlTransport = false) {
+  if (!preserveControlTransport) stopSyncTransport();
   resetData(false);
   await useModuleStore().hydrate(true).catch(() => undefined);
   const restored = await restoreCache();
@@ -389,10 +665,25 @@ async function reconnectHub() {
     if (!restored) syncState.value = "error";
   });
   void preloadGallery().catch(() => undefined);
-  void startSync().catch(() => { syncState.value = "error"; });
+  if (preserveControlTransport) {
+    stopDataSyncTransport();
+    await startSync();
+  } else {
+    void startSync().catch(() => { syncState.value = "error"; });
+  }
 }
 
 window.addEventListener("aetherx:session-invalidated", stopSync);
+window.addEventListener("aetherx:hub-routed", (event) => {
+  const preserveControlTransport = (event as CustomEvent<{ local?: boolean }>).detail?.local === true;
+  void reconnectHub(preserveControlTransport).catch(() => { syncState.value = "error"; });
+});
+window.addEventListener("aetherx:local-data-changed", (event) => {
+  const detail = (event as CustomEvent<{ groups?: string[] }>).detail;
+  const groups = new Set(detail?.groups || []);
+  if (groups.size) void refreshGroups(groups).catch(() => undefined);
+  void refreshConversationPage(true).catch(() => undefined);
+});
 
 async function toggleTodo(todo: Todo) {
   const updated = await useSessionStore().requireApi().updateTodo(todo.id, { completed: !todo.completed });

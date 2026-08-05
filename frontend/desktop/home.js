@@ -15,12 +15,18 @@ const state = {
   conversationId: null,
   pendingApprovals: new Map(),
   connectionStatus: "idle",
+  hubStatus: null,
+  hubStatusError: false,
   auth: null,
   sending: false,
+  conversationLoading: false,
+  conversationError: "",
   testing: false,
   savingImageConfig: false
 };
 const loadedModuleScripts = new Map();
+const conversationCache = new Map();
+let conversationLoadId = 0;
 let reminderComposer = null;
 let reminderEngine = null;
 let journalWriter = null;
@@ -90,6 +96,9 @@ const elements = {
   logoutBtn: document.querySelector("#logoutBtn"),
   statusPill: document.querySelector("#statusPill"),
   statusLabel: document.querySelector("#statusLabel"),
+  hubPill: document.querySelector("#hubPill"),
+  hubLabel: document.querySelector("#hubLabel"),
+  hubStateLabel: document.querySelector("#hubStateLabel"),
   welcome: document.querySelector("#welcome"),
   messageList: document.querySelector("#messageList"),
   conversation: document.querySelector("#conversation"),
@@ -708,6 +717,44 @@ function closeSettings() {
   elements.settingsMask.classList.add("hidden");
 }
 
+function renderHubStatus() {
+  const status = state.hubStatus;
+  if (state.hubStatusError || !status) {
+    elements.hubPill.className = "hub-pill error";
+    elements.hubLabel.textContent = "Hub";
+    elements.hubStateLabel.textContent = "状态未知";
+    elements.hubPill.title = "暂时无法读取当前 Hub 状态";
+    return;
+  }
+
+  const nodes = Array.isArray(status.nodes) ? status.nodes : [];
+  const activeNode = nodes.find((node) => node.id === status.activeNodeId) || null;
+  const platform = String(activeNode?.platform || "").toLowerCase();
+  const mobile = ["android", "ios"].includes(platform) ||
+    String(status.activeNodeId || "").startsWith("android-");
+  const switching = status.state !== "stable";
+  elements.hubPill.className = `hub-pill ${mobile ? "mobile" : "desktop"}${switching ? " switching" : ""}`;
+  elements.hubLabel.textContent = switching
+    ? "Hub 切换中"
+    : mobile
+      ? "手机 Hub"
+      : "电脑 Hub";
+  elements.hubStateLabel.textContent = switching ? "同步校验" : "当前";
+  elements.hubPill.title = switching
+    ? `正在安全切换 Hub · ${status.state}`
+    : `当前活动 Hub：${activeNode?.name || elements.hubLabel.textContent} · 代次 ${Number(status.epoch) || 1}`;
+}
+
+async function refreshHubStatus() {
+  try {
+    state.hubStatus = await window.desktop.getHubStatus();
+    state.hubStatusError = !state.hubStatus;
+  } catch {
+    state.hubStatusError = true;
+  }
+  renderHubStatus();
+}
+
 function syncFontScaleControls(value = window.AetherInterfaceSettings.readFontScale()) {
   const normalized = window.AetherInterfaceSettings.normalizeFontScale(value);
   elements.desktopFontScaleRange.value = String(normalized);
@@ -1229,11 +1276,15 @@ function createChatAvatar(role) {
   return avatar;
 }
 
+let profileRefreshId = 0;
+
 async function refreshProfiles() {
+  const refreshId = ++profileRefreshId;
   const [userProfile, assistantProfile] = await Promise.all([
     window.desktop.getProfile(),
     window.desktop.getAssistantProfile()
   ]);
+  if (refreshId !== profileRefreshId) return;
   state.userProfile = userProfile;
   state.assistantProfile = assistantProfile;
   applyAvatarSurface(elements.brandMark, "assistant");
@@ -1254,6 +1305,14 @@ function renderConversationHistory() {
     button.type = "button";
     button.className = "history-item";
     button.classList.toggle("active", conversation.id === state.conversationId);
+    button.classList.toggle(
+      "loading",
+      conversation.id === state.conversationId && state.conversationLoading
+    );
+    button.setAttribute(
+      "aria-busy",
+      String(conversation.id === state.conversationId && state.conversationLoading)
+    );
     const title = document.createElement("strong");
     title.textContent = conversation.title || "新对话";
     const time = document.createElement("small");
@@ -1282,18 +1341,39 @@ async function refreshConversationHistory() {
 
 async function loadConversation(id, options = {}) {
   if (state.sending || (!options.force && id === state.conversationId)) return;
-  const result = await window.desktop.getConversation(id);
+  const loadId = ++conversationLoadId;
+  const cachedMessages = conversationCache.get(id);
   state.conversationId = id;
-  state.messages = result.displayMessages || [];
+  state.conversationLoading = true;
+  state.conversationError = "";
+  state.messages = cachedMessages || [];
   state.pendingApprovals.clear();
   renderMessages();
-  showChatWorkspace();
+  if (!options.fromSync) showChatWorkspace();
   renderConversationHistory();
+  try {
+    const result = await window.desktop.getConversation(id);
+    if (loadId !== conversationLoadId || state.conversationId !== id) return;
+    const messages = result.displayMessages || [];
+    conversationCache.set(id, messages);
+    state.messages = messages;
+  } catch (error) {
+    if (loadId !== conversationLoadId || state.conversationId !== id) return;
+    state.conversationError = error.message || "这段对话暂时没有加载成功。";
+  } finally {
+    if (loadId !== conversationLoadId || state.conversationId !== id) return;
+    state.conversationLoading = false;
+    renderMessages();
+    renderConversationHistory();
+  }
 }
 
 async function startNewConversation() {
   if (state.sending) return;
+  conversationLoadId += 1;
   state.conversationId = null;
+  state.conversationLoading = false;
+  state.conversationError = "";
   state.messages = [];
   state.pendingApprovals.clear();
   renderMessages();
@@ -1548,8 +1628,23 @@ function renderMemoryActivity(row, message) {
 }
 
 function renderMessages() {
-  elements.welcome.classList.toggle("hidden", state.messages.length > 0);
+  elements.welcome.classList.toggle(
+    "hidden",
+    state.messages.length > 0 || state.conversationLoading || Boolean(state.conversationError)
+  );
   elements.messageList.replaceChildren();
+
+  if (state.conversationLoading && !state.messages.length) {
+    const loading = document.createElement("div");
+    loading.className = "conversation-loading";
+    loading.innerHTML = "<i></i><i></i><i></i><span>正在打开这段对话</span>";
+    elements.messageList.append(loading);
+  } else if (state.conversationError && !state.messages.length) {
+    const error = document.createElement("div");
+    error.className = "conversation-load-error";
+    error.textContent = state.conversationError;
+    elements.messageList.append(error);
+  }
 
   state.messages.forEach((message) => {
     const row = document.createElement("div");
@@ -1688,6 +1783,7 @@ async function saveImageConfig() {
 function applyAgentResult(result) {
   state.conversationId = result.conversation.id;
   state.messages = result.displayMessages || [];
+  conversationCache.set(state.conversationId, state.messages);
   renderMessages();
 }
 
@@ -1705,7 +1801,7 @@ function requestHubApproval(result) {
 
 async function sendMessage() {
   const content = elements.messageInput.value.trim();
-  if (!content || state.sending) return;
+  if (!content || state.sending || state.conversationLoading) return;
   if (!state.config.hasApiKey) {
     openSettings();
     showTestResult("error", "请先完成 AI 配置并测试连接");
@@ -1941,26 +2037,68 @@ window.addEventListener("aether:font-scale-changed", (event) => {
   syncFontScaleControls(event.detail?.value);
 });
 
+async function refreshCoreHubData(options = {}) {
+  const [configResult, conversationsResult] = await Promise.allSettled([
+    window.desktop.getAIConfig(),
+    window.desktop.listConversations()
+  ]);
+  if (configResult.status === "fulfilled") {
+    state.config = configResult.value;
+    state.draft = { ...state.config, apiKey: "" };
+    if (options.fromRouting === true && state.connectionStatus === "error") {
+      state.connectionStatus = "idle";
+    }
+    renderHeader();
+  } else {
+    console.warn("Unable to refresh AI configuration:", configResult.reason?.message);
+  }
+  if (conversationsResult.status !== "fulfilled") {
+    console.warn("Unable to refresh conversation history:", conversationsResult.reason?.message);
+    return;
+  }
+
+  state.conversations = conversationsResult.value;
+  renderConversationHistory();
+  const currentExists = state.conversations.some(
+    (conversation) => conversation.id === state.conversationId
+  );
+  const targetId = currentExists
+    ? state.conversationId
+    : state.conversations[0]?.id || null;
+  if (targetId) {
+    await loadConversation(targetId, {
+      force: true,
+      fromSync: options.fromRouting === true
+    });
+    return;
+  }
+  state.conversationId = null;
+  state.messages = [];
+  renderMessages();
+}
+
 async function initialize() {
   state.auth = await window.desktop.getCurrentAuth();
-  await window.XuanModules.hydrate(window.desktop);
-  state.config = await window.desktop.getAIConfig();
-  state.imageConfig = window.XuanModules.isEnabled("image-generation")
-    ? await window.desktop.getAIImageConfig()
-    : null;
   renderAccount();
-  await refreshSystemPrompt();
-  await refreshProfiles();
-  state.draft = { ...state.config, apiKey: "" };
+  await refreshHubStatus();
+  try {
+    await window.XuanModules.hydrate(window.desktop);
+  } catch (error) {
+    console.warn("Unable to hydrate Hub modules:", error.message);
+  }
+  await refreshCoreHubData();
+  const optionalResults = await Promise.allSettled([
+    refreshSystemPrompt(),
+    refreshProfiles(),
+    window.XuanModules.isEnabled("image-generation")
+      ? window.desktop.getAIImageConfig()
+      : Promise.resolve(null)
+  ]);
+  if (optionalResults[2].status === "fulfilled") {
+    state.imageConfig = optionalResults[2].value;
+  }
   state.imageDraft = { ...(state.imageConfig || {}), apiKey: "" };
   await syncModuleState();
-  renderHeader();
-  await refreshConversationHistory();
-  if (state.conversations.length) {
-    await loadConversation(state.conversations[0].id);
-  } else {
-    renderMessages();
-  }
 }
 
 function renderAccount() {
@@ -2053,12 +2191,42 @@ async function flushRemoteRefresh() {
 }
 
 const disposeRemoteSync = window.desktop.onSyncChanges(queueRemoteRefresh);
+let routedHubRefreshPromise = null;
+
+function refreshRoutedHubData() {
+  if (routedHubRefreshPromise) return routedHubRefreshPromise;
+  routedHubRefreshPromise = (async () => {
+    await refreshHubStatus();
+    await refreshCoreHubData({ fromRouting: true });
+    await Promise.allSettled([
+      refreshProfiles(),
+      refreshSystemPrompt()
+    ]);
+  })().finally(() => {
+    routedHubRefreshPromise = null;
+  });
+  return routedHubRefreshPromise;
+}
+
+const disposeHubRouting = window.desktop.onHubRouted(() => {
+  void refreshRoutedHubData();
+});
+const disposeHubClusterChanged = window.desktop.onHubClusterChanged((status) => {
+  if (!status) return;
+  state.hubStatus = status;
+  state.hubStatusError = false;
+  renderHubStatus();
+});
+const hubStatusTimer = window.setInterval(() => void refreshHubStatus(), 12_000);
 
 window.addEventListener("xuan:modules-changed", () => void syncModuleState());
 window.addEventListener("storage", () => void syncModuleState());
 window.addEventListener("beforeunload", () => {
   disposeRemoteSync?.();
+  disposeHubRouting?.();
+  disposeHubClusterChanged?.();
   clearTimeout(remoteSyncTimer);
+  window.clearInterval(hubStatusTimer);
   titlebarClock.stop();
   reminderEngine?.stop();
   journalWriter?.stop();

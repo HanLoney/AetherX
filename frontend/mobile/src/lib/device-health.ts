@@ -11,6 +11,16 @@ export interface MobileHealthSnapshot {
   syncCursor: number;
   sseConnected: boolean;
   lastError?: string;
+  localHubNodeId?: string;
+  localHubStage?: string;
+  localHubProgress?: number;
+  localHubStatus?: string;
+  localHubDocuments?: number;
+  localHubMediaBytes?: number;
+  localHubMediaTotalBytes?: number;
+  localHubPendingMedia?: number;
+  localHubUpdatedAt?: number;
+  localHubEndpoints?: DeviceHeartbeatInput["localHubEndpoints"];
 }
 
 export class MobileHealthReporter {

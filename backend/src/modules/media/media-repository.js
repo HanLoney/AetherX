@@ -5,6 +5,18 @@ class MediaRepository {
     this.database = database;
   }
 
+  transaction(action) {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = action();
+      this.database.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   findByHash(userId, contentHash) {
     return mapAsset(
       this.database
@@ -48,6 +60,41 @@ class MediaRepository {
         createdAt
       );
     return this.find(userId, id);
+  }
+
+  createReplicated(userId, input) {
+    this.database.prepare(
+      `INSERT INTO media_assets(
+         id, user_id, mime_type, file_name, byte_size, content_hash,
+         preview_file_name, preview_byte_size, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, '', 0, ?)`
+    ).run(
+      input.id,
+      userId,
+      input.mimeType,
+      input.fileName,
+      input.byteSize,
+      input.contentHash,
+      input.createdAt
+    );
+    return this.find(userId, input.id);
+  }
+
+  listManifest(userId, cursor, limit) {
+    return this.database.prepare(
+      `SELECT id, user_id, mime_type, file_name, byte_size, content_hash,
+              preview_file_name, preview_byte_size, created_at
+       FROM media_assets
+       WHERE user_id = ?
+         AND (created_at > ? OR (created_at = ? AND id > ?))
+       ORDER BY created_at, id LIMIT ?`
+    ).all(
+      userId,
+      cursor.createdAt,
+      cursor.createdAt,
+      cursor.id,
+      limit
+    ).map(mapAsset);
   }
 
   legacyConversationImages() {

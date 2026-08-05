@@ -18,6 +18,18 @@
     return `aetherx://pair?${query.toString()}`;
   }
 
+  function buildHubPairingCode(session) {
+    if (!session?.qrPayload) throw new Error("缺少手机 Hub 配对信息。");
+    const bytes = new TextEncoder().encode(JSON.stringify(session.qrPayload));
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    const payload = btoa(binary)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    return `aetherx://hub-pair?payload=${payload}`;
+  }
+
   function pairingView(session, now = Date.now()) {
     if (!session) {
       return { state: "idle", title: "尚未生成连接码", detail: "", terminal: true };
@@ -96,6 +108,7 @@
       this.clearTimeout = options.clearTimeout || global.clearTimeout.bind(global);
       this.confirm = options.confirm || global.confirm.bind(global);
       this.session = null;
+      this.pairingKind = "client";
       this.pairingCode = "";
       this.qrCodeDataUrl = "";
       this.pollTimer = null;
@@ -116,13 +129,18 @@
         pairingEmpty: find("pairingEmpty"),
         pairingActive: find("pairingActive"),
         generate: find("generatePairingBtn"),
-        regenerate: find("regeneratePairingBtn"),
+        generateHub: find("generateHubPairingBtn"),
+        modeClient: find("clientPairingModeBtn"),
+        modeHub: find("hubPairingModeBtn"),
         statusDot: find("pairingStatusDot"),
         statusTitle: find("pairingStatusTitle"),
         statusDetail: find("pairingStatusDetail"),
         countdown: find("pairingCountdown"),
         qrCode: find("pairingQrCode"),
         qrPlaceholder: find("pairingQrPlaceholder"),
+        shareTitle: find("pairingShareTitle"),
+        shareDescription: find("pairingShareDescription"),
+        codeLabel: find("pairingCodeLabel"),
         code: find("pairingCode"),
         copy: find("copyPairingCodeBtn"),
         request: find("pairingRequest"),
@@ -142,7 +160,9 @@
         if (event.target === this.root) this.close();
       });
       this.elements.generate.addEventListener("click", () => this.generate());
-      this.elements.regenerate.addEventListener("click", () => this.generate());
+      this.elements.generateHub?.addEventListener("click", () => this.generateHub());
+      this.elements.modeClient.addEventListener("click", () => this.generate());
+      this.elements.modeHub.addEventListener("click", () => this.generateHub());
       this.elements.copy.addEventListener("click", () => this.copyCode());
       this.elements.approve.addEventListener("click", () => this.approve());
       this.elements.refresh.addEventListener("click", () => this.refreshDevices());
@@ -177,8 +197,10 @@
     }
 
     async generate() {
+      this.pairingKind = "client";
       this.setBusy(this.elements.generate, true, "正在生成…");
-      this.setBusy(this.elements.regenerate, true, "正在生成…");
+      this.setBusy(this.elements.modeClient, true, "正在生成…");
+      this.elements.modeHub.disabled = true;
       this.hideNotice();
       this.stopTimers();
       try {
@@ -194,8 +216,40 @@
       } catch (error) {
         this.showNotice(error.message || "暂时无法生成连接码。", "error");
       } finally {
-        this.setBusy(this.elements.generate, false, "生成连接码");
-        this.setBusy(this.elements.regenerate, false, "换一个连接码");
+        this.setBusy(this.elements.generate, false, "生成手机客户端连接码");
+        this.setBusy(this.elements.modeClient, false, "手机客户端连接码");
+        this.elements.modeHub.disabled = false;
+      }
+    }
+
+    async generateHub() {
+      this.pairingKind = "hub";
+      this.setBusy(this.elements.generateHub, true, "正在建立副本通道…");
+      this.setBusy(this.elements.modeHub, true, "正在生成…");
+      this.elements.modeClient.disabled = true;
+      this.hideNotice();
+      this.stopTimers();
+      try {
+        const endpoints = await this.api.getHubPairingEndpoints();
+        if (!Array.isArray(endpoints) || !endpoints.length) {
+          throw new Error("没有找到手机可访问的 Hub 地址，请先在启动器开启 AetherX Anywhere。");
+        }
+        const session = await this.api.createHubPairingSession({
+          ttlSeconds: PAIRING_TTL_SECONDS,
+          endpoints
+        });
+        this.session = session;
+        this.pairingCode = buildHubPairingCode(session);
+        this.qrCodeDataUrl = "";
+        this.renderPairing();
+        await this.generateQrCode();
+        this.startTimers();
+      } catch (error) {
+        this.showNotice(error.message || "暂时无法生成手机 Hub 配对码。", "error");
+      } finally {
+        this.setBusy(this.elements.generateHub, false, "生成备用 Hub 配对码");
+        this.setBusy(this.elements.modeHub, false, "备用 Hub 配对码");
+        this.elements.modeClient.disabled = false;
       }
     }
 
@@ -260,7 +314,9 @@
         const previousStatus = this.session.status;
         this.session = {
           ...this.session,
-          ...(await this.api.getPairingSession(this.session.id))
+          ...(await (this.pairingKind === "hub"
+            ? this.api.getHubPairingSession(this.session.id)
+            : this.api.getPairingSession(this.session.id)))
         };
         this.renderPairing();
         if (this.session.status === "redeemed" && previousStatus !== "redeemed") {
@@ -301,7 +357,9 @@
       try {
         this.session = {
           ...this.session,
-          ...(await this.api.approvePairingSession(this.session.id))
+          ...(await (this.pairingKind === "hub"
+            ? this.api.approveHubPairingSession(this.session.id)
+            : this.api.approvePairingSession(this.session.id)))
         };
         this.renderPairing();
         this.showNotice("已经批准，手机正在完成连接。", "success");
@@ -329,8 +387,27 @@
       this.elements.qrCode.classList.toggle("hidden", !this.qrCodeDataUrl);
       this.elements.qrPlaceholder.classList.toggle("hidden", Boolean(this.qrCodeDataUrl));
       this.elements.request.classList.toggle("hidden", this.session.status !== "pending");
-      this.elements.deviceName.textContent = this.session.deviceName || "未命名设备";
+      this.elements.deviceName.textContent = this.session.nodeName || this.session.deviceName || "未命名设备";
       this.elements.approve.disabled = this.session.status !== "pending";
+      const isHubPairing = this.pairingKind === "hub";
+      this.elements.modeClient.classList.toggle("active", !isHubPairing);
+      this.elements.modeHub.classList.toggle("active", isHubPairing);
+      this.elements.modeClient.setAttribute("aria-pressed", String(!isHubPairing));
+      this.elements.modeHub.setAttribute("aria-pressed", String(isHubPairing));
+      this.elements.shareTitle.textContent = isHubPairing
+        ? "把完整数据副本配对到手机"
+        : "用手机扫码连接";
+      this.elements.shareDescription.textContent = isHubPairing
+        ? "手机端打开“我的 > 手机 Local Hub”并扫描。这个码不能用于普通的“连接电脑”。"
+        : "手机端打开“连接电脑”并扫描。这个码只用于手机客户端登录与同步。";
+      this.elements.codeLabel.textContent = isHubPairing
+        ? "备用 Hub 配对码（aetherx://hub-pair）"
+        : "手机客户端连接码（aetherx://pair）";
+      if (view.state === "waiting") {
+        this.elements.statusDetail.textContent = isHubPairing
+          ? "把 Hub 配对码粘贴到手机 Local Hub 面板"
+          : "把客户端连接码粘贴到手机的连接电脑面板";
+      }
     }
 
     async refreshDevices() {
@@ -446,6 +523,7 @@
     module.exports = {
       AetherDeviceManager,
       buildPairingCode,
+      buildHubPairingCode,
       pairingView,
       formatCountdown
     };

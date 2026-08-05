@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { canonicalStringify } = require("../replication/operation-codec");
 
 class XuanMoodRepository {
   constructor(database) {
@@ -25,7 +26,7 @@ class XuanMoodRepository {
         input.emotionalTone || "",
         input.effectOnXuan || "",
         input.intensity || "medium",
-        JSON.stringify(input.rawPayload || {}),
+        canonicalStringify(input.rawPayload || {}),
         now
       );
     return this.findEvent(userId, id);
@@ -75,7 +76,7 @@ class XuanMoodRepository {
            state_json = excluded.state_json,
            updated_at = excluded.updated_at`
       )
-      .run(userId, JSON.stringify(state || {}), now);
+      .run(userId, canonicalStringify(state || {}), now);
     return this.getState(userId);
   }
 
@@ -110,7 +111,7 @@ class XuanMoodRepository {
         input.detail || "",
         input.focus || "",
         input.tone || "quiet",
-        JSON.stringify(input.basedOnEventIds || []),
+        canonicalStringify(input.basedOnEventIds || []),
         input.expiresAt,
         now
       );

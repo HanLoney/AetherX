@@ -15,6 +15,7 @@
 - [开发者指南](development.md)：环境、启动方式、测试矩阵和数据库迁移规则；
 - [API 使用说明](api.md)：认证、响应格式、请求示例和 OpenAPI 入口；
 - [OpenAPI 契约](../backend/openapi.yaml)：机器可读的接口定义；
+- [Hub 复制 Operation v1 Schema](protocol/replication-operation-v1.schema.json)：双 Hub 操作日志的机器可读契约；
 - [后端说明](../backend/README.md)；
 - [桌面端说明](../frontend/desktop/README.md)；
 - [Android 客户端说明](../frontend/mobile/README.md)。
@@ -22,10 +23,13 @@
 ## 架构与决策
 
 - [家庭节点与多端同步架构](architecture/home-hub-sync.md)；
+- [双 Hub 复制与安全切换实现方案](architecture/dual-hub-replication.md)；
 - [工具系统架构](architecture/tool-system.md)；
+- [模型上下文与富数据隔离](architecture/model-context-budget.md)；
 - [ADR-0001：内部 Tool Registry 与 MCP Adapter](adr/0001-internal-tools-mcp-adapter.md)；
 - [ADR-0002：家庭节点单写与增量同步](adr/0002-home-hub-single-writer-sync.md)；
 - [ADR-0003：由后端统一托管 Agent Hub](adr/0003-server-owned-agent-hub.md)；
+- [ADR-0004：双 Hub 采用双节点单活动复制](adr/0004-dual-hub-single-active-replication.md)；
 - [Todo 工具契约](modules/todo-tools.md)；
 - [模块设置](modules/module-settings.md)；
 - [聊天 Markdown 约定](ui/chat-markdown.md)。

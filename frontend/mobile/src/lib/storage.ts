@@ -12,10 +12,26 @@ const SESSION_KEY = "aetherx.session";
 const SERVER_KEY = "aetherx.server";
 const CURSOR_KEY = "aetherx.sync.cursor";
 const INSTALLATION_KEY = "aetherx.mobile.installation";
+const HUB_ROUTING_KEY = "aetherx.hub.routing";
 
 export interface StoredSession {
   token: string;
   user: { id: string; username: string; displayName: string };
+}
+
+export interface StoredHubNode {
+  nodeId: string;
+  serverUrl: string;
+  token: string;
+  lastSeenAt: number;
+}
+
+export interface StoredHubRouting {
+  spaceId: string;
+  activeNodeId: string;
+  localNodeId: string;
+  epoch: number;
+  nodes: StoredHubNode[];
 }
 
 export async function saveServerUrl(serverUrl: string) {
@@ -51,6 +67,37 @@ export async function clearSession() {
     await SecureSession.remove({ key: SESSION_KEY });
   } else {
     sessionStorage.removeItem(SESSION_KEY);
+  }
+}
+
+export async function saveHubRouting(routing: StoredHubRouting) {
+  const value = JSON.stringify(routing);
+  if (Capacitor.getPlatform() === "android") {
+    await SecureSession.set({ key: HUB_ROUTING_KEY, value });
+  } else {
+    sessionStorage.setItem(HUB_ROUTING_KEY, value);
+  }
+}
+
+export async function loadHubRouting(): Promise<StoredHubRouting | null> {
+  try {
+    const value = Capacitor.getPlatform() === "android"
+      ? (await SecureSession.get({ key: HUB_ROUTING_KEY })).value
+      : sessionStorage.getItem(HUB_ROUTING_KEY);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as StoredHubRouting;
+    if (!parsed.spaceId || !Array.isArray(parsed.nodes)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearHubRouting() {
+  if (Capacitor.getPlatform() === "android") {
+    await SecureSession.remove({ key: HUB_ROUTING_KEY });
+  } else {
+    sessionStorage.removeItem(HUB_ROUTING_KEY);
   }
 }
 

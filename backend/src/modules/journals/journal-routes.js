@@ -16,11 +16,13 @@ function registerJournalRoutes(router, service) {
     }),
     { module: "autonomous-journal" }
   );
-  router.add("PUT", "/api/v1/assistant/journals", ({ userId, body }) => ({
-    data: service.save(userId, body)
-  }), { module: "autonomous-journal" });
-  router.add("DELETE", "/api/v1/assistant/journals/:id", ({ userId, params }) => {
-    service.delete(userId, params.id);
+  router.add("PUT", "/api/v1/assistant/journals", ({ userId, body, requestId }) => {
+    const result = service.saveWithRequestId(userId, body, requestId);
+    return { status: result.status, data: result.result };
+  }, { module: "autonomous-journal" });
+  router.add("DELETE", "/api/v1/assistant/journals/:id", ({ userId, params, requestId }) => {
+    const result = service.deleteWithRequestId(userId, params.id, requestId);
+    if (result.status !== 204) return { status: result.status, data: result.result };
     return { status: 204 };
   }, { module: "autonomous-journal" });
 }

@@ -53,6 +53,9 @@ Copy-Item .env.example .env
 | `AETHERX_REGISTRATION_SECRET` | 空 | 新账号注册口令 |
 | `AETHERX_SESSION_TTL_DAYS` | `30` | 登录会话有效天数，最小为 1 |
 | `AETHERX_CORS_ORIGIN` | `*` | 允许的浏览器 Origin |
+| `AETHERX_REPLICATION_SCHEDULER_ENABLED` | `true` | 是否启动备用 Hub 常驻增量复制循环 |
+| `AETHERX_REPLICATION_POLL_INTERVAL_MS` | `5000` | 健康状态下的 Operation 拉取间隔，最小 250 ms |
+| `AETHERX_REPLICATION_MAX_BACKOFF_MS` | `300000` | 连接失败后的最大指数退避时间 |
 
 旧版 `XUANAI_HOST`、`XUANAI_PORT`、`XUANAI_DATA_DIR`、`XUANAI_MASTER_KEY` 和 `XUANAI_CORS_ORIGIN` 仍兼容，但新部署应使用 `AETHERX_*`。
 
@@ -80,7 +83,7 @@ Authorization: Bearer <token>
 
 ## AI 凭证
 
-AI Provider 和图像 Provider 的 API Key 由 Hub 加密保存。客户端读取配置时不会获得明文 Key。手机端只调用 Hub 的 AI API，不保存 Provider Key。
+AI Provider 和图像 Provider 的 API Key 由 Hub 使用本机主密钥加密保存。客户端读取配置时不会获得明文 Key。双 Hub 复制配置时，Key 只会进入由 Space Key 保护的 AES-256-GCM 复制信封；目标 Hub 解封后会使用自己的本机主密钥重新加密，复制日志不会保存明文或源 Hub 的本机密文。手机端作为普通客户端时只调用 Hub 的 AI API，不保存 Provider Key。
 
 生产环境应：
 
@@ -109,6 +112,8 @@ Hub 支持：
 - `sync_changes.seq` 增量游标；
 - SSE 在线变化通知；
 - 断线后的增量补拉。
+
+双 Hub 模式另外使用彼此独立的节点身份与 Peer HMAC，不复用普通手机客户端令牌。完成首次 Bootstrap 后，备用 Hub 会常驻拉取连续 Operation，并按内容 SHA-256 断点续传缺失原图；媒体只有通过整文件校验后才会进入正式目录。当前已复制待办、用户资料、偏好、钱包账户与流水、会话展示流和模型上下文流、长期记忆、记忆证据、记忆配置、AI 人格画像、人格成长事件、共同记忆、手记、心情事件、生命状态与展示内容、纪念册和梦境及其来源关系、提示词与版本、模块开关、全局工具授权，以及普通/图像 Provider 配置。`POST /api/v1/cluster/switch/preflight` 可以只读检查双方数据库、凭证、Operation、结构化数据和原图；`switch/prepare` 会锁住双方业务写入并完成最后同步，随后由 `switch/commit` 提升 epoch、切换活动 Hub，或在提交前由 `switch/abort` 安全恢复。Hub 重启后会通过持久化恢复服务继续 `committing_switch`，或在更早阶段安全中止；对端不可达时继续保持只读。客户端命中备用 Hub 时可调用 `cluster/session-handoff` 获取活动 Hub 的本地会话，不需要跨节点复制登录会话。Android Local Hub 已使用原生 SQLite、Keystore 与 Capacitor Bridge 承载结构化副本、连续 Operation、完整性证明、媒体 Blob 和 Provider 凭证，并实现本地 Agent、模块化工具、授权续跑、图片生成、记忆与心情后处理，以及手机主动计划切换。手机生成的媒体可通过 Peer 上传端点反向分块传回备用电脑 Hub。强制接管、分叉恢复、媒体删除墓碑和 Android 离线完整存档仍未开放。详细边界见[双 Hub 复制实现文档](../docs/architecture/dual-hub-replication.md)。
 
 同步只记录实体变化，不复制活跃数据库文件，也不会在 SSE 中传输完整私人内容。详见[家庭节点与多端同步架构](../docs/architecture/home-hub-sync.md)。
 

@@ -7,6 +7,29 @@
   });
   const stringField = (description) => ({ type: "string", description });
 
+  function projectJournalResult(result) {
+    if (!result?.ok || !result.data) return result;
+    const journals = (Array.isArray(result.data) ? result.data : [result.data])
+      .slice(0, 30)
+      .map((journal) => ({
+        id: journal.id,
+        type: journal.type,
+        title: journal.title,
+        mood: journal.mood,
+        periodKey: journal.periodKey,
+        sourceFrom: journal.sourceFrom,
+        sourceTo: journal.sourceTo,
+        sourceMessageCount: journal.sourceMessageCount,
+        createdAt: journal.createdAt,
+        updatedAt: journal.updatedAt,
+        excerpt: global.XuanModelContext?.sanitizeText(journal.content || "", 800) || ""
+      }));
+    return {
+      ...result,
+      data: Array.isArray(result.data) ? journals : journals[0]
+    };
+  }
+
   async function resolveJournalId(id) {
     const value = String(id || "").trim();
     if (!value) throw new Error("手记 ID 不能为空。");
@@ -35,6 +58,7 @@
       description:
         "查看你自己写过的日记和周记。当用户提到你的日记、过去的感受，或你需要回顾自己写过的内容时主动使用。",
       risk: "read",
+      projectResult: projectJournalResult,
       inputSchema: objectSchema({
         q: stringField("可选的相关主题、人物、事件或关键词"),
         type: {
@@ -73,6 +97,7 @@
       description:
         "当你真心想记录一段值得留下的经历、感受、反思或成长时，自主写一篇日记或周记。不要为了展示能力而频繁调用。",
       risk: "write",
+      projectResult: projectJournalResult,
       inputSchema: objectSchema(
         {
           type: {

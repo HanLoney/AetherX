@@ -8,19 +8,27 @@ export interface SyncConnectionStatus {
   state: "connecting" | "online" | "retrying" | "stopped";
 }
 type StatusHandler = (status: SyncConnectionStatus) => void;
+type CommandHandler = (command: Record<string, unknown>) => void | Promise<void>;
+export interface SyncCoordinatorOptions {
+  controlOnly?: boolean;
+}
 
 export class SyncCoordinator {
   private controller: AbortController | null = null;
+  private commandPollTimer: ReturnType<typeof setInterval> | null = null;
   private cursor = 0;
   private retryAttempt = 0;
   private running = false;
+  private handledCommandIds = new Set<string>();
 
   constructor(
     private readonly api: AetherApi,
     private readonly onChanges: ChangeHandler,
     private readonly cursorScope: string,
     private readonly onStatus: StatusHandler = () => undefined,
-    private readonly clientId = ""
+    private readonly clientId = "",
+    private readonly onCommand: CommandHandler = () => undefined,
+    private readonly options: SyncCoordinatorOptions = {}
   ) {}
 
   async start() {
@@ -28,7 +36,12 @@ export class SyncCoordinator {
     this.running = true;
     this.cursor = await loadSyncCursor(this.cursorScope);
     this.notify(false, "connecting");
-    try { await this.catchUp(); } catch { /* 长连接重试前会再次补拉 */ }
+    if (!this.options.controlOnly) {
+      try { await this.catchUp(); } catch { /* 长连接重试前会再次补拉 */ }
+    } else {
+      void this.pollCommands();
+      this.commandPollTimer = setInterval(() => void this.pollCommands(), 3_000);
+    }
     void this.connect();
   }
 
@@ -36,6 +49,8 @@ export class SyncCoordinator {
     this.running = false;
     this.controller?.abort();
     this.controller = null;
+    if (this.commandPollTimer) clearInterval(this.commandPollTimer);
+    this.commandPollTimer = null;
     this.notify(false, "stopped");
   }
 
@@ -57,6 +72,7 @@ export class SyncCoordinator {
       try {
         const query = new URLSearchParams({ after: String(this.cursor) });
         if (this.clientId) query.set("client_id", this.clientId);
+        if (this.options.controlOnly) query.set("control_only", "1");
         const response = await fetch(`${this.api.serverUrl}/api/v1/sync/events?${query}`, {
           headers: { Authorization: `Bearer ${this.api.accessToken}` },
           signal: this.controller.signal
@@ -69,6 +85,20 @@ export class SyncCoordinator {
         this.retryAttempt = 0;
         this.notify(true, "online");
         await parseEventStream(response.body, async (event) => {
+          if (event.event === "ready" && this.options.controlOnly) {
+            const ready = JSON.parse(event.data) as { cursor?: number; latestSequence?: number };
+            const cursor = Number(ready.cursor ?? ready.latestSequence ?? this.cursor);
+            if (Number.isSafeInteger(cursor) && cursor >= 0) {
+              this.cursor = cursor;
+              await saveSyncCursor(this.cursorScope, this.cursor);
+              this.notify(true, "online");
+            }
+            return;
+          }
+          if (event.event === "hub-command") {
+            await this.deliverCommand(JSON.parse(event.data) as Record<string, unknown>);
+            return;
+          }
           if (event.event !== "change") return;
           const change = JSON.parse(event.data) as SyncChange;
           if (change.seq <= this.cursor) return;
@@ -85,12 +115,36 @@ export class SyncCoordinator {
       const delay = Math.min(30_000, 1_000 * 2 ** this.retryAttempt) + Math.floor(Math.random() * 400);
       this.retryAttempt += 1;
       await wait(delay);
-      try { await this.catchUp(); } catch { /* 下一轮继续重试 */ }
+      if (!this.options.controlOnly) {
+        try { await this.catchUp(); } catch { /* 下一轮继续重试 */ }
+      }
     }
   }
 
   private notify(connected: boolean, state: SyncConnectionStatus["state"]) {
     this.onStatus({ connected, cursor: this.cursor, state });
+  }
+
+  private async pollCommands() {
+    if (!this.running || !this.options.controlOnly || !this.clientId) return;
+    try {
+      const result = await this.api.syncCommands(this.clientId);
+      for (const command of result.commands || []) await this.deliverCommand(command);
+    } catch {
+      // SSE 仍会继续重连；轮询只是代理不支持流式响应时的控制兜底。
+    }
+  }
+
+  private async deliverCommand(command: Record<string, unknown>) {
+    const commandId = String(command.commandId || "");
+    if (commandId && this.handledCommandIds.has(commandId)) return;
+    if (commandId) {
+      this.handledCommandIds.add(commandId);
+      if (this.handledCommandIds.size > 100) {
+        this.handledCommandIds.delete(this.handledCommandIds.values().next().value || "");
+      }
+    }
+    await this.onCommand(command);
   }
 }
 

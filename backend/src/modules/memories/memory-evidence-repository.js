@@ -17,6 +17,7 @@ class MemoryEvidenceRepository {
     const conversationId = String(input.conversationId || "").slice(0, 100);
     const evidenceHash =
       input.evidenceHash || this.hash(conversationId, evidence);
+    const id = randomUUID();
     this.database
       .prepare(`
         INSERT OR IGNORE INTO memory_evidence(
@@ -25,7 +26,7 @@ class MemoryEvidenceRepository {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
-        randomUUID(),
+        id,
         userId,
         memoryId,
         conversationId,
@@ -34,7 +35,12 @@ class MemoryEvidenceRepository {
         clamp(input.confidence),
         Date.now()
       );
-    return { evidence, evidenceHash };
+    return mapEvidence(
+      this.database.prepare(
+        `SELECT * FROM memory_evidence
+         WHERE user_id = ? AND memory_id = ? AND evidence_hash = ?`
+      ).get(userId, memoryId, evidenceHash)
+    );
   }
 
   listByHash(userId, evidenceHash) {

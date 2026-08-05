@@ -54,6 +54,7 @@ Android 客户端 ──┘                         │
 Hub 是业务数据的唯一写入者，也是账号、记忆、工具调用和多端同步的权威来源。客户端不会直接打开数据库，更不会依赖网盘或共享目录同步正在运行的 SQLite 文件。
 
 - [家庭节点与多端同步架构](docs/architecture/home-hub-sync.md)
+- [双 Hub 复制与安全切换实现方案](docs/architecture/dual-hub-replication.md)
 - [工具系统与安全边界](docs/architecture/tool-system.md)
 - [服务端 Agent Hub 决策记录](docs/adr/0003-server-owned-agent-hub.md)
 

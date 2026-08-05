@@ -4,6 +4,11 @@ function registerSyncRoutes(router, service, eventBroker, deviceService) {
   router.add("GET", "/api/v1/sync/changes", ({ userId, query }) => ({
     data: service.listChanges(userId, query)
   }));
+  router.add("GET", "/api/v1/sync/commands", ({ userId, query }) => ({
+    data: {
+      commands: eventBroker.consumePending(userId, query.client_id || "")
+    }
+  }));
   router.add(
     "GET",
     "/api/v1/sync/events",
@@ -15,6 +20,7 @@ function registerSyncRoutes(router, service, eventBroker, deviceService) {
         userId,
         after,
         clientId: query.client_id || "",
+        controlOnly: query.control_only === "1",
         onConnectionChange: (connected, cursor) =>
           deviceService?.setSseConnection(userId, query.client_id, connected, cursor)
       });

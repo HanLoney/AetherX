@@ -94,3 +94,9 @@ test("AI profile loads core content independently and paginates gallery images",
   assert.match(javascript, /GALLERY_PAGE_SIZE\s*=\s*6/);
   assert.doesNotMatch(javascript, /listAssistantGallery\(\{ limit: 120 \}\)/);
 });
+
+test("background profile refresh preserves the current scroll position", () => {
+  assert.match(javascript, /function setAssistantView\(view, \{ resetScroll = true \} = \{\}\)/);
+  assert.match(javascript, /if \(resetScroll\) window\.scrollTo\(\{ top: 0, behavior: "smooth" \}\)/);
+  assert.match(javascript, /setAssistantView\(assistantView, \{ resetScroll: false \}\)/);
+});

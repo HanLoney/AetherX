@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const {
@@ -13,6 +14,15 @@ test("only loopback server URLs start the bundled desktop hub", () => {
   assert.equal(isLoopbackHubUrl("http://localhost:4318"), true);
   assert.equal(isLoopbackHubUrl("https://api.aetherx.tech"), false);
   assert.equal(isLoopbackHubUrl("not-a-url"), false);
+});
+
+test("desktop Hub startup is independent from the currently routed client Hub", () => {
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const startup = mainSource.match(/localHub = await startLocalHub\([\s\S]*?\n\s*\}\);/)?.[0];
+  assert.ok(startup);
+  assert.match(mainSource, /const localHubServerUrl = "http:\/\/127\.0\.0\.1:4318";/);
+  assert.match(startup, /baseUrl: localHubServerUrl/);
+  assert.doesNotMatch(startup, /baseUrl: api\.baseUrl/);
 });
 
 test("hub paths preserve development data and isolate packaged data", () => {
@@ -75,7 +85,7 @@ test("local hub starts once and returns an owned shutdown handle", async () => {
 
   assert.equal(hub.owned, true);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].host, "127.0.0.1");
+  assert.equal(calls[0].host, "0.0.0.0");
   assert.equal(calls[0].port, 4318);
   assert.equal(reverseCalls.length, 1);
   assert.equal(reverseCalls[0].env.AETHERX_PORT, "4318");

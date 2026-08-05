@@ -1,6 +1,6 @@
 # AetherX Mobile
 
-AetherX 的 Android 客户端，使用 Vue 3、Vite 和 Capacitor。手机端通过同一个 AetherX Hub 访问账号数据，不维护第二套可写业务数据库，也不保存 AI Provider Key。
+AetherX 的 Android 客户端，使用 Vue 3、Vite 和 Capacitor。在线业务仍可连接电脑 Hub；Android 安装包同时包含正在迁移中的原生 Local Hub，用于保存受校验的手机副本，并逐步承接离线业务。Provider Key 只会以 Space Key 信封进入 Android Keystore，不写入 WebView 存储。
 
 ## 已实现
 
@@ -11,6 +11,13 @@ AetherX 的 Android 客户端，使用 Vue 3、Vite 和 Capacitor。手机端通
 - Markdown、记忆引用、工具调用和生成图片卡片；
 - SSE 变化通知、增量游标补拉和指数退避重连；
 - Android Keystore 长期凭证保护；
+- Android Local Hub 原生 SQLite、Operation/Watermark、幂等写入与完整性根；
+- 独立 Hub 配对二维码、X25519 密钥协商、Peer HMAC 和完整快照首轮复制；
+- 原图分块下载、断点续传、分块/整文件 SHA-256 校验和本地媒体 URI；
+- records root、blobs root、Operation heads 完成证明与 `standby_pending → standby` 双端确认；
+- Provider Key 由 Android Keystore 重加密保存，SQLite 只保留不可逆摘要；
+- LocalHubClient 已承接核心页面读取、待办/资料/记忆写入和基础本地 Provider 对话；
+- WorkManager 周期唤醒本机 Hub，通过 Peer HMAC 补拉连续 Operation、原图和 Watermark，并恢复中断的 Bootstrap；
 - 设备令牌独立撤销；
 - USB `adb reverse` 本地调试；
 - 只为回环地址放行明文 HTTP。
@@ -103,17 +110,14 @@ http://127.0.0.1:4318
 5. 断线后指数退避并加入随机抖动重连；
 6. 401 时验证或清除失效会话。
 
-同步事件不包含完整聊天、记忆或图片正文。当前第一阶段以在线客户端为主，尚未实现完整离线写入队列和冲突合并。
+同步事件不包含完整聊天、记忆或图片正文。Android Local Hub 会保存完整结构化快照、连续 Operation 与经过校验的原图，并通过最终证明成为正式备用节点。LocalHubClient 已覆盖本地完整 Agent 循环、模块化工具注册、普通写入授权续跑、破坏性操作强制确认、图片生成与媒体登记，以及对话完成后的记忆证据和心情状态派生。手机 Hub 成为活动节点后，电脑关闭也能继续聊天并使用已迁移模块；本地写入会先按电脑 Hub 的复制模型校验，再进入 SQLite 和 Operation 日志。
 
 ## 聊天模型
 
-手机通过 `/api/v1/agent/chat` 把消息交给 Hub。记忆召回、人格与时间上下文、
-Provider 调用、工具执行、DSML 兼容和会话保存全部由 Hub 完成；手机不再包含一套
-独立 Agent Loop。写入和删除工具会显示授权卡片，并通过
-`/api/v1/agent/runs/{id}/approve` 继续运行。
+连接电脑 Hub 时，手机通过 `/api/v1/agent/chat` 使用完整 Agent、工具执行与授权状态机。
+Android Local Hub 成为活动节点后，LocalHubClient 会读取本机人格、资料、相关长期记忆、偏好、心情和时间感知上下文，直接调用 Keystore 中的 Provider 凭证，并把展示流和模型上下文流分别持久化为 Operation。工具按模块开关动态注册；只读工具直接执行，普通写入按全局授权决定是否暂停，删除等破坏性操作始终要求确认。工具完成后只刷新受影响的数据组，不用等待全量同步。
 
-这意味着桌面端和手机端会得到相同的工具行为与隐私处理。Hub 必须保持在线；若
-授权等待期间 Hub 重启或运行过期，需要重新发送原消息。
+手机 Hub 可以发起并推进计划切换，切换前会校验双方结构化数据、Operation 边界、Provider 凭证和原图完整性。原图支持 1 MiB 分块、状态查询、断点续传、分块 SHA-256 与整文件 SHA-256 校验；手机生成的图片也能反向传回电脑 Hub。强制接管和分叉恢复仍未开放，完整存档在 Local Hub 活动且电脑完全离线时也暂不提供原生导出/恢复。
 
 ## 安全边界
 

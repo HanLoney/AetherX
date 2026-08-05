@@ -3,6 +3,8 @@ const { HttpError } = require("../../lib/http-error");
 const MIN_IMAGE_PIXELS = 3_686_400;
 const DEFAULT_IMAGE_SIZE = "1920x1920";
 const MAX_REFERENCE_IMAGES = 10;
+const MAX_SYSTEM_CONTEXT_CHARS = 40_000;
+const MAX_HISTORY_CONTEXT_CHARS = 120_000;
 
 function chatUrl(baseUrl) {
   return /\/chat\/completions$/i.test(baseUrl)
@@ -116,18 +118,36 @@ function sanitizeMessages(value) {
     historyStart += 1;
   }
 
+  const boundedSystems = systemMessages.slice(0, 4);
+  const systemLimit = Math.max(
+    4_000,
+    Math.floor(MAX_SYSTEM_CONTEXT_CHARS / Math.max(1, boundedSystems.length))
+  );
+  boundedSystems.forEach((message) => {
+    message.content = sanitizeModelText(message.content || "", systemLimit);
+  });
+
   const groups = groupValidHistory(messages.slice(historyStart));
-  const budget = Math.max(1, 60 - systemMessages.length);
+  const budget = Math.max(1, 60 - boundedSystems.length);
   const selected = [];
   let used = 0;
+  let usedCharacters = 0;
   for (let index = groups.length - 1; index >= 0; index -= 1) {
     const group = groups[index];
     if (used && used + group.length > budget) break;
+    const groupCharacters = JSON.stringify(group).length;
+    if (usedCharacters + groupCharacters > MAX_HISTORY_CONTEXT_CHARS) {
+      if (!selected.length) {
+        selected.unshift(fitMessageGroup(group, MAX_HISTORY_CONTEXT_CHARS));
+      }
+      break;
+    }
     selected.unshift(group);
     used += group.length;
+    usedCharacters += groupCharacters;
     if (used >= budget) break;
   }
-  return [...systemMessages.slice(0, 4), ...selected.flat()];
+  return [...boundedSystems, ...selected.flat()];
 }
 
 function sanitizeMessage(message) {
@@ -139,7 +159,7 @@ function sanitizeMessage(message) {
     content:
       message?.content === null
         ? null
-        : String(message?.content || "").slice(0, 30_000)
+        : sanitizeModelText(message?.content || "", role === "tool" ? 16_000 : 30_000)
   };
   if (role === "assistant" && Array.isArray(message?.tool_calls)) {
     sanitized.tool_calls = message.tool_calls.slice(0, 10).map((call) => ({
@@ -147,7 +167,7 @@ function sanitizeMessage(message) {
       type: "function",
       function: {
         name: String(call?.function?.name || "").slice(0, 100),
-        arguments: String(call?.function?.arguments || "{}").slice(0, 20_000)
+        arguments: sanitizeModelText(call?.function?.arguments || "{}", 4_000)
       }
     }));
   }
@@ -155,6 +175,36 @@ function sanitizeMessage(message) {
     sanitized.tool_call_id = String(message?.tool_call_id || "").slice(0, 200);
   }
   return sanitized;
+}
+
+function fitMessageGroup(group, budget) {
+  const each = Math.max(512, Math.floor(budget / Math.max(2, group.length * 2)));
+  return group.map((message) => ({
+    ...message,
+    content: message.content === null ? null : sanitizeModelText(message.content, each),
+    ...(Array.isArray(message.tool_calls)
+      ? {
+          tool_calls: message.tool_calls.map((call) => ({
+            ...call,
+            function: {
+              ...call.function,
+              arguments: sanitizeModelText(call?.function?.arguments || "{}", Math.min(1_000, each))
+            }
+          }))
+        }
+      : {})
+  }));
+}
+
+function sanitizeModelText(value, limit) {
+  const maximum = Math.max(32, Number(limit) || 30_000);
+  const source = String(value ?? "")
+    .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+=[^;,]+)*(?:;base64)?,[a-z0-9+/_=-]+/gi,
+      "[内嵌媒体数据已省略，可通过媒体引用查看]")
+    .replace(/(["'])(?:[a-z0-9+/_=-]{4096,})\1/gi,
+      "$1[大段二进制数据已省略]$1");
+  if (source.length <= maximum) return source;
+  return `${source.slice(0, maximum)}\n[内容过长，已截取前 ${maximum} 个字符]`;
 }
 
 function groupValidHistory(messages) {

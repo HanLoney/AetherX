@@ -117,8 +117,7 @@ class AuthRepository {
         `SELECT name
          FROM sqlite_master
          WHERE type = 'table'
-           AND sql IS NOT NULL
-           AND instr(lower(sql), 'user_id') > 0`
+           AND sql IS NOT NULL`
       )
       .all()
       .map((row) => row.name)
@@ -132,6 +131,12 @@ class AuthRepository {
             "sync_changes"
           ].includes(name) &&
           /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+      )
+      .filter((name) =>
+        this.database
+          .prepare(`PRAGMA table_info("${name}")`)
+          .all()
+          .some((column) => column.name === "user_id")
       );
 
     let changed = 0;

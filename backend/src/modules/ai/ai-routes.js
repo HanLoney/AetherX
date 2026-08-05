@@ -10,9 +10,10 @@ function registerAiRoutes(
   router.add("GET", "/api/v1/ai/config", ({ userId }) => ({
     data: configRepository.getPublic(userId)
   }));
-  router.add("PUT", "/api/v1/ai/config", ({ userId, body }) => ({
-    data: configRepository.save(userId, body)
-  }));
+  router.add("PUT", "/api/v1/ai/config", ({ userId, body, requestId }) => {
+    const result = configRepository.saveWithRequestId(userId, body, requestId);
+    return { status: result.status, data: result.result };
+  });
   router.add(
     "GET",
     "/api/v1/ai/image-config",
@@ -22,7 +23,14 @@ function registerAiRoutes(
   router.add(
     "PUT",
     "/api/v1/ai/image-config",
-    ({ userId, body }) => ({ data: configRepository.saveImage(userId, body) }),
+    ({ userId, body, requestId }) => {
+      const result = configRepository.saveImageWithRequestId(
+        userId,
+        body,
+        requestId
+      );
+      return { status: result.status, data: result.result };
+    },
     { module: "image-generation" }
   );
   router.add("POST", "/api/v1/ai/chat", async ({ userId, body }) => {

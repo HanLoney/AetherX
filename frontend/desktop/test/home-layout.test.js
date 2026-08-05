@@ -58,3 +58,41 @@ test("desktop settings expose encrypted export and full restore only", () => {
   assert.match(javascript, /window\.desktop\.restoreArchive/);
   assert.match(css, /\.archive-setting\s*\{/);
 });
+
+test("desktop header shows the current active Hub separately from AI connectivity", () => {
+  assert.match(html, /id="hubPill"/);
+  assert.match(html, /id="statusPill"/);
+  assert.match(javascript, /getHubStatus/);
+  assert.match(javascript, /onHubRouted/);
+  assert.match(javascript, /手机 Hub/);
+  assert.match(javascript, /电脑 Hub/);
+  assert.match(css, /\.hub-pill\s*\{/);
+});
+
+test("background conversation refresh does not steal the active workspace", () => {
+  assert.match(javascript, /loadConversation\(state\.conversationId, \{ force: true, fromSync: true \}\)/);
+  assert.match(javascript, /if \(!options\.fromSync\) showChatWorkspace\(\)/);
+});
+
+test("conversation switching is immediate and stale requests cannot win", () => {
+  assert.match(javascript, /const loadId = \+\+conversationLoadId;/);
+  assert.match(
+    javascript,
+    /state\.conversationId = id;[\s\S]*?renderConversationHistory\(\);[\s\S]*?await window\.desktop\.getConversation\(id\)/
+  );
+  assert.match(
+    javascript,
+    /if \(loadId !== conversationLoadId \|\| state\.conversationId !== id\) return;/
+  );
+  assert.match(javascript, /const cachedMessages = conversationCache\.get\(id\);/);
+});
+
+test("routing to another Hub refreshes profile avatars without stale responses winning", () => {
+  assert.match(javascript, /const refreshId = \+\+profileRefreshId/);
+  assert.match(javascript, /if \(refreshId !== profileRefreshId\) return/);
+  assert.match(javascript, /onHubRouted\([\s\S]*refreshRoutedHubData\(\)/);
+  assert.match(
+    javascript,
+    /refreshRoutedHubData[\s\S]*refreshCoreHubData\(\{ fromRouting: true \}\)/
+  );
+});

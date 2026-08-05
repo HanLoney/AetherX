@@ -138,7 +138,7 @@ test("旧账户会补齐期初余额，并能安全修改历史流水", (context
     64138, 134078, "CNY", "CNY", "闲鱼到账", "chat", 400
   );
   database.prepare(
-    "DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)"
+    "DELETE FROM schema_migrations WHERE version = 29"
   ).run();
   database.close();
   database = openDatabase(dataDir);

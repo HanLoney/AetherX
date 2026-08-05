@@ -1,0 +1,33 @@
+{
+  "syncKey": "aetherx-fixture-sync-key-v1",
+  "input": {
+    "protocolVersion": 1,
+    "operationId": "018f47f2-79b8-7abc-8d12-001122334455",
+    "spaceId": "space-luoni",
+    "originNodeId": "node-mobile",
+    "originSequence": 42,
+    "epoch": 3,
+    "entityType": "wallet_transactions",
+    "entityId": "transaction-001",
+    "operation": "upsert",
+    "entityVersion": 2,
+    "previousEntityVersion": 1,
+    "payload": {
+      "source": "agent",
+      "detail": "闲鱼到账",
+      "change_minor": 69942,
+      "tags": ["收入", "二手物品"],
+      "metadata": {
+        "confirmed": true,
+        "note": null
+      }
+    },
+    "previousOperationHash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "createdAt": 1780000000000
+  },
+  "expected": {
+    "payloadHash": "54afb934017486d0dcfb27d308a6f075d6a538a84e600e5416d7e4a89a1bef7b",
+    "operationHash": "1ba858a5bda04f033c10f63cdc8e42ec3b12c7f641413908a1e440e67292718e",
+    "authenticationTag": "8ce123703c33ca25920276f75afea57b38f9c86d4446bace72f37afada8b3337"
+  }
+}

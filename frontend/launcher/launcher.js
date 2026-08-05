@@ -4,7 +4,9 @@ const state = {
   busy: false,
   qrValue: "",
   qrRequest: 0,
-  progress: { hub: null, desktop: null }
+  progress: { hub: null, desktop: null },
+  mobileHubJobs: Object.create(null),
+  mobileHubSwitchJobs: Object.create(null)
 };
 const selectors = {
   overall: document.querySelector(".health-orbit"),
@@ -34,6 +36,8 @@ const selectors = {
   copyRemote: document.querySelector("[data-copy-remote]"),
   mobileSummary: document.querySelector("[data-mobile-summary]"),
   mobileClients: document.querySelector("[data-mobile-clients]"),
+  mobileManager: document.querySelector("[data-mobile-hub-manager]"),
+  mobileManagerList: document.querySelector("[data-mobile-hub-manager-list]"),
   toast: document.querySelector("[data-toast]")
 };
 let toastTimer;
@@ -340,13 +344,16 @@ function renderRemote(status) {
 }
 
 function renderMobileHealth(mobile) {
+  const hubs = Array.isArray(mobile.hubs) ? mobile.hubs : [];
   const clients = Array.isArray(mobile.clients) ? mobile.clients : [];
   const summary = mobile.summary && typeof mobile.summary === "object"
     ? mobile.summary
     : null;
   const onlinePeers = (mobile.tailscalePeers || []).filter((peer) => peer.online);
   selectors.mobileClients.replaceChildren();
-  if (clients.length) {
+  if (hubs.length) {
+    selectors.mobileSummary.textContent = `${hubs.filter((hub) => hub.active || hub.ready).length}/${hubs.length} Hub 就绪`;
+  } else if (clients.length) {
     selectors.mobileSummary.textContent = `${clients.filter((client) => client.status === "healthy").length} 台正常`;
   } else if (summary?.tracked) {
     selectors.mobileSummary.textContent = summary.healthy
@@ -354,6 +361,21 @@ function renderMobileHealth(mobile) {
       : `${summary.tracked} 台已连接`;
   } else {
     selectors.mobileSummary.textContent = mobile.available ? "等待手机心跳" : "等待 Hub";
+  }
+
+  if (hubs.length) {
+    for (const hub of hubs.slice(0, 4)) {
+      const client = hub.client || clients.find((item) => item.localHub?.nodeId === hub.id) || null;
+      appendMobileHubNode(hub, client);
+    }
+    if (!mobile.managementAvailable) {
+      const hint = document.createElement("p");
+      hint.className = "mobile-empty";
+      hint.textContent = "启动桌面端并登录后可管理手机 Hub。";
+      selectors.mobileClients.append(hint);
+    }
+    renderMobileHubManager();
+    return;
   }
 
   if (!clients.length) {
@@ -400,6 +422,64 @@ function renderMobileHealth(mobile) {
   }
 }
 
+function appendMobileHubNode(hub, client) {
+  const status = hub.active || hub.ready ? "healthy" : hub.revokedAt ? "offline" : "warning";
+  const snapshot = hub.snapshot || null;
+  const recordCount = mobileHubRecordCount(hub);
+  const detail = hub.active
+    ? `正在承载 · ${recordCount} 条记录`
+    : hub.ready
+    ? `完整副本 · ${recordCount} 条记录`
+    : snapshot
+      ? `全量迁入 ${snapshotStatusLabel(snapshot.status)}`
+      : "尚未建立完整快照";
+  const heartbeat = client ? ` · App ${relativeHeartbeat(client.ageMs)}` : "";
+  const item = appendMobileNode({
+    name: hub.name || "Android Local Hub",
+    status,
+    detail,
+    meta: `${hub.active ? "当前 Hub" : "备用 Hub"} · ${nodeStatusLabel(hub.status)}${heartbeat}`
+  });
+  const actions = document.createElement("div");
+  actions.className = "mobile-client-actions";
+  const progress = mobileHubProgress(hub);
+  if (!progress?.switching) {
+    const sync = document.createElement("button");
+    sync.type = "button";
+    sync.dataset.mobileSync = hub.id;
+    sync.textContent = progress?.active
+      ? `${progress.label} ${progress.percent}%`
+      : hub.active || hub.ready
+        ? hub.active ? "同步到电脑" : "同步到手机"
+        : "继续迁入";
+    sync.disabled = !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
+    actions.append(sync);
+  }
+  if (hub.active || hub.ready) {
+    const switchHub = document.createElement("button");
+    switchHub.type = "button";
+    switchHub.dataset.mobileSwitch = hub.id;
+    switchHub.textContent = progress?.switching
+      ? `${progress.label} ${progress.percent}%`
+      : hub.active ? "切回电脑 Hub" : "切换为当前 Hub";
+    switchHub.disabled = !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
+    actions.append(switchHub);
+  }
+  const manage = document.createElement("button");
+  manage.type = "button";
+  manage.dataset.mobileManage = hub.id;
+  manage.textContent = "管理";
+  actions.append(manage);
+  appendMobileHubProgress(item, progress);
+  item.append(actions);
+}
+
+function mobileHubRecordCount(hub) {
+  const liveCount = Number(hub?.progress?.documentCount);
+  if (Number.isSafeInteger(liveCount) && liveCount >= 0) return liveCount;
+  return Math.max(0, Number(hub?.snapshot?.recordCount || 0));
+}
+
 function appendMobileNode({ name, status, detail, meta }) {
   const item = document.createElement("article");
   item.className = `mobile-client mobile-${status || "offline"}`;
@@ -414,6 +494,354 @@ function appendMobileNode({ name, status, detail, meta }) {
   copy.append(title, description, seen);
   item.append(dot, copy);
   selectors.mobileClients.append(item);
+  return item;
+}
+
+function snapshotStatusLabel(status) {
+  return ({ completed: "已完成", payload_ready: "等待手机接收", waiting_blobs: "正在同步原图", restored: "等待最终确认" })[status] || "未完成";
+}
+
+function nodeStatusLabel(status) {
+  return ({ active: "正在承载", standby: "待命", standby_pending: "等待确认", pairing: "配对中" })[status] || "需要检查";
+}
+
+function mobileHubProgress(hub) {
+  const switchJob = state.mobileHubSwitchJobs[hub.id] || null;
+  const reported = hub.progress || null;
+  if (switchJob) {
+    const completed = switchJob.target === "mobile" ? hub.active : !hub.active;
+    if (completed) {
+      delete state.mobileHubSwitchJobs[hub.id];
+      return {
+        stage: "switch_completed",
+        percent: 100,
+        label: switchJob.target === "mobile" ? "手机 Hub 已接管" : "电脑 Hub 已接管",
+        detail: "活动节点已经安全切换，数据副本与代次保持一致",
+        active: false,
+        switching: true,
+        error: false
+      };
+    }
+    const freshReport = reported && Number(reported.updatedAt || 0) >= Number(switchJob.requestedAt || 0);
+    if (freshReport && String(reported.stage || "").startsWith("switch_")) {
+      const stage = String(reported.stage || "");
+      const error = stage === "switch_error";
+      if (error) delete state.mobileHubSwitchJobs[hub.id];
+      return {
+        stage,
+        percent: Math.max(0, Math.min(100, Number(reported.progress || 0))),
+        label: mobileHubStageLabel(stage),
+        detail: error ? (hub.client?.lastError || reported.status || "Hub 切换失败") : mobileHubStageDetail(reported),
+        active: !error,
+        switching: true,
+        error
+      };
+    }
+    if (switchJob.status === "error") {
+      delete state.mobileHubSwitchJobs[hub.id];
+      return { stage: "switch_error", percent: 0, label: "切换失败", detail: switchJob.message, active: false, switching: true, error: true };
+    }
+    return {
+      stage: "switch_waiting",
+      percent: 8,
+      label: "等待手机确认",
+      detail: switchJob.target === "mobile" ? "手机正在追平最新变更并执行完整性门禁" : "手机正在把活动节点安全交还给电脑 Hub",
+      active: true,
+      switching: true,
+      error: false
+    };
+  }
+  const reportedSwitchStage = String(reported?.stage || "");
+  if (reportedSwitchStage.startsWith("switch_")) {
+    const error = reportedSwitchStage === "switch_error";
+    const completed = reportedSwitchStage === "switch_completed";
+    return {
+      stage: reportedSwitchStage,
+      percent: Math.max(0, Math.min(100, Number(reported?.progress || 0))),
+      label: mobileHubStageLabel(reportedSwitchStage),
+      detail: error ? (hub.client?.lastError || "Hub 切换失败") : mobileHubStageDetail(reported),
+      active: !error && !completed,
+      switching: true,
+      error
+    };
+  }
+  const job = state.mobileHubJobs[hub.id] || null;
+  const syncProof = hub.replication || null;
+  if (
+    job &&
+    syncProof?.caughtUp === true &&
+    Number(syncProof.lastSuccessAt || 0) >= Number(job.requestedAt || 0)
+  ) {
+    delete state.mobileHubJobs[hub.id];
+    return {
+      stage: "completed",
+      percent: 100,
+      label: "同步完成",
+      detail: job.direction === "desktop"
+        ? "电脑 Hub 已追平手机端最新变更"
+        : "手机 Hub 已追平电脑端最新变更",
+      active: false,
+      error: false
+    };
+  }
+  const freshReport = reported && (!job || Number(reported.updatedAt || 0) >= Number(job.requestedAt || 0));
+  if (freshReport) {
+    const stage = String(reported.stage || "");
+    const error = stage === "error";
+    const completed = stage === "completed";
+    const active = ["starting", "syncing_structure", "syncing_media", "verifying", "syncing_changes"].includes(stage);
+    const syncingToDesktop = job?.direction === "desktop" || (
+      hub.active && ["starting", "syncing_changes", "completed", "error"].includes(stage)
+    );
+    if ((error || completed) && job) delete state.mobileHubJobs[hub.id];
+    return {
+      stage,
+      percent: Math.max(0, Math.min(100, Number(reported.progress || 0))),
+      label: syncingToDesktop ? mobileHubPushStageLabel(stage) : mobileHubStageLabel(stage),
+      detail: error
+        ? (hub.client?.lastError || (syncingToDesktop ? "同步到电脑 Hub 失败" : "同步到手机 Hub 失败"))
+        : syncingToDesktop ? mobileHubPushStageDetail(stage) : mobileHubStageDetail(reported),
+      active,
+      error
+    };
+  }
+  if (!job) return null;
+  if (job.status === "error") {
+    return {
+      stage: "error",
+      percent: 0,
+      label: job.direction === "desktop" ? "同步失败" : "迁入失败",
+      detail: job.message,
+      active: false,
+      error: true
+    };
+  }
+  return {
+    stage: job.queued ? "queued" : "waiting_phone",
+    percent: job.queued ? 4 : 8,
+    label: job.queued ? "等待手机上线" : "等待手机响应",
+    detail: job.queued
+      ? "指令已排队，手机恢复实时连接后继续"
+      : `指令已送达，正在等待同步到${job.direction === "desktop" ? "电脑 Hub" : "手机 Hub"}`,
+    active: true,
+    error: false
+  };
+}
+
+function mobileHubPushStageLabel(stage) {
+  return ({
+    starting: "准备双端同步",
+    syncing_changes: "推送最新变更",
+    completed: "同步完成",
+    error: "同步失败"
+  })[stage] || "同步到电脑 Hub";
+}
+
+function mobileHubPushStageDetail(stage) {
+  return ({
+    starting: "手机正在读取本机操作链并连接电脑 Hub",
+    syncing_changes: "正在把手机端产生的最新记录推送到电脑副本",
+    completed: "电脑 Hub 已追平手机端最新变更"
+  })[stage] || "正在同步到电脑 Hub";
+}
+
+function mobileHubStageLabel(stage) {
+  return ({
+    starting: "准备迁入",
+    syncing_structure: "迁入结构数据",
+    ready_to_resume: "等待继续迁入",
+    syncing_media: "迁入原图",
+    paused_media: "原图待续传",
+    verifying: "完整性校验",
+    ready_to_verify: "等待最终校验",
+    syncing_changes: "追平变更",
+    switch_preparing: "准备切换",
+    switch_syncing: "追平最新变更",
+    switch_verifying: "切换完整性校验",
+    switch_committing: "提交活动节点",
+    switch_returning: "交还电脑 Hub",
+    switch_completed: "切换完成",
+    switch_error: "切换失败",
+    completed: "迁入完成",
+    error: "迁入失败"
+  })[stage] || "检查迁入";
+}
+
+function mobileHubStageDetail(progress) {
+  if (["syncing_media", "paused_media"].includes(progress.stage)) {
+    const total = Number(progress.mediaTotalBytes || 0);
+    const received = Number(progress.mediaBytes || 0);
+    const bytes = total > 0 ? ` · ${formatBytes(received)} / ${formatBytes(total)}` : "";
+    return `正在同步原图${bytes}${progress.pendingMediaCount ? ` · 剩余 ${progress.pendingMediaCount} 项` : ""}`;
+  }
+  return ({
+    starting: "手机已收到指令，正在读取本机副本",
+    syncing_structure: "正在从电脑 Hub 重新拉取完整结构化数据",
+    ready_to_resume: "结构化数据尚未落入手机，点击继续迁入即可恢复",
+    verifying: "正在核对记录根、媒体根与完成证明",
+    ready_to_verify: "原图已经到齐，点击继续迁入完成最终校验",
+    syncing_changes: "正在拉取配对后产生的最新记录",
+    switch_preparing: "正在读取双 Hub 状态并锁定本次切换目标",
+    switch_syncing: "正在把电脑端最新操作追平到手机副本",
+    switch_verifying: "正在核对操作链、记录根、原图根与数据库版本",
+    switch_committing: "完整性门禁已通过，正在提交新的活动节点",
+    switch_returning: "正在把活动节点安全交还给电脑 Hub",
+    switch_completed: "活动节点已经安全切换",
+    completed: `副本完整 · ${progress.documentCount || 0} 条记录`
+  })[progress.stage] || "正在读取手机 Hub 状态";
+}
+
+function appendMobileHubProgress(container, progress) {
+  if (!progress) return;
+  const block = document.createElement("div");
+  block.className = `mobile-hub-progress${progress.error ? " error" : ""}`;
+  const copy = document.createElement("div");
+  const label = document.createElement("strong");
+  const value = document.createElement("span");
+  const detail = document.createElement("small");
+  const track = document.createElement("i");
+  const bar = document.createElement("b");
+  label.textContent = progress.label;
+  value.textContent = `${progress.percent}%`;
+  detail.textContent = progress.detail;
+  detail.title = progress.detail;
+  bar.style.width = `${progress.percent}%`;
+  copy.append(label, value);
+  track.append(bar);
+  block.append(copy, track, detail);
+  container.append(block);
+}
+
+function formatBytes(value) {
+  const bytes = Math.max(0, Number(value || 0));
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function renderMobileHubManager(focusNodeId = "") {
+  if (!selectors.mobileManagerList) return;
+  const hubs = state.status?.mobile?.hubs || [];
+  selectors.mobileManagerList.replaceChildren();
+  if (!hubs.length) {
+    const empty = document.createElement("p");
+    empty.className = "mobile-hub-manager-empty";
+    empty.textContent = state.status?.mobile?.managementAvailable
+      ? "还没有完成配对的手机 Hub。请先在桌面端生成备用 Hub 配对码。"
+      : "启动桌面端并登录 AetherX 后，这里会显示手机 Hub。";
+    selectors.mobileManagerList.append(empty);
+    return;
+  }
+  for (const hub of hubs) {
+    const card = document.createElement("article");
+    card.className = `mobile-hub-manager-card ${hub.active ? "active" : hub.ready ? "ready" : hub.revokedAt ? "offline" : "pending"}`;
+    card.dataset.nodeId = hub.id;
+    const snapshot = hub.snapshot || null;
+    card.innerHTML = `
+      <header><h3></h3><span></span></header>
+      <dl>
+        <div><dt>节点角色</dt><dd data-field="role"></dd></div>
+        <div><dt>快照状态</dt><dd data-field="snapshot"></dd></div>
+        <div><dt>记录数量</dt><dd data-field="records"></dd></div>
+        <div><dt>最近响应</dt><dd data-field="seen"></dd></div>
+      </dl>
+      <div data-mobile-progress></div>
+      <div class="manager-actions"><button type="button" data-mobile-sync></button><button type="button" data-mobile-switch></button><button type="button" data-mobile-open-desktop>配对设置</button></div>`;
+    setText(card, "h3", hub.name || "Android Local Hub");
+    setText(card, "header span", hub.active ? "当前承载" : hub.ready ? "副本完整" : "需要恢复");
+    setText(card, '[data-field="role"]', hub.active ? "当前 Hub" : "备用 Hub");
+    setText(card, '[data-field="snapshot"]', snapshot ? snapshotStatusLabel(snapshot.status) : "尚未创建");
+    setText(card, '[data-field="records"]', `${mobileHubRecordCount(hub)} 条`);
+    setText(card, '[data-field="seen"]', hub.lastSeenAt ? relativeHeartbeat(Date.now() - hub.lastSeenAt) : "未收到");
+    const progress = mobileHubProgress(hub);
+    appendMobileHubProgress(card.querySelector("[data-mobile-progress]"), progress);
+    const sync = card.querySelector("[data-mobile-sync]");
+    sync.dataset.mobileSync = hub.id;
+    sync.textContent = progress?.active
+      ? `${progress.label} ${progress.percent}%`
+      : hub.active || hub.ready
+        ? hub.active ? "同步到电脑 Hub" : "同步到手机 Hub"
+        : "继续迁入";
+    sync.disabled = !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
+    sync.hidden = Boolean(progress?.switching);
+    const switchHub = card.querySelector("[data-mobile-switch]");
+    switchHub.dataset.mobileSwitch = hub.id;
+    switchHub.textContent = progress?.switching
+      ? `${progress.label} ${progress.percent}%`
+      : hub.active ? "切回电脑 Hub" : "切换为当前 Hub";
+    switchHub.disabled = (!hub.active && !hub.ready) || !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
+    selectors.mobileManagerList.append(card);
+  }
+  if (focusNodeId) {
+    requestAnimationFrame(() => selectors.mobileManagerList.querySelector(`[data-node-id="${CSS.escape(focusNodeId)}"]`)?.scrollIntoView({ block: "center" }));
+  }
+}
+
+function openMobileHubManager(nodeId = "") {
+  renderMobileHubManager(nodeId);
+  selectors.mobileManager.hidden = false;
+}
+
+function closeMobileHubManager() {
+  selectors.mobileManager.hidden = true;
+}
+
+async function synchronizeMobileHub(nodeId, button) {
+  if (!nodeId || button?.disabled) return;
+  const hub = state.status?.mobile?.hubs?.find((item) => item.id === nodeId);
+  const direction = hub?.active ? "desktop" : "mobile";
+  state.mobileHubJobs[nodeId] = { status: "requesting", requestedAt: Date.now(), queued: false, direction };
+  if (state.status) renderMobileHealth(state.status.mobile || {});
+  try {
+    const result = await window.launcher.synchronizeMobileHub(nodeId);
+    state.mobileHubJobs[nodeId] = {
+      status: "waiting",
+      requestedAt: Number(result.requestedAt || Date.now()),
+      queued: Boolean(result.queued),
+      direction
+    };
+    if (state.status) renderMobileHealth(state.status.mobile || {});
+    const destination = direction === "desktop" ? "电脑 Hub" : "手机 Hub";
+    showToast(result.queued
+      ? `手机暂时离线，同步到${destination}的任务已排队`
+      : `手机已收到指令，正在同步到${destination}`);
+  } catch (error) {
+    state.mobileHubJobs[nodeId] = {
+      status: "error",
+      requestedAt: Date.now(),
+      queued: false,
+      message: error.message || "没有成功下发迁入任务"
+    };
+    if (state.status) renderMobileHealth(state.status.mobile || {});
+    showToast(error.message || "没有成功下发同步指令", true);
+  }
+}
+
+async function switchMobileHub(nodeId, button) {
+  if (!nodeId || button?.disabled) return;
+  const hub = state.status?.mobile?.hubs?.find((item) => item.id === nodeId);
+  const target = hub?.active ? "desktop" : "mobile";
+  state.mobileHubSwitchJobs[nodeId] = { status: "requesting", target, requestedAt: Date.now() };
+  if (state.status) renderMobileHealth(state.status.mobile || {});
+  try {
+    const result = await window.launcher.switchMobileHub(nodeId);
+    state.mobileHubSwitchJobs[nodeId] = {
+      status: "waiting",
+      target: result.target || target,
+      requestedAt: Number(result.requestedAt || Date.now())
+    };
+    if (state.status) renderMobileHealth(state.status.mobile || {});
+    showToast(result.target === "desktop" ? "手机正在把活动节点交还给电脑 Hub" : "手机已收到切换指令，正在追平并校验");
+  } catch (error) {
+    state.mobileHubSwitchJobs[nodeId] = {
+      status: "error",
+      target,
+      requestedAt: Date.now(),
+      message: error.message || "没有成功下发切换指令"
+    };
+    if (state.status) renderMobileHealth(state.status.mobile || {});
+    showToast(error.message || "没有成功下发切换指令", true);
+  }
 }
 
 function mobileDetail(client) {
@@ -564,6 +992,7 @@ function render(status) {
   renderComponent("hub", status.hub, status.hub.healthy);
   renderComponent("desktop", status.desktop, status.hub.healthy && status.desktop.healthy);
   renderRemote(status);
+  if (selectors.mobileManager && !selectors.mobileManager.hidden) renderMobileHubManager();
   const allInstalled = status.hub.installed && status.desktop.installed;
   const allRunning = status.hub.running && status.desktop.running;
   const desktopNeedsUpdate = Boolean(status.desktop.updateAvailable);
@@ -586,7 +1015,10 @@ function showToast(message, error = false) {
   clearTimeout(toastTimer);
   selectors.toast.textContent = message;
   selectors.toast.className = `toast show${error ? " error" : ""}`;
-  toastTimer = setTimeout(() => { selectors.toast.className = "toast"; }, 3200);
+  toastTimer = setTimeout(
+    () => { selectors.toast.className = "toast"; },
+    error ? 7200 : 4200
+  );
 }
 
 async function run(action) {
@@ -617,6 +1049,17 @@ document.addEventListener("click", (event) => {
   }
   const folder = event.target.closest("[data-folder]");
   if (folder) window.launcher.openFolder(folder.dataset.folder);
+  const mobileManage = event.target.closest("[data-mobile-manage]");
+  if (mobileManage) openMobileHubManager(mobileManage.dataset.mobileManage);
+  if (event.target.closest("[data-mobile-manage-all]")) openMobileHubManager();
+  const mobileSync = event.target.closest("[data-mobile-sync]");
+  if (mobileSync) void synchronizeMobileHub(mobileSync.dataset.mobileSync, mobileSync);
+  const mobileSwitch = event.target.closest("[data-mobile-switch]");
+  if (mobileSwitch) void switchMobileHub(mobileSwitch.dataset.mobileSwitch, mobileSwitch);
+  if (event.target.closest("[data-mobile-manager-close]") || event.target === selectors.mobileManager) closeMobileHubManager();
+  if (event.target.closest("[data-mobile-open-desktop]")) {
+    window.launcher.focusDesktop().then(() => showToast("已打开桌面端，可继续配对或管理设备")).catch((error) => showToast(error.message, true));
+  }
 });
 
 window.launcher.onStatus(render);

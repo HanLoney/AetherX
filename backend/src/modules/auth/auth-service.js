@@ -111,6 +111,26 @@ class AuthService {
     return { token, user: presentUser(user), expiresAt: session.expiresAt };
   }
 
+  createHandoffSession(userId) {
+    const user = this.repository.findUserById(userId);
+    if (!user) {
+      throw new HttpError(404, "USER_NOT_FOUND", "会话交接对应的本地账号不存在。");
+    }
+    const token = createToken();
+    const now = Date.now();
+    const session = this.repository.createSession({
+      userId,
+      tokenHash: hashToken(token),
+      now,
+      expiresAt: now + this.sessionTtlMs
+    });
+    return {
+      token,
+      user: presentUser(user),
+      expiresAt: session.expiresAt
+    };
+  }
+
   authenticate(authorization) {
     const token = bearerToken(authorization);
     if (!token) {

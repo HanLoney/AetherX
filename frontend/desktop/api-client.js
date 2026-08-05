@@ -1,3 +1,5 @@
+const { randomUUID } = require("node:crypto");
+
 class ApiError extends Error {
   constructor(message, status = 0, code = "API_ERROR", requestId = "") {
     super(message);
@@ -13,6 +15,8 @@ class XuanApiClient {
     this.setBaseUrl(options.baseUrl || "http://127.0.0.1:4318");
     this.token = String(options.token || "");
     this.onUnauthorized = options.onUnauthorized;
+    this.onConnectionChanged = options.onConnectionChanged;
+    this.routePromise = null;
   }
 
   setBaseUrl(baseUrl) {
@@ -35,31 +39,16 @@ class XuanApiClient {
         ? 245_000
         : 65_000;
     const timer = setTimeout(() => controller.abort(), timeout);
+    const requestId = isWriteMethod(method) ? randomUUID() : "";
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      return await this.performRequest(
         method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: controller.signal
-      });
-      const payload =
-        response.status === 204 ? { data: null } : await response.json();
-      if (!response.ok) {
-        const error = new ApiError(
-          payload?.error?.message || `后端请求失败（HTTP ${response.status}）`,
-          response.status,
-          payload?.error?.code,
-          payload?.requestId
-        );
-        if (response.status === 401 && typeof this.onUnauthorized === "function") {
-          this.onUnauthorized(error);
-        }
-        throw error;
-      }
-      return hydrateMediaSources(payload.data, this.baseUrl, this.token);
+        path,
+        body,
+        controller.signal,
+        requestId,
+        true
+      );
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if (error.name === "AbortError") {
@@ -73,6 +62,128 @@ class XuanApiClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async performRequest(method, path, body, signal, requestId, allowRoute) {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        ...(requestId ? { "X-Request-Id": requestId } : {})
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal
+    });
+    const payload = response.status === 204
+      ? { data: null }
+      : await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new ApiError(
+        payload?.error?.message || `后端请求失败（HTTP ${response.status}）`,
+        response.status,
+        payload?.error?.code || "API_ERROR",
+        payload?.requestId || ""
+      );
+      if (
+        allowRoute &&
+        response.status === 409 &&
+        error.code === "HUB_NOT_ACTIVE" &&
+        path !== "/api/v1/cluster/session-handoff" &&
+        await this.routeToActiveHub(signal)
+      ) {
+        return this.performRequest(method, path, body, signal, requestId, false);
+      }
+      if (response.status === 401 && typeof this.onUnauthorized === "function") {
+        this.onUnauthorized(error);
+      }
+      throw error;
+    }
+    return hydrateMediaSources(payload.data, this.baseUrl, this.token);
+  }
+
+  async routeToActiveHub(signal) {
+    if (!this.token) return false;
+    if (this.routePromise) return this.routePromise;
+    this.routePromise = (async () => {
+      const response = await fetch(`${this.baseUrl}/api/v1/cluster/session-handoff`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.token}`,
+          "X-Request-Id": randomUUID()
+        },
+        body: "{}",
+        signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new ApiError(
+          payload?.error?.message || "无法切换到当前活动 Hub。",
+          response.status,
+          payload?.error?.code || "HUB_HANDOFF_FAILED",
+          payload?.requestId || ""
+        );
+      }
+      const handoff = payload.data;
+      if (!handoff?.handedOff) return false;
+      const baseUrl = normalizeServerUrl(handoff.serverUrl);
+      if (!baseUrl || !handoff.token || !handoff.user || !handoff.spaceId) {
+        throw new ApiError(
+          "活动 Hub 返回了无效的会话交接结果。",
+          502,
+          "HUB_HANDOFF_INVALID"
+        );
+      }
+      this.setBaseUrl(baseUrl);
+      this.setToken(handoff.token);
+      await this.onConnectionChanged?.({
+        baseUrl,
+        token: handoff.token,
+        user: handoff.user,
+        spaceId: handoff.spaceId,
+        nodeId: handoff.nodeId,
+        activeNodeId: handoff.activeNodeId,
+        epoch: Number(handoff.epoch)
+      });
+      return true;
+    })().finally(() => {
+      this.routePromise = null;
+    });
+    return this.routePromise;
+  }
+
+  async ensureActiveHub(signal) {
+    const status = await this.getClusterStatus(signal);
+    if (status.localNodeId !== status.activeNodeId) {
+      await this.routeToActiveHub(signal);
+      return this.getClusterStatus(signal);
+    }
+    return status;
+  }
+
+  getClusterStatus(signal) {
+    return this.request("GET", "/api/v1/cluster/status", undefined, signal);
+  }
+
+  listMobileHubs() {
+    return this.request("GET", "/api/v1/cluster/mobile-hubs");
+  }
+
+  synchronizeMobileHub(nodeId, endpoints = []) {
+    return this.request(
+      "POST",
+      `/api/v1/cluster/mobile-hubs/${encodeURIComponent(nodeId)}/synchronize`,
+      { endpoints }
+    );
+  }
+
+  switchMobileHub(nodeId, endpoints = []) {
+    return this.request(
+      "POST",
+      `/api/v1/cluster/mobile-hubs/${encodeURIComponent(nodeId)}/switch`,
+      { endpoints }
+    );
   }
 
   getAuthConfig() {
@@ -110,6 +221,25 @@ class XuanApiClient {
     return this.request(
       "POST",
       `/api/v1/pairing/sessions/${encodeURIComponent(id)}/approve`,
+      {}
+    );
+  }
+
+  createHubPairingSession(input = {}) {
+    return this.request("POST", "/api/v1/hub-pairing/sessions", input);
+  }
+
+  getHubPairingSession(id) {
+    return this.request(
+      "GET",
+      `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}`
+    );
+  }
+
+  approveHubPairingSession(id) {
+    return this.request(
+      "POST",
+      `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/approve`,
       {}
     );
   }
@@ -715,6 +845,15 @@ function hydrateMediaSources(value, baseUrl, token) {
   }
   Object.values(value).forEach((item) => hydrateMediaSources(item, baseUrl, token));
   return value;
+}
+
+function normalizeServerUrl(value) {
+  const result = String(value || "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(result) ? result : "";
+}
+
+function isWriteMethod(method) {
+  return !["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase());
 }
 
 module.exports = { XuanApiClient, ApiError };
