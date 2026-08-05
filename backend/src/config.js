@@ -15,9 +15,44 @@ function loadConfig(environment = process.env) {
     ),
     registrationSecret: environment.AETHERX_REGISTRATION_SECRET || "",
     sessionTtlDays: Number(environment.AETHERX_SESSION_TTL_DAYS || 30),
+    replicationSchedulerEnabled: normalizeBoolean(
+      environment.AETHERX_REPLICATION_SCHEDULER_ENABLED,
+      true,
+      "AETHERX_REPLICATION_SCHEDULER_ENABLED"
+    ),
+    switchRecoveryEnabled: normalizeBoolean(
+      environment.AETHERX_SWITCH_RECOVERY_ENABLED,
+      true,
+      "AETHERX_SWITCH_RECOVERY_ENABLED"
+    ),
+    replicationPollIntervalMs: positiveInteger(
+      environment.AETHERX_REPLICATION_POLL_INTERVAL_MS,
+      5000
+    ),
+    replicationMaxBackoffMs: positiveInteger(
+      environment.AETHERX_REPLICATION_MAX_BACKOFF_MS,
+      300000
+    ),
     corsOrigin:
       environment.AETHERX_CORS_ORIGIN || environment.XUANAI_CORS_ORIGIN || "*"
   };
+}
+
+function normalizeBoolean(value, fallback, field) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(`${field} must be true or false.`);
+}
+
+function positiveInteger(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const result = Number(value);
+  if (!Number.isSafeInteger(result) || result < 250) {
+    throw new Error("Replication timing values must be integers of at least 250 ms.");
+  }
+  return result;
 }
 
 function normalizeRegistrationMode(value) {

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aetherx.local/schemas/replication-operation-v1.schema.json",
+  "title": "AetherX Replication Operation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "operationId",
+    "spaceId",
+    "originNodeId",
+    "originSequence",
+    "epoch",
+    "entityType",
+    "entityId",
+    "operation",
+    "entityVersion",
+    "previousEntityVersion",
+    "payload",
+    "payloadHash",
+    "previousOperationHash",
+    "operationHash",
+    "authenticationTag",
+    "createdAt"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "operationId": { "$ref": "#/$defs/identifier" },
+    "spaceId": { "$ref": "#/$defs/identifier" },
+    "originNodeId": { "$ref": "#/$defs/identifier" },
+    "originSequence": { "type": "integer", "minimum": 1 },
+    "epoch": { "type": "integer", "minimum": 1 },
+    "entityType": { "$ref": "#/$defs/identifier" },
+    "entityId": { "$ref": "#/$defs/identifier" },
+    "operation": {
+      "enum": ["upsert", "delete", "reset_marker", "control"]
+    },
+    "entityVersion": { "type": "integer", "minimum": 1 },
+    "previousEntityVersion": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "integer", "minimum": 1 }
+      ]
+    },
+    "payload": { "type": "object" },
+    "payloadHash": { "$ref": "#/$defs/hash" },
+    "previousOperationHash": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/hash" }
+      ]
+    },
+    "operationHash": { "$ref": "#/$defs/hash" },
+    "authenticationTag": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/hash" }
+      ]
+    },
+    "createdAt": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f]+$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

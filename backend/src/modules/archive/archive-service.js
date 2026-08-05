@@ -247,7 +247,7 @@ class ArchiveService {
     return staged;
   }
 
-  replaceUserData(userId, metadata, stagedMedia) {
+  replaceUserData(userId, metadata, stagedMedia, options = {}) {
     const existingMedia = this.database.prepare(
       `SELECT file_name, preview_file_name FROM media_assets WHERE user_id = ?`
     ).all(userId);
@@ -305,10 +305,18 @@ class ArchiveService {
       if (restoredDigest !== metadata.continuityDigest) {
         throw archiveError(500, "ARCHIVE_RESTORE_DIGEST_MISMATCH", "恢复后的数据与存档不一致，已自动回滚。");
       }
+      const beforeCommitResult = typeof options.beforeCommit === "function"
+        ? options.beforeCommit({ restoredDigest, resetCursor }) || {}
+        : {};
       this.database.exec("COMMIT");
       transaction = false;
       fs.rmSync(rollbackDir, { recursive: true, force: true });
-      return { continuityDigest: restoredDigest, resetRequired: true, resetCursor };
+      return {
+        continuityDigest: restoredDigest,
+        resetRequired: true,
+        resetCursor,
+        ...beforeCommitResult
+      };
     } catch (error) {
       if (transaction) {
         try { this.database.exec("ROLLBACK"); } catch {}

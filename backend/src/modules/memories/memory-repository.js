@@ -86,7 +86,8 @@ class MemoryRepository {
   create(userId, memory) {
     const now = Date.now();
     const id = randomUUID();
-    this.database.exec("BEGIN");
+    const ownsTransaction = !this.database.isTransaction;
+    if (ownsTransaction) this.database.exec("BEGIN");
     try {
       this.database
         .prepare(
@@ -120,10 +121,10 @@ class MemoryRepository {
           memory.mergeCount
         );
       this.writeFts(id, userId, memory.content, memory.entities);
-      this.database.exec("COMMIT");
+      if (ownsTransaction) this.database.exec("COMMIT");
       return this.find(userId, id);
     } catch (error) {
-      this.database.exec("ROLLBACK");
+      if (ownsTransaction) this.database.exec("ROLLBACK");
       throw error;
     }
   }
@@ -133,7 +134,8 @@ class MemoryRepository {
     if (!current) return null;
     const next = { ...current, ...changes, updatedAt: Date.now() };
     if (changes.status === "active") next.lastConfirmedAt = Date.now();
-    this.database.exec("BEGIN");
+    const ownsTransaction = !this.database.isTransaction;
+    if (ownsTransaction) this.database.exec("BEGIN");
     try {
       this.database
         .prepare(
@@ -169,16 +171,17 @@ class MemoryRepository {
           .run(id);
       }
       this.writeFts(id, userId, next.content, next.entities);
-      this.database.exec("COMMIT");
+      if (ownsTransaction) this.database.exec("COMMIT");
       return this.find(userId, id);
     } catch (error) {
-      this.database.exec("ROLLBACK");
+      if (ownsTransaction) this.database.exec("ROLLBACK");
       throw error;
     }
   }
 
   delete(userId, id) {
-    this.database.exec("BEGIN");
+    const ownsTransaction = !this.database.isTransaction;
+    if (ownsTransaction) this.database.exec("BEGIN");
     try {
       if (this.fullTextSearchEnabled) {
         this.database
@@ -190,10 +193,10 @@ class MemoryRepository {
       const changes = this.database
         .prepare("DELETE FROM memories WHERE user_id = ? AND id = ?")
         .run(userId, id).changes;
-      this.database.exec("COMMIT");
+      if (ownsTransaction) this.database.exec("COMMIT");
       return changes;
     } catch (error) {
-      this.database.exec("ROLLBACK");
+      if (ownsTransaction) this.database.exec("ROLLBACK");
       throw error;
     }
   }

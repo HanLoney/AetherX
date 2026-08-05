@@ -28,29 +28,29 @@ class XuanMoodService {
   }
 
   async getHome(userId) {
-    let display = this.repository.getLatestDisplay(userId);
-    const events = this.repository.listRecentEvents(userId, 6);
-    if (events.length && (!display || display.expiresAt <= Date.now())) {
+    let home = this.inspectHome(userId);
+    if (home.needsRefresh) {
       await this.refresh(userId).catch(() => null);
-      display = this.repository.getLatestDisplay(userId);
+      home = this.inspectHome(userId);
     }
-    const storedState = this.repository.getState(userId);
-    if (!storedState?.state?.physiology) {
-      this.repository.saveState(userId, enrichStateWithPhysiology({
-        previous: storedState,
-        generatedState: storedState?.state,
-        display,
-        event: events.at(-1) || null,
-        refreshing: true
-      }));
-    }
+    if (home.needsPhysiology) this.ensurePhysiology(userId);
     return this.snapshot(userId);
   }
 
   async recordEvent(userId, input = {}) {
+    const prepared = await this.prepareEvent(userId, input);
+    return this.commitEvent(userId, prepared);
+  }
+
+  async prepareEvent(userId, input = {}) {
     const previousState = this.repository.getState(userId);
     const source = normalizeSource(input);
     const generated = await this.generate(userId, source).catch(() => null);
+    return { previousState, source, generated };
+  }
+
+  commitEvent(userId, prepared) {
+    const { previousState, source, generated } = prepared;
     const event = this.repository.createEvent(userId, {
       sourceType: source.sourceType,
       sourceId: source.sourceId,
@@ -82,9 +82,19 @@ class XuanMoodService {
   }
 
   async refresh(userId) {
+    const prepared = await this.prepareRefresh(userId);
+    return this.commitRefresh(userId, prepared);
+  }
+
+  async prepareRefresh(userId) {
     const previousState = this.repository.getState(userId);
     const generated = await this.generate(userId, null);
     const latestEvent = this.repository.listRecentEvents(userId, 1).at(-1) || null;
+    return { previousState, generated, latestEvent };
+  }
+
+  commitRefresh(userId, prepared) {
+    const { previousState, generated, latestEvent } = prepared;
     if (generated?.state || previousState || latestEvent) {
       this.repository.saveState(userId, enrichStateWithPhysiology({
         previous: previousState,
@@ -101,6 +111,32 @@ class XuanMoodService {
       const display = safeDisplay(generated.display, eventIds);
       if (display) this.repository.saveDisplay(userId, display);
     }
+    return this.snapshot(userId);
+  }
+
+  inspectHome(userId, now = Date.now()) {
+    const display = this.repository.getLatestDisplay(userId);
+    const events = this.repository.listRecentEvents(userId, 6);
+    const storedState = this.repository.getState(userId);
+    return {
+      display,
+      events,
+      storedState,
+      needsRefresh: Boolean(events.length && (!display || display.expiresAt <= now)),
+      needsPhysiology: !storedState?.state?.physiology
+    };
+  }
+
+  ensurePhysiology(userId) {
+    const home = this.inspectHome(userId);
+    if (!home.needsPhysiology) return this.snapshot(userId);
+    this.repository.saveState(userId, enrichStateWithPhysiology({
+      previous: home.storedState,
+      generatedState: home.storedState?.state,
+      display: home.display,
+      event: home.events.at(-1) || null,
+      refreshing: true
+    }));
     return this.snapshot(userId);
   }
 

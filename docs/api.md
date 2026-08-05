@@ -99,6 +99,15 @@ Accept: text/event-stream
 
 SSE 只通知实体类型、实体 ID、操作和游标。客户端收到通知后通过业务 API 重新读取数据。断线重连时必须继续使用最后确认的游标，不能只依赖在线事件。
 
+手机 Hub 作为活动节点时，业务数据留在本机处理，但仍会保留一条指向电脑 Hub 的控制通道：
+
+```http
+GET /api/v1/sync/events?after=<seq>&client_id=<installation>&control_only=1
+GET /api/v1/sync/commands?client_id=<installation>
+```
+
+第一条是只接收 Hub 指令的 SSE，不会补拉聊天、相册等业务变化；第二条是轻量轮询兜底，用于 Tailscale 或其他反向代理暂时缓冲 SSE 响应体的情况。控制命令带唯一 ID，客户端会去重执行。
+
 ## Agent Hub 对话
 
 桌面端和手机端都应调用 Agent Hub，不应直接调用 `/ai/chat` 自行实现工具循环。

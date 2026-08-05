@@ -28,11 +28,11 @@ if (isHubMode) {
         dataDir,
         logDir,
         pipeName,
-        host: process.env.AETHERX_HOST || "127.0.0.1",
+        host: process.env.AETHERX_HOST || "0.0.0.0",
         port: Number(process.env.AETHERX_PORT || 4318)
       });
       console.log(
-        `[${new Date().toISOString()}] AetherX Hub is listening on ${process.env.AETHERX_HOST || "127.0.0.1"}:${Number(process.env.AETHERX_PORT || 4318)}`
+        `[${new Date().toISOString()}] AetherX Hub is listening on ${process.env.AETHERX_HOST || "0.0.0.0"}:${Number(process.env.AETHERX_PORT || 4318)}`
       );
     } catch (error) {
       console.error("AetherX Hub 启动失败", error);
@@ -109,6 +109,17 @@ if (isHubMode) {
       const target = kind === "hub-data" ? manager.paths.hubData : manager.paths.desktopInstall;
       return shell.openPath(target);
     });
+    ipcMain.handle("launcher:mobile-hub:sync", async (_event, nodeId) => {
+      const result = await manager.synchronizeMobileHub(nodeId);
+      await refreshStatus();
+      return result;
+    });
+    ipcMain.handle("launcher:mobile-hub:switch", async (_event, nodeId) => {
+      const result = await manager.switchMobileHub(nodeId);
+      await refreshStatus();
+      return result;
+    });
+    ipcMain.handle("launcher:desktop:focus", () => manager.focusDesktop());
     ipcMain.handle("launcher:action", async (_event, action) => {
       const actions = {
         "deploy-all": () => manager.deployAll(),

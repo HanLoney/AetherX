@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { canonicalStringify } = require("../replication/operation-codec");
 
 class DreamRepository {
   constructor(database) {
@@ -79,7 +80,7 @@ class DreamRepository {
           input.title,
           input.content,
           input.mood,
-          JSON.stringify(input.symbols),
+          canonicalStringify(input.symbols),
           input.realityNote,
           input.sourceFrom,
           input.sourceTo,
@@ -104,7 +105,7 @@ class DreamRepository {
         input.title,
         input.content,
         input.mood,
-        JSON.stringify(input.symbols),
+        canonicalStringify(input.symbols),
         input.realityNote,
         input.sourceFrom,
         input.sourceTo,

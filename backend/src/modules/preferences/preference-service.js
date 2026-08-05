@@ -12,6 +12,14 @@ class PreferenceService {
     return this.repository.list(userId, query.category);
   }
 
+  get(userId, id) {
+    const preference = this.repository.find(userId, id);
+    if (!preference) {
+      throw new HttpError(404, "PREFERENCE_NOT_FOUND", "未找到指定偏好。");
+    }
+    return preference;
+  }
+
   save(userId, input) {
     const category = requiredText(input.category, "分类", 60);
     const key = requiredText(input.key, "偏好名称", 100);

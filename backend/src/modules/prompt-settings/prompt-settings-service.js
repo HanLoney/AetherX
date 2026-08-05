@@ -42,10 +42,17 @@ class PromptSettingsService {
     );
   }
 
-  save(userId, input) {
+  save(userId, input, options = {}) {
     const current = this.getBundle(userId).settings;
-    const saved = this.repository.save(userId, normalize({ ...current, ...input }));
-    return this.bundle(userId, saved.settings, saved.version, saved.updatedAt);
+    const saved = this.repository.save(
+      userId,
+      normalize({ ...current, ...input }),
+      options
+    );
+    return {
+      ...this.bundle(userId, saved.settings, saved.version, saved.updatedAt),
+      versionRecord: saved.versionRecord
+    };
   }
 
   listVersions(userId) {
@@ -55,12 +62,12 @@ class PromptSettingsService {
     }));
   }
 
-  restore(userId, version) {
+  restore(userId, version, options = {}) {
     const target = this.repository.findVersion(userId, Number(version));
     if (!target) {
       throw new HttpError(404, "PROMPT_VERSION_NOT_FOUND", "未找到提示词版本。");
     }
-    return this.save(userId, target.settings);
+    return this.save(userId, target.settings, options);
   }
 
   bundle(userId, settings, version, updatedAt) {

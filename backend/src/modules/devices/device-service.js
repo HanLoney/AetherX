@@ -7,8 +7,9 @@ const MAX_PAIRING_TTL_SECONDS = 600;
 const MOBILE_HEALTH_PROTOCOL_VERSION = 1;
 
 class DeviceService {
-  constructor(repository) {
+  constructor(repository, options = {}) {
     this.repository = repository;
+    this.localHubEndpointRegistrar = options.localHubEndpointRegistrar || null;
   }
 
   createPairingSession(userId, input = {}) {
@@ -149,8 +150,25 @@ class DeviceService {
       foreground: input.foreground !== false,
       latencyMs: nullableLatency(input.latencyMs),
       lastError: boundedText(input.lastError, 240),
+      localHubNodeId: boundedText(input.localHubNodeId, 128),
+      localHubStage: boundedText(input.localHubStage, 40),
+      localHubProgress: rangedInteger(input.localHubProgress, 0, 100),
+      localHubStatus: boundedText(input.localHubStatus, 40),
+      localHubDocuments: nonNegativeInteger(input.localHubDocuments),
+      localHubMediaBytes: nonNegativeInteger(input.localHubMediaBytes),
+      localHubMediaTotalBytes: nonNegativeInteger(input.localHubMediaTotalBytes),
+      localHubPendingMedia: nonNegativeInteger(input.localHubPendingMedia),
+      localHubUpdatedAt: nullableTimestamp(input.localHubUpdatedAt),
       now
     });
+    if (input.localHubNodeId && Array.isArray(input.localHubEndpoints)) {
+      this.localHubEndpointRegistrar?.(
+        userId,
+        boundedText(input.localHubNodeId, 128),
+        normalizeLocalHubEndpoints(input.localHubEndpoints),
+        now
+      );
+    }
     return { serverTime: now, client: presentMobileHealth(row, now) };
   }
 
@@ -267,6 +285,17 @@ function presentMobileHealth(row, now = Date.now()) {
     foreground: Boolean(row.foreground),
     latencyMs: row.latency_ms,
     lastError: row.last_error,
+    localHub: row.local_hub_node_id ? {
+      nodeId: row.local_hub_node_id,
+      stage: row.local_hub_stage,
+      progress: row.local_hub_progress,
+      status: row.local_hub_status,
+      documentCount: row.local_hub_documents,
+      mediaBytes: row.local_hub_media_bytes,
+      mediaTotalBytes: row.local_hub_media_total_bytes,
+      pendingMediaCount: row.local_hub_pending_media,
+      updatedAt: row.local_hub_updated_at
+    } : null,
     lastHeartbeatAt,
     ageMs,
     status
@@ -325,6 +354,17 @@ function nonNegativeInteger(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
 
+function rangedInteger(value, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return minimum;
+  return Math.max(minimum, Math.min(maximum, Math.round(number)));
+}
+
+function nullableTimestamp(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
 function positiveInteger(value, fallback) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : fallback;
@@ -334,6 +374,45 @@ function nullableLatency(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Math.round(Number(value));
   return Number.isFinite(number) && number >= 0 && number <= 300_000 ? number : null;
+}
+
+function normalizeLocalHubEndpoints(values) {
+  const endpoints = [];
+  const seen = new Set();
+  for (const value of values.slice(0, 8)) {
+    try {
+      const parsed = new URL(String(value?.address || ""));
+      if (
+        parsed.protocol !== "http:" ||
+        parsed.username ||
+        parsed.password ||
+        parsed.pathname !== "/" ||
+        parsed.search ||
+        parsed.hash
+      ) continue;
+      const octets = parsed.hostname.split(".").map(Number);
+      if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+        continue;
+      }
+      const lan = octets[0] === 10 ||
+        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+        (octets[0] === 192 && octets[1] === 168);
+      const tailscale = octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
+      if (!lan && !tailscale) continue;
+      const address = parsed.origin;
+      if (seen.has(address)) continue;
+      seen.add(address);
+      endpoints.push({
+        transport: tailscale ? "tailscale" : "lan",
+        address,
+        priority: tailscale ? 350 : 500,
+        certificateFingerprint: ""
+      });
+    } catch {
+      // Ignore malformed or non-private addresses advertised by clients.
+    }
+  }
+  return endpoints;
 }
 
 function hashSecret(value) {

@@ -59,6 +59,10 @@ class TodoService {
       throw new HttpError(404, "TODO_NOT_FOUND", "未找到指定待办。");
     }
   }
+
+  deleteCompleted(userId) {
+    return this.repository.deleteCompleted(userId);
+  }
 }
 
 function validateTodo(input) {

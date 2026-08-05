@@ -1,4 +1,7 @@
 const { randomUUID } = require("node:crypto");
+const {
+  canonicalStringify
+} = require("../replication/operation-codec");
 
 class AssistantMemoryRepository {
   constructor(database) {
@@ -36,8 +39,8 @@ class AssistantMemoryRepository {
       profile.gender,
       profile.selfDefinition,
       profile.relationshipSummary,
-      JSON.stringify(profile.traits),
-      JSON.stringify(profile.values),
+      canonicalStringify(profile.traits),
+      canonicalStringify(profile.values),
       profile.avatarDataUrl,
       profile.personaImageDataUrl,
       now

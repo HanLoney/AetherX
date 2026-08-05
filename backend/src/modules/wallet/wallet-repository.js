@@ -76,6 +76,7 @@ class WalletRepository {
   }
 
   transaction(callback) {
+    if (this.database.isTransaction) return callback();
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const result = callback();

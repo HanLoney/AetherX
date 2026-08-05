@@ -13,6 +13,7 @@ import {
   RefreshCw,
   ScanLine,
   Server,
+  Smartphone,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -38,11 +39,14 @@ import { DEFAULT_FONT_SCALE, useInterfaceSettings } from "../lib/interface-setti
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
 import { useModuleStore } from "../stores/modules";
+import { useLocalHub } from "../lib/local-hub";
+import { pairAndroidLocalHub } from "../lib/hub-pairing";
 
 const router = useRouter();
 const session = useSessionStore();
 const data = useDataStore();
 const modules = useModuleStore();
+const localHub = useLocalHub();
 const interfaceSettings = useInterfaceSettings();
 const refreshing = ref(false);
 const connectionOpen = ref(false);
@@ -53,6 +57,15 @@ const connectionError = ref("");
 const connectionNotice = ref("");
 const scanning = ref(false);
 const reconnecting = ref(false);
+const localHubPairingOpen = ref(false);
+const localHubPairingCode = ref("");
+const localHubPairingBusy = ref(false);
+const localHubPairingState = ref("");
+const localHubPairingError = ref("");
+const localHubSwitching = ref(false);
+const localHubSwitchError = ref("");
+const localHubSyncing = ref(false);
+const localHubSyncError = ref("");
 const interfaceOpen = ref(false);
 const archiveOpen = ref(false);
 const archivePassword = ref("");
@@ -88,6 +101,7 @@ const preferredName = computed(() => String(data.profile.value.preferredName || 
 const occupation = computed(() => String(data.profile.value.occupation || ""));
 const bio = computed(() => String(data.profile.value.bio || ""));
 const avatar = computed(() => String(data.profile.value.avatarDataUrl || ""));
+const archiveNeedsDesktopHub = computed(() => session.serverUrl.value === "capacitor://local-hub");
 const syncDescription = computed(() => data.syncState.value === "online"
   ? "电脑与手机正在实时同步"
   : data.syncState.value === "syncing"
@@ -95,6 +109,27 @@ const syncDescription = computed(() => data.syncState.value === "online"
     : data.syncState.value === "error"
       ? "连接暂时中断，点击重新同步"
       : "正在等待电脑端连接");
+const localHubDescription = computed(() => {
+  const state = localHub.status.value;
+  if (!localHub.available) return "仅 Android 安装包提供";
+  if (!state?.running) return localHub.error.value || "正在准备本机数据仓";
+  if (!state.configured) return "本机数据仓已启动，等待与电脑 Hub 配对";
+  if (state.bootstrap?.status !== "completed" || !state.integrity) {
+    return "全量副本未完成 · 请重新配对迁入";
+  }
+  const records = `${state.documentCount} 条记录`;
+  return state.role === "active" ? `当前由手机承载 · ${records}` : `本机副本待命 · ${records}`;
+});
+const localHubBootstrapReady = computed(() =>
+  localHub.status.value?.bootstrap?.status === "completed" &&
+  Boolean(localHub.status.value?.integrity)
+);
+const localHubBadge = computed(() => {
+  const state = localHub.status.value;
+  if (state?.role === "active") return "当前";
+  if (!state?.configured) return "待配对";
+  return localHubBootstrapReady.value ? "待命" : "待恢复";
+});
 
 function previewFontScale(event: Event) {
   interfaceSettings.applyFontScale((event.target as HTMLInputElement).value);
@@ -121,7 +156,9 @@ function closeInterfaceSettings() {
 }
 
 function openArchiveSettings() {
-  archiveNotice.value = "";
+  archiveNotice.value = archiveNeedsDesktopHub.value
+    ? "当前由手机 Hub 独立运行。请先切回已连接的电脑 Hub，再导出或恢复兼容 .aetherx 完整存档。"
+    : "";
   archiveError.value = "";
   archiveFile.value = null;
   archiveOpen.value = true;
@@ -143,6 +180,7 @@ function validateArchivePassword() {
 }
 
 async function exportFullArchive() {
+  if (archiveNeedsDesktopHub.value) return;
   if (!validateArchivePassword()) return;
   archiveBusy.value = true;
   archiveError.value = "";
@@ -161,7 +199,7 @@ async function exportFullArchive() {
 }
 
 function chooseArchiveFile() {
-  if (!archiveBusy.value) archiveInput.value?.click();
+  if (!archiveBusy.value && !archiveNeedsDesktopHub.value) archiveInput.value?.click();
 }
 
 function handleArchiveFile(event: Event) {
@@ -176,6 +214,7 @@ function handleArchiveFile(event: Event) {
 }
 
 async function restoreFullArchive() {
+  if (archiveNeedsDesktopHub.value) return;
   if (!validateArchivePassword()) return;
   if (!archiveFile.value || !archiveFile.value.name.toLowerCase().endsWith(".aetherx")) {
     archiveError.value = "请先选择要恢复的 .aetherx 存档。";
@@ -236,7 +275,7 @@ function drawCrop() {
     crop.offsetY,
     image.naturalWidth * currentCropScale(),
     image.naturalHeight * currentCropScale()
-  );
+);
 }
 
 function initializeCrop() {
@@ -467,6 +506,115 @@ async function applyHubConnection() {
   }
 }
 
+function openLocalHubPairing() {
+  localHubPairingCode.value = "";
+  localHubPairingState.value = "";
+  localHubPairingError.value = "";
+  localHubPairingOpen.value = true;
+}
+
+async function scanLocalHubCode() {
+  if (scanning.value || localHubPairingBusy.value) return;
+  scanning.value = true;
+  localHubPairingError.value = "";
+  try {
+    const result = await CapacitorBarcodeScanner.scanBarcode({
+      hint: CapacitorBarcodeScannerTypeHint.QR_CODE,
+      scanInstructions: "扫描电脑端生成的手机 Local Hub 配对码",
+      scanButton: false,
+      cameraDirection: CapacitorBarcodeScannerCameraDirection.BACK,
+      scanOrientation: CapacitorBarcodeScannerScanOrientation.ADAPTIVE,
+      android: { scanningLibrary: CapacitorBarcodeScannerAndroidScanningLibrary.ZXING }
+    });
+    if (result.ScanResult) localHubPairingCode.value = result.ScanResult;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "没有读取到二维码。";
+    if (!/cancel|取消/i.test(message)) localHubPairingError.value = message;
+  } finally {
+    scanning.value = false;
+  }
+}
+
+async function pairLocalHub() {
+  if (localHubPairingBusy.value || !localHubPairingCode.value.trim()) return;
+  localHubPairingBusy.value = true;
+  localHubPairingError.value = "";
+  try {
+    await pairAndroidLocalHub(
+      localHubPairingCode.value,
+      localHub,
+      (state) => { localHubPairingState.value = state; }
+    );
+    await localHub.refresh();
+    localHubPairingState.value = "手机 Hub 已保存首份结构化副本";
+    window.setTimeout(() => { localHubPairingOpen.value = false; }, 900);
+  } catch (cause) {
+    localHubPairingState.value = "";
+    localHubPairingError.value = cause instanceof Error ? cause.message : "手机 Hub 没有完成配对。";
+  } finally {
+    localHubPairingBusy.value = false;
+  }
+}
+
+async function switchToLocalHub() {
+  if (localHubSwitching.value) return;
+  localHubSwitching.value = true;
+  localHubSwitchError.value = "";
+  connectionNotice.value = "";
+  try {
+    await session.activateLocalHub();
+    connectionNotice.value = "已安全切换到手机 Hub，电脑关闭后仍可继续使用";
+    await Promise.all([
+      modules.hydrate(true).catch(() => undefined),
+      session.requireApi().aiConfig().then((value) => { aiState.value = value; }).catch(() => undefined)
+    ]);
+  } catch (cause) {
+    localHubSwitchError.value = cause instanceof Error ? cause.message : "没有成功切换到手机 Hub。";
+  } finally {
+    localHubSwitching.value = false;
+  }
+}
+
+async function switchToDesktopHub() {
+  if (localHubSwitching.value) return;
+  localHubSwitching.value = true;
+  localHubSwitchError.value = "";
+  connectionNotice.value = "";
+  try {
+    await session.activateDesktopHub();
+    connectionNotice.value = "已安全切换到电脑 Hub，手机副本会继续待命同步";
+    await modules.hydrate(true).catch(() => undefined);
+  } catch (cause) {
+    localHubSwitchError.value = cause instanceof Error ? cause.message : "没有成功切换到电脑 Hub。";
+  } finally {
+    localHubSwitching.value = false;
+  }
+}
+
+async function synchronizeLocalHub() {
+  if (localHubSyncing.value || localHubSwitching.value) return;
+  localHubSyncing.value = true;
+  localHubSyncError.value = "";
+  connectionNotice.value = "";
+  try {
+    const before = localHub.status.value || await localHub.refresh();
+    if (!before?.configured || before.bootstrap?.status !== "completed") {
+      throw new Error("手机 Hub 尚未完成全量迁入，暂时不能执行双向同步。");
+    }
+    const result = await localHub.synchronize();
+    const changed = before.role === "active"
+      ? Number(result.pushed || 0)
+      : Number(result.applied || 0);
+    connectionNotice.value = before.role === "active"
+      ? `已同步到电脑 Hub${changed ? ` · 推送 ${changed} 项变更` : " · 两端已一致"}`
+      : `已同步到手机 Hub${changed ? ` · 接收 ${changed} 项变更` : " · 两端已一致"}`;
+  } catch (cause) {
+    localHubSyncError.value = cause instanceof Error ? cause.message : "双 Hub 同步没有完成。";
+  } finally {
+    localHubSyncing.value = false;
+  }
+}
+
 async function logout() {
   data.stopSync();
   await session.logout();
@@ -521,6 +669,11 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
         <div><strong>电脑端 Hub</strong><span>{{ session.serverUrl.value }}</span></div>
         <b>管理</b>
       </button>
+      <button class="hub-connection-row" type="button" @click="openLocalHubPairing">
+        <i><Smartphone :size="18"/></i>
+        <div><strong>手机 Local Hub</strong><span>{{ localHubDescription }}</span></div>
+        <b :class="{ warning: !localHub.status.value?.configured || !localHubBootstrapReady }">{{ localHubBadge }}</b>
+      </button>
       <article>
         <i><Cloud :size="18"/></i>
         <div><strong>实时同步</strong><span>{{ syncDescription }}</span></div>
@@ -533,6 +686,39 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </article>
     </section>
     <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
+    <div v-if="localHub.status.value?.configured && localHubBootstrapReady" class="hub-action-row">
+      <button
+        class="hub-sync-button"
+        type="button"
+        :disabled="localHubSyncing || localHubSwitching"
+        @click="synchronizeLocalHub"
+      >
+        <RefreshCw :size="17" :class="{ spin: localHubSyncing }" />
+        {{ localHubSyncing
+          ? (localHub.status.value?.role === 'active' ? '正在同步到电脑…' : '正在同步到手机…')
+          : (localHub.status.value?.role === 'active' ? '同步到电脑 Hub' : '同步到手机 Hub') }}
+      </button>
+      <button
+        v-if="localHub.status.value?.role === 'standby'"
+        class="hub-switch-button"
+        type="button"
+        :disabled="localHubSwitching || localHubSyncing"
+        @click="switchToLocalHub"
+      >
+        <Smartphone :size="17" />{{ localHubSwitching ? '正在校验并切换…' : '切换到手机 Hub' }}
+      </button>
+      <button
+        v-else-if="localHub.status.value?.role === 'active'"
+        class="hub-switch-button"
+        type="button"
+        :disabled="localHubSwitching || localHubSyncing"
+        @click="switchToDesktopHub"
+      >
+        <Server :size="17" />{{ localHubSwitching ? '正在校验并切换…' : '切换到电脑 Hub' }}
+      </button>
+    </div>
+    <p v-if="localHubSwitchError" class="connection-error">{{ localHubSwitchError }}</p>
+    <p v-if="localHubSyncError" class="connection-error">{{ localHubSyncError }}</p>
 
     <div class="section-heading module-heading"><div><span>CAPABILITIES</span><h2>功能模块</h2></div><Blocks :size="18" /></div>
     <section class="module-control-list">
@@ -601,6 +787,32 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
             <Link2 :size="17" />{{ reconnecting ? (connectionMode === 'pair' ? '等待电脑确认…' : '正在验证 Hub…') : connectionMode === 'address' ? '验证并重新连接' : '申请重新配对' }}
           </button>
         </form>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
+        <div v-if="localHubPairingOpen" class="sheet-backdrop" @click.self="!localHubPairingBusy && (localHubPairingOpen = false)">
+          <form class="connection-sheet" role="dialog" aria-modal="true" aria-label="配置手机 Local Hub" @submit.prevent="pairLocalHub">
+            <div class="sheet-handle" />
+            <header>
+              <div><span>ANDROID LOCAL HUB</span><h2>把副本留在手机里</h2></div>
+              <button type="button" aria-label="关闭" :disabled="localHubPairingBusy" @click="localHubPairingOpen = false"><X :size="18" /></button>
+            </header>
+            <p class="connection-intro">在电脑端“连接手机”里选择“把手机设为备用 Hub”，确认后会把结构化数据完整复制到本机数据仓。</p>
+            <label class="connection-field pairing-code-field">
+              <span>手机 Hub 配对码</span>
+              <textarea v-model="localHubPairingCode" rows="4" placeholder="aetherx://hub-pair?…" />
+              <small>配对密钥和同步密钥只会进入 Android Keystore，不写入网页缓存。</small>
+            </label>
+            <button class="scan-hub-button" type="button" :disabled="scanning || localHubPairingBusy" @click="scanLocalHubCode">
+              <ScanLine :size="19" /><span><strong>{{ scanning ? '正在打开相机…' : '扫描手机 Hub 二维码' }}</strong><small>从电脑端建立受信任副本通道</small></span>
+            </button>
+            <p v-if="localHubPairingState" class="connection-notice"><RefreshCw :size="13" :class="{ spin: localHubPairingBusy }" />{{ localHubPairingState }}</p>
+            <p v-if="localHubPairingError" class="connection-error">{{ localHubPairingError }}</p>
+            <button class="apply-connection" type="submit" :disabled="localHubPairingBusy || !localHubPairingCode.trim()">
+              <Link2 :size="17" />{{ localHubPairingBusy ? '正在建立手机副本…' : '配对并复制到手机' }}
+            </button>
+          </form>
         </div>
       </Transition>
 
@@ -681,22 +893,22 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 
           <label class="archive-password">
             <span>存档密码</span>
-            <input v-model="archivePassword" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" :disabled="archiveBusy" />
+            <input v-model="archivePassword" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" :disabled="archiveBusy || archiveNeedsDesktopHub" />
             <small>密码只用于加密存档。忘记后无法恢复，请单独妥善保存。</small>
           </label>
 
-          <button class="archive-export-button" type="button" :disabled="archiveBusy" @click="exportFullArchive">
+          <button class="archive-export-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub" @click="exportFullArchive">
             <Download :size="18" /><span><strong>导出完整存档</strong><small>生成加密的 .aetherx 文件并交给系统下载</small></span>
           </button>
 
           <div class="archive-restore-card">
             <div><strong>完整恢复</strong><span>不会合并；当前账号的 AI 数据会整套替换为存档内容。</span></div>
             <input ref="archiveInput" class="archive-file-input" type="file" accept=".aetherx,application/vnd.aetherx.archive" @change="handleArchiveFile" />
-            <button class="archive-file-button" type="button" :disabled="archiveBusy" @click="chooseArchiveFile">
+            <button class="archive-file-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub" @click="chooseArchiveFile">
               <Upload :size="17" />{{ archiveFile?.name || '选择 .aetherx 存档' }}
             </button>
             <p>登录密码、当前登录状态与已配对设备会保留；恢复前 Hub 会自动备份现有数据。</p>
-            <button class="archive-restore-button" type="button" :disabled="archiveBusy || !archiveFile" @click="restoreFullArchive">
+            <button class="archive-restore-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub || !archiveFile" @click="restoreFullArchive">
               {{ archiveBusy ? '正在处理存档……' : '确认完整恢复' }}
             </button>
           </div>
@@ -751,6 +963,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .profile-meta{position:relative;z-index:1;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding:0 4px 0 10px;border-radius:14px;background:rgba(112,104,135,.045)}.profile-meta>span{min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;color:#8e8797;font-size: calc(8px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.profile-meta>button{height:31px;flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 10px;border:1px solid rgba(255,255,255,.75);border-radius:11px;color:#806c82;background:linear-gradient(125deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.14));font-size: calc(8px * var(--font-scale, 1));font-weight:700}
 .section-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:25px 4px 11px}.section-heading>div{display:grid;gap:3px}.section-heading span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.section-heading h2{margin:0;color:#514d5d;font-size: calc(16px * var(--font-scale, 1))}.section-heading>svg{color:#7ca48f}
 .settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}
+.hub-action-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:17px}.hub-action-row button{min-width:0;height:46px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(8px * var(--font-scale,1));font-weight:700}.hub-sync-button{border:1px solid rgba(var(--blue-rgb),.18);color:#67829d;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(255,255,255,.66))}.hub-switch-button{border:1px solid rgba(var(--pink-rgb),.15);color:#876f88;background:linear-gradient(135deg,rgba(var(--pink-rgb),.09),rgba(255,255,255,.66))}.hub-action-row button:disabled{opacity:.52}
 .module-heading{margin-top:22px}.module-control-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.075);backdrop-filter:blur(18px)}.module-control-list label{position:relative;min-height:68px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:13px;padding:12px 14px;border-bottom:1px solid rgba(106,98,129,.07);transition:opacity .18s ease}.module-control-list label:last-child{border-bottom:0}.module-control-list label.disabled{opacity:.62}.module-control-list label>span{min-width:0;display:grid;gap:4px}.module-control-list strong{color:#4f4a5b;font-size:calc(10px * var(--font-scale,1))}.module-control-list small{overflow:hidden;color:#9993a3;font-size:calc(7px * var(--font-scale,1));line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.module-control-list input{position:absolute;opacity:0;pointer-events:none}.module-control-list label>i{position:relative;width:39px;height:23px;border-radius:999px;background:rgba(133,127,151,.18);box-shadow:inset 0 0 0 1px rgba(108,101,130,.08);transition:background .2s ease}.module-control-list label>i b{position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(75,67,95,.2);transition:transform .22s cubic-bezier(.2,.9,.25,1.15)}.module-control-list input:checked+i{background:linear-gradient(135deg,#cb8dac,#7fa8d0)}.module-control-list input:checked+i b{transform:translateX(16px)}.module-control-list label.core>i{opacity:.55}.module-error{margin:9px 12px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));text-align:center}
 .interface-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 19px 8px;color:#70697d;background:linear-gradient(140deg,rgba(255,255,255,.67),rgba(246,248,252,.5));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.interface-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.13),rgba(var(--blue-rgb),.12))}.interface-settings-entry>span{min-width:0;display:grid;gap:4px}.interface-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.interface-settings-entry small{color:#9a94a3;font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>b{padding:4px 7px;border-radius:999px;color:#7187a2;background:rgba(var(--blue-rgb),.1);font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>svg{color:#aaa3b0}
 .archive-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:9px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 8px 19px;color:#70697d;background:linear-gradient(140deg,rgba(247,250,255,.72),rgba(255,247,252,.56));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.archive-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#718fac;background:linear-gradient(145deg,rgba(var(--blue-rgb),.16),rgba(var(--pink-rgb),.1))}.archive-settings-entry>span{min-width:0;display:grid;gap:4px}.archive-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.archive-settings-entry small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#9a94a3;font-size:calc(7px * var(--font-scale, 1));line-height:1.4}.archive-settings-entry>b{padding:4px 7px;border-radius:999px;color:#89768d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));white-space:nowrap}.archive-settings-entry>svg{color:#aaa3b0}

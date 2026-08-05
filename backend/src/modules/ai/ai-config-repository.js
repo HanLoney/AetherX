@@ -5,7 +5,8 @@ const DEFAULT_CONFIG = Object.freeze({
   providerName: "OpenAI",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-5.4-mini",
-  encryptedApiKey: ""
+  encryptedApiKey: "",
+  updatedAt: null
 });
 
 const DEFAULT_IMAGE_CONFIG = Object.freeze({
@@ -13,7 +14,8 @@ const DEFAULT_IMAGE_CONFIG = Object.freeze({
   providerName: "火山方舟",
   baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
   model: "doubao-seedream-5-0-260128",
-  encryptedApiKey: ""
+  encryptedApiKey: "",
+  updatedAt: null
 });
 
 class AiConfigRepository {
@@ -25,7 +27,8 @@ class AiConfigRepository {
   getStored(userId) {
     const row = this.database
       .prepare(
-        `SELECT provider_id, provider_name, base_url, model, encrypted_api_key
+        `SELECT provider_id, provider_name, base_url, model, encrypted_api_key,
+                updated_at
          FROM ai_configs WHERE user_id = ?`
       )
       .get(userId);
@@ -35,7 +38,8 @@ class AiConfigRepository {
       providerName: row.provider_name,
       baseUrl: row.base_url,
       model: row.model,
-      encryptedApiKey: row.encrypted_api_key
+      encryptedApiKey: row.encrypted_api_key,
+      updatedAt: row.updated_at
     };
   }
 
@@ -46,7 +50,8 @@ class AiConfigRepository {
       providerName: stored.providerName,
       baseUrl: stored.baseUrl,
       model: stored.model,
-      hasApiKey: Boolean(stored.encryptedApiKey)
+      hasApiKey: Boolean(stored.encryptedApiKey),
+      updatedAt: stored.updatedAt
     };
   }
 
@@ -65,7 +70,7 @@ class AiConfigRepository {
     return { ...stored, apiKey };
   }
 
-  save(userId, input) {
+  save(userId, input, options = {}) {
     const normalized = normalizeConfig(input);
     const current = this.getStored(userId);
     const providedKey = String(input.apiKey || "").trim();
@@ -99,7 +104,7 @@ class AiConfigRepository {
         normalized.baseUrl,
         normalized.model,
         encryptedApiKey,
-        Date.now()
+        Number(options.now ?? Date.now())
       );
     return this.getPublic(userId);
   }
@@ -107,7 +112,8 @@ class AiConfigRepository {
   getImageStored(userId) {
     const row = this.database
       .prepare(
-        `SELECT provider_id, provider_name, base_url, model, encrypted_api_key
+        `SELECT provider_id, provider_name, base_url, model, encrypted_api_key,
+                updated_at
          FROM ai_image_configs WHERE user_id = ?`
       )
       .get(userId);
@@ -117,7 +123,8 @@ class AiConfigRepository {
       providerName: row.provider_name,
       baseUrl: row.base_url,
       model: row.model,
-      encryptedApiKey: row.encrypted_api_key
+      encryptedApiKey: row.encrypted_api_key,
+      updatedAt: row.updated_at
     };
   }
 
@@ -128,7 +135,8 @@ class AiConfigRepository {
       providerName: stored.providerName,
       baseUrl: stored.baseUrl,
       model: stored.model,
-      hasApiKey: Boolean(stored.encryptedApiKey)
+      hasApiKey: Boolean(stored.encryptedApiKey),
+      updatedAt: stored.updatedAt
     };
   }
 
@@ -147,7 +155,7 @@ class AiConfigRepository {
     return { ...stored, apiKey };
   }
 
-  saveImage(userId, input) {
+  saveImage(userId, input, options = {}) {
     const normalized = normalizeConfig(input);
     const current = this.getImageStored(userId);
     const providedKey = String(input.apiKey || "").trim();
@@ -181,7 +189,7 @@ class AiConfigRepository {
         normalized.baseUrl,
         normalized.model,
         encryptedApiKey,
-        Date.now()
+        Number(options.now ?? Date.now())
       );
     return this.getImagePublic(userId);
   }

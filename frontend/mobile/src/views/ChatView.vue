@@ -179,6 +179,7 @@ async function send() {
     displayMessages.value = result.displayMessages;
     conversationRefreshPending = false;
     sending.value = false;
+    void data.refreshConversationPage(true).catch(() => undefined);
     await scrollToBottom();
   } catch (cause) {
     resolveAllApprovals(false);

@@ -86,7 +86,7 @@ async function startLocalHub(options) {
   const hub = createBackendApp({
     host:
       environment.AETHERX_HUB_HOST ||
-      (url.hostname === "localhost" ? "127.0.0.1" : url.hostname),
+      "0.0.0.0",
     port: Number(url.port || DEFAULT_HUB_PORT),
     dataDir: resolveHubDataDir(electronApp, backendRoot, environment),
     masterKey: environment.AETHERX_MASTER_KEY || environment.XUANAI_MASTER_KEY || "",

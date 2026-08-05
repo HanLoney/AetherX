@@ -834,12 +834,377 @@ const MIGRATIONS = [
         AND existing.account_id = account.id
         AND existing.event_type = 'create'
     );
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS hub_instance (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      node_id TEXT NOT NULL UNIQUE,
+      node_name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      public_identity TEXT NOT NULL DEFAULT '',
+      protocol_version INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS aetherx_spaces (
+      id TEXT PRIMARY KEY,
+      local_user_id TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(local_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS hub_nodes (
+      id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
+      node_name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      public_identity TEXT NOT NULL DEFAULT '',
+      protocol_version INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      last_seen_at INTEGER,
+      created_at INTEGER NOT NULL,
+      revoked_at INTEGER,
+      PRIMARY KEY(space_id, id),
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_nodes_space_status
+      ON hub_nodes(space_id, status, created_at);
+
+    CREATE TABLE IF NOT EXISTS hub_endpoints (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      transport TEXT NOT NULL,
+      address TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      certificate_fingerprint TEXT NOT NULL DEFAULT '',
+      last_success_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(space_id, node_id, transport, address),
+      FOREIGN KEY(space_id, node_id) REFERENCES hub_nodes(space_id, id)
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_endpoints_node_priority
+      ON hub_endpoints(space_id, node_id, priority DESC);
+
+    CREATE TABLE IF NOT EXISTS hub_cluster_state (
+      space_id TEXT PRIMARY KEY,
+      epoch INTEGER NOT NULL,
+      active_node_id TEXT NOT NULL,
+      transition_id TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL,
+      state_hash TEXT NOT NULL,
+      control_signature TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id, active_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS replication_operations (
+      operation_id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      origin_node_id TEXT NOT NULL,
+      origin_sequence INTEGER NOT NULL,
+      epoch INTEGER NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      entity_version INTEGER NOT NULL,
+      previous_entity_version INTEGER,
+      payload_json TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      previous_operation_hash TEXT NOT NULL DEFAULT '',
+      operation_hash TEXT NOT NULL,
+      authentication_tag TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      UNIQUE(space_id, origin_node_id, origin_sequence),
+      FOREIGN KEY(space_id, origin_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_operations_space_origin
+      ON replication_operations(space_id, origin_node_id, origin_sequence);
+    CREATE INDEX IF NOT EXISTS idx_replication_operations_entity
+      ON replication_operations(space_id, entity_type, entity_id, entity_version);
+
+    CREATE TABLE IF NOT EXISTS replication_entity_versions (
+      space_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, entity_type, entity_id),
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS replication_watermarks (
+      space_id TEXT NOT NULL,
+      peer_node_id TEXT NOT NULL,
+      origin_node_id TEXT NOT NULL,
+      contiguous_sequence INTEGER NOT NULL,
+      operation_hash TEXT NOT NULL,
+      acknowledged_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, peer_node_id, origin_node_id),
+      FOREIGN KEY(space_id, peer_node_id) REFERENCES hub_nodes(space_id, id),
+      FOREIGN KEY(space_id, origin_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS applied_operations (
+      operation_id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      applied_at INTEGER NOT NULL,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_applied_operations_space_time
+      ON applied_operations(space_id, applied_at);
+
+    CREATE TABLE IF NOT EXISTS idempotency_requests (
+      space_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      result_status INTEGER NOT NULL,
+      result_hash TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, request_id),
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_idempotency_requests_expiry
+      ON idempotency_requests(expires_at);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS space_data_keys (
+      space_id TEXT PRIMARY KEY,
+      key_version INTEGER NOT NULL,
+      encrypted_sync_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      rotated_at INTEGER,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS hub_peer_credentials (
+      space_id TEXT NOT NULL,
+      peer_node_id TEXT NOT NULL,
+      key_id TEXT NOT NULL,
+      encrypted_shared_secret TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      rotated_at INTEGER,
+      revoked_at INTEGER,
+      PRIMARY KEY(space_id, peer_node_id),
+      UNIQUE(space_id, key_id),
+      FOREIGN KEY(space_id, peer_node_id) REFERENCES hub_nodes(space_id, id)
+        ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS peer_request_nonces (
+      space_id TEXT NOT NULL,
+      peer_node_id TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      request_timestamp INTEGER NOT NULL,
+      seen_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, peer_node_id, nonce),
+      FOREIGN KEY(space_id, peer_node_id) REFERENCES hub_nodes(space_id, id)
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_peer_request_nonces_seen
+      ON peer_request_nonces(seen_at);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS hub_pairing_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      space_id TEXT NOT NULL,
+      secret_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      server_ephemeral_public_key TEXT NOT NULL,
+      encrypted_server_ephemeral_private_key TEXT NOT NULL,
+      requested_node_id TEXT,
+      node_name TEXT,
+      platform TEXT,
+      public_identity TEXT,
+      client_ephemeral_public_key TEXT,
+      protocol_version INTEGER,
+      schema_version INTEGER,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      claimed_at INTEGER,
+      approved_at INTEGER,
+      redeemed_at INTEGER,
+      UNIQUE(space_id, secret_hash),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_pairing_sessions_user
+      ON hub_pairing_sessions(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_hub_pairing_sessions_expiry
+      ON hub_pairing_sessions(expires_at);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS replication_snapshots (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      source_node_id TEXT NOT NULL,
+      requested_by_node_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      boundary_json TEXT NOT NULL,
+      records_root TEXT NOT NULL,
+      blobs_root TEXT NOT NULL,
+      manifest_hash TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id, source_node_id) REFERENCES hub_nodes(space_id, id),
+      FOREIGN KEY(space_id, requested_by_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_snapshots_space_time
+      ON replication_snapshots(space_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS replication_snapshot_tables (
+      snapshot_id TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      row_count INTEGER NOT NULL,
+      table_root TEXT NOT NULL,
+      PRIMARY KEY(snapshot_id, table_name),
+      FOREIGN KEY(snapshot_id) REFERENCES replication_snapshots(id) ON DELETE CASCADE
+    );
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS replication_snapshot_payloads (
+      snapshot_id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      encrypted_payload_json TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(snapshot_id) REFERENCES replication_snapshots(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS replication_bootstrap_staging (
+      snapshot_id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      source_node_id TEXT NOT NULL,
+      manifest_hash TEXT NOT NULL,
+      records_root TEXT NOT NULL,
+      blobs_root TEXT NOT NULL,
+      boundary_json TEXT NOT NULL,
+      encrypted_payload_json TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      verified_at INTEGER,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id, source_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_bootstrap_staging_space
+      ON replication_bootstrap_staging(space_id, created_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS replication_blob_staging (
+      snapshot_id TEXT NOT NULL,
+      media_id TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      received_bytes INTEGER NOT NULL DEFAULT 0,
+      temp_file_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(snapshot_id, media_id),
+      FOREIGN KEY(snapshot_id) REFERENCES replication_bootstrap_staging(snapshot_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_blob_staging_status
+      ON replication_blob_staging(snapshot_id, status);
+  `,
+  `
+    ALTER TABLE hub_pairing_sessions
+      ADD COLUMN source_endpoints_json TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE hub_pairing_sessions
+      ADD COLUMN requested_endpoints_json TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE hub_endpoints
+      ADD COLUMN last_failure_at INTEGER;
+    ALTER TABLE hub_endpoints
+      ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS replication_peer_health (
+      space_id TEXT NOT NULL,
+      peer_node_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      last_attempt_at INTEGER,
+      last_success_at INTEGER,
+      last_error_code TEXT NOT NULL DEFAULT '',
+      last_error_message TEXT NOT NULL DEFAULT '',
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER,
+      local_sequence INTEGER NOT NULL DEFAULT 0,
+      remote_sequence INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, peer_node_id),
+      FOREIGN KEY(space_id, peer_node_id) REFERENCES hub_nodes(space_id, id)
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_peer_health_next_attempt
+      ON replication_peer_health(next_attempt_at);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS replication_media_staging (
+      space_id TEXT NOT NULL,
+      source_node_id TEXT NOT NULL,
+      media_id TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      media_created_at INTEGER NOT NULL,
+      temp_file_name TEXT NOT NULL,
+      received_bytes INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, source_node_id, media_id),
+      FOREIGN KEY(space_id, source_node_id) REFERENCES hub_nodes(space_id, id)
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_replication_media_staging_status
+      ON replication_media_staging(space_id, source_node_id, status);
+  `,
+  `
+    ALTER TABLE hub_cluster_state
+      ADD COLUMN transition_target_node_id TEXT NOT NULL DEFAULT '';
+    ALTER TABLE hub_cluster_state
+      ADD COLUMN transition_started_at INTEGER;
+  `,
+  `
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_node_id TEXT NOT NULL DEFAULT '';
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_stage TEXT NOT NULL DEFAULT '';
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_progress INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_status TEXT NOT NULL DEFAULT '';
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_documents INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_media_bytes INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_media_total_bytes INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_pending_media INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mobile_client_health
+      ADD COLUMN local_hub_updated_at INTEGER;
   `
 ];
 
 const SYNC_TRIGGER_EXCLUSIONS = new Set([
   "auth_sessions",
   "device_pairing_sessions",
+  "hub_pairing_sessions",
   "memory_evidence",
   "mobile_client_health",
   "schema_migrations",

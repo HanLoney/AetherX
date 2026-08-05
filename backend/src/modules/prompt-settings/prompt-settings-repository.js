@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { canonicalStringify } = require("../replication/operation-codec");
 
 class PromptSettingsRepository {
   constructor(database) {
@@ -18,13 +19,13 @@ class PromptSettingsRepository {
       : null;
   }
 
-  save(userId, settings) {
+  save(userId, settings, options = {}) {
     const current = this.get(userId);
     const version = (current?.version || 0) + 1;
-    const now = Date.now();
-    const json = JSON.stringify(settings);
-    this.database.exec("BEGIN");
-    try {
+    const now = Number(options.now ?? Date.now());
+    const versionId = String(options.versionId || randomUUID());
+    const json = canonicalStringify(settings);
+    const action = () => {
       this.database.prepare(`
         INSERT INTO prompt_settings(user_id, version, settings_json, updated_at)
         VALUES (?, ?, ?, ?)
@@ -37,19 +38,35 @@ class PromptSettingsRepository {
         INSERT INTO prompt_setting_versions(
           id, user_id, version, settings_json, created_at
         ) VALUES (?, ?, ?, ?, ?)
-      `).run(randomUUID(), userId, version, json, now);
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
+      `).run(versionId, userId, version, json, now);
+    };
+    if (options.withinTransaction === true) {
+      action();
+    } else {
+      this.database.exec("BEGIN");
+      try {
+        action();
+        this.database.exec("COMMIT");
+      } catch (error) {
+        this.database.exec("ROLLBACK");
+        throw error;
+      }
     }
-    return this.get(userId);
+    return {
+      ...this.get(userId),
+      versionRecord: {
+        id: versionId,
+        version,
+        settings: JSON.parse(json),
+        createdAt: now
+      }
+    };
   }
 
   listVersions(userId) {
     return this.database
       .prepare(`
-        SELECT version, settings_json, created_at
+        SELECT id, version, settings_json, created_at
         FROM prompt_setting_versions
         WHERE user_id = ?
         ORDER BY version DESC
@@ -57,6 +74,7 @@ class PromptSettingsRepository {
       `)
       .all(userId)
       .map((row) => ({
+        id: row.id,
         version: row.version,
         settings: JSON.parse(row.settings_json),
         createdAt: row.created_at
@@ -66,13 +84,14 @@ class PromptSettingsRepository {
   findVersion(userId, version) {
     const row = this.database
       .prepare(`
-        SELECT version, settings_json, created_at
+        SELECT id, version, settings_json, created_at
         FROM prompt_setting_versions
         WHERE user_id = ? AND version = ?
       `)
       .get(userId, version);
     return row
       ? {
+          id: row.id,
           version: row.version,
           settings: JSON.parse(row.settings_json),
           createdAt: row.created_at

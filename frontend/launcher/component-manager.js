@@ -287,13 +287,22 @@ class ComponentManager {
     this.onProgress({ component, phase, message, percent, ...detail });
   }
 
-  async getDesktopControl() {
+  async requestDesktopControl(command, timeoutMs = 700) {
     try {
-      const response = await requestControl(this.desktopPipe, "status", { timeoutMs: 700 });
-      return response.ok && response.healthy ? response : null;
+      const response = await requestControl(this.desktopPipe, command, { timeoutMs });
+      return response.ok ? response : null;
     } catch {
       return null;
     }
+  }
+
+  async getDesktopControl() {
+    const response = await this.requestDesktopControl("status");
+    return response?.healthy ? response : null;
+  }
+
+  async getMobileHubControl() {
+    return this.requestDesktopControl({ type: "mobile-hubs-status" }, 1800);
   }
 
   async getHubControl() {
@@ -308,12 +317,13 @@ class ComponentManager {
   async getStatus() {
     const desktopExe = path.join(this.paths.desktopInstall, "AetherX.exe");
     const payloadManifestPath = path.join(this.paths.desktopPayload, ".aetherx-payload.json");
-    const [desktopInstalled, desktopMarker, desktopPayload, desktopControl, hubMarker, hubControl, hubHealth, hubPort] =
+    const [desktopInstalled, desktopMarker, desktopPayload, desktopControl, mobileHubControl, hubMarker, hubControl, hubHealth, hubPort] =
       await Promise.all([
         pathExists(desktopExe),
         readJson(this.paths.desktopMarker),
         readJson(payloadManifestPath),
         this.getDesktopControl(),
+        this.getMobileHubControl(),
         readJson(this.paths.hubMarker),
         this.getHubControl(),
         probeHub(),
@@ -368,6 +378,8 @@ class ComponentManager {
       mobile: {
         available: hubRunning,
         detailAvailable: Boolean(hubControl),
+        managementAvailable: Boolean(mobileHubControl?.authenticated),
+        hubs: mobileHubControl?.hubs || [],
         clients: hubControl?.mobileClients || [],
         summary: hubHealth.mobile,
         tailscalePeers: mobilePeers,
@@ -375,6 +387,30 @@ class ComponentManager {
       },
       ...remoteStatus
     };
+  }
+
+  async synchronizeMobileHub(nodeId) {
+    const response = await this.requestDesktopControl({
+      type: "mobile-hub-sync",
+      nodeId: String(nodeId || "")
+    }, 12_000);
+    if (!response) throw new Error("桌面端未登录或暂时无法下发手机 Hub 同步指令。");
+    return response;
+  }
+
+  async switchMobileHub(nodeId) {
+    const response = await this.requestDesktopControl({
+      type: "mobile-hub-switch",
+      nodeId: String(nodeId || "")
+    }, 12_000);
+    if (!response) throw new Error("桌面端未登录或暂时无法下发手机 Hub 切换指令。");
+    return response;
+  }
+
+  async focusDesktop() {
+    const response = await this.requestDesktopControl("focus", 1200);
+    if (!response) throw new Error("桌面端当前没有运行。");
+    return response;
   }
 
   async installHub() {

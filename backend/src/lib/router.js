@@ -36,6 +36,7 @@ async function readJson(request) {
 function createRouter({
   corsOrigin = "*",
   authenticate,
+  authenticatePeer,
   isWriteLocked,
   isModuleEnabled
 } = {}) {
@@ -47,9 +48,12 @@ function createRouter({
       ...compilePath(path),
       handler,
       public: options.public === true,
+      peer: options.peer === true,
       queryAuth: options.queryAuth === true,
       parseBody: options.parseBody !== false,
       allowDuringWriteLock: options.allowDuringWriteLock === true,
+      allowDuringClusterTransition:
+        options.allowDuringClusterTransition === true,
       moduleId: String(options.module || "")
     });
   }
@@ -61,7 +65,9 @@ function createRouter({
     response.setHeader("Access-Control-Allow-Origin", corsOrigin);
     response.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Request-Id, X-AetherX-Archive-Password"
+      "Content-Type, Authorization, X-Request-Id, X-AetherX-Archive-Password, " +
+        "X-AetherX-Peer-Space, X-AetherX-Peer-Node, X-AetherX-Peer-Key, " +
+        "X-AetherX-Peer-Timestamp, X-AetherX-Peer-Nonce, X-AetherX-Peer-Signature"
     );
     response.setHeader(
       "Access-Control-Allow-Methods",
@@ -90,9 +96,25 @@ function createRouter({
       const queryToken = route.queryAuth ? url.searchParams.get("access_token") : "";
       const authorization = request.headers.authorization ||
         (queryToken ? `Bearer ${queryToken}` : "");
-      const auth = route.public ? null : authenticate?.(authorization);
+      const parsesBody = route.parseBody &&
+        ["POST", "PUT", "PATCH"].includes(request.method);
+      let body = route.peer && parsesBody ? await readJson(request) : undefined;
+      const auth = route.public
+        ? null
+        : route.peer
+          ? authenticatePeer?.({
+              method: request.method,
+              path: request.url,
+              body: body ?? {},
+              headers: request.headers
+            })
+          : authenticate?.(authorization);
       if (!route.public && !auth) {
-        throw new HttpError(401, "AUTH_REQUIRED", "请先登录。");
+        throw new HttpError(
+          401,
+          route.peer ? "PEER_AUTH_REQUIRED" : "AUTH_REQUIRED",
+          route.peer ? "Peer 节点认证失败。" : "请先登录。"
+        );
       }
       if (
         !route.public &&
@@ -107,13 +129,30 @@ function createRouter({
           { moduleId: route.moduleId }
         );
       }
-      if (
+      const writeLock =
         !route.public &&
-        !route.allowDuringWriteLock &&
         ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
-        isWriteLocked?.(auth.userId)
-      ) {
-        throw new HttpError(423, "ARCHIVE_WRITE_LOCKED", "完整存档任务正在进行，暂时不能修改数据。");
+        isWriteLocked?.(auth.userId);
+      if (writeLock) {
+        const normalizedLock = writeLock === true
+          ? {
+              scope: "archive",
+              code: "ARCHIVE_WRITE_LOCKED",
+              message: "完整存档任务正在进行，暂时不能修改数据。"
+            }
+          : writeLock;
+        const allowed =
+          (normalizedLock.scope === "archive" && route.allowDuringWriteLock) ||
+          (normalizedLock.scope === "cluster" &&
+            route.allowDuringClusterTransition);
+        if (!allowed) {
+          throw new HttpError(
+            423,
+            normalizedLock.code || "WRITE_LOCKED",
+            normalizedLock.message || "当前数据空间暂时禁止写入。",
+            normalizedLock.details
+          );
+        }
       }
       const context = {
         request,
@@ -123,8 +162,8 @@ function createRouter({
         query: Object.fromEntries(url.searchParams.entries()),
         auth,
         userId: auth?.userId || "",
-        body: route.parseBody && ["POST", "PUT", "PATCH"].includes(request.method)
-          ? await readJson(request)
+        body: parsesBody
+          ? body ?? await readJson(request)
           : {}
       };
       const result = await route.handler(context);

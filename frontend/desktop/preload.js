@@ -10,6 +10,19 @@ contextBridge.exposeInMainWorld("desktop", {
   login: (input) => ipcRenderer.invoke("auth:login", input),
   register: (input) => ipcRenderer.invoke("auth:register", input),
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
+  getHubStatus: () => ipcRenderer.invoke("hub:status"),
+  onHubRouted: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, routing) => callback(routing);
+    ipcRenderer.on("hub:routed", listener);
+    return () => ipcRenderer.removeListener("hub:routed", listener);
+  },
+  onHubClusterChanged: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("hub:cluster-changed", listener);
+    return () => ipcRenderer.removeListener("hub:cluster-changed", listener);
+  },
   logout: () => ipcRenderer.invoke("auth:logout"),
   createPairingSession: (input) =>
     ipcRenderer.invoke("devices:pairing:create", input),
@@ -17,6 +30,14 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("devices:pairing:get", id),
   approvePairingSession: (id) =>
     ipcRenderer.invoke("devices:pairing:approve", id),
+  createHubPairingSession: (input) =>
+    ipcRenderer.invoke("hubs:pairing:create", input),
+  getHubPairingEndpoints: () =>
+    ipcRenderer.invoke("hubs:pairing:endpoints"),
+  getHubPairingSession: (id) =>
+    ipcRenderer.invoke("hubs:pairing:get", id),
+  approveHubPairingSession: (id) =>
+    ipcRenderer.invoke("hubs:pairing:approve", id),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   revokeDevice: (id) => ipcRenderer.invoke("devices:revoke", id),
   writeClipboard: (value) => ipcRenderer.invoke("clipboard:write", value),

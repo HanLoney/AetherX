@@ -90,8 +90,7 @@ class ConversationRepository {
       WHERE messages.conversation_id = excluded.conversation_id`
     );
     const now = Date.now();
-    this.database.exec("BEGIN");
-    try {
+    const write = () => {
       messages.forEach((message) => {
         statement.run(
           message.id,
@@ -107,6 +106,14 @@ class ConversationRepository {
       this.database
         .prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
         .run(now, conversationId);
+    };
+    if (this.database.isTransaction) {
+      write();
+      return;
+    }
+    this.database.exec("BEGIN");
+    try {
+      write();
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");

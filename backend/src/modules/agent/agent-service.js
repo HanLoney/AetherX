@@ -347,7 +347,11 @@ class AgentService {
       id: randomUUID(),
       role: "tool",
       tool_call_id: call.id,
-      content: JSON.stringify(modelSafeToolResult(result)),
+      content: JSON.stringify(
+        typeof run.registry?.modelResult === "function"
+          ? run.registry.modelResult(call.name, result)
+          : modelSafeToolResult(result)
+      ),
       createdAt: Date.now()
     });
   }

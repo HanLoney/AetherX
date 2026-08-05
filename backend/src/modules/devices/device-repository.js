@@ -115,8 +115,11 @@ class DeviceRepository {
       `INSERT INTO mobile_client_health(
         id, user_id, paired_device_id, name, platform, model, os_version,
         app_version, protocol_version, sync_status, sync_cursor, sse_connected, foreground,
-        latency_ms, last_error, last_heartbeat_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        latency_ms, last_error, local_hub_node_id, local_hub_stage,
+        local_hub_progress, local_hub_status, local_hub_documents,
+        local_hub_media_bytes, local_hub_media_total_bytes, local_hub_pending_media,
+        local_hub_updated_at, last_heartbeat_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id, user_id) DO UPDATE SET
         paired_device_id = excluded.paired_device_id,
         name = excluded.name,
@@ -131,6 +134,15 @@ class DeviceRepository {
         foreground = excluded.foreground,
         latency_ms = excluded.latency_ms,
         last_error = excluded.last_error,
+        local_hub_node_id = excluded.local_hub_node_id,
+        local_hub_stage = excluded.local_hub_stage,
+        local_hub_progress = excluded.local_hub_progress,
+        local_hub_status = excluded.local_hub_status,
+        local_hub_documents = excluded.local_hub_documents,
+        local_hub_media_bytes = excluded.local_hub_media_bytes,
+        local_hub_media_total_bytes = excluded.local_hub_media_total_bytes,
+        local_hub_pending_media = excluded.local_hub_pending_media,
+        local_hub_updated_at = excluded.local_hub_updated_at,
         last_heartbeat_at = excluded.last_heartbeat_at,
         updated_at = excluded.updated_at`
     ).run(
@@ -149,6 +161,15 @@ class DeviceRepository {
       input.foreground ? 1 : 0,
       input.latencyMs,
       input.lastError,
+      input.localHubNodeId,
+      input.localHubStage,
+      input.localHubProgress,
+      input.localHubStatus,
+      input.localHubDocuments,
+      input.localHubMediaBytes,
+      input.localHubMediaTotalBytes,
+      input.localHubPendingMedia,
+      input.localHubUpdatedAt,
       input.now,
       input.now,
       input.now

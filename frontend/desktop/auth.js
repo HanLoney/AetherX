@@ -62,6 +62,9 @@ async function inspectServer() {
   }
   try {
     state.config = await window.desktop.getAuthConfig(serverUrl);
+    if (state.config.serverUrl && state.config.serverUrl !== serverUrl) {
+      elements.serverUrl.value = state.config.serverUrl;
+    }
     elements.serverState.className = "server-state connected";
     elements.registerTab.disabled = !state.config.registrationAvailable;
     if (state.config.firstUser) setMode("register");
