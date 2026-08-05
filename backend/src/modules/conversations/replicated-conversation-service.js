@@ -1,4 +1,4 @@
-const { randomUUID } = require("node:crypto");
+const { createHash, randomUUID } = require("node:crypto");
 
 class ReplicatedConversationService {
   constructor(service, replicationUnitOfWork) {
@@ -7,11 +7,18 @@ class ReplicatedConversationService {
   }
 
   list(userId) {
+    this.ensureSingleConversation(userId);
     return this.service.list(userId);
   }
 
   page(userId, query = {}) {
+    this.ensureSingleConversation(userId);
     return this.service.page(userId, query);
+  }
+
+  primary(userId) {
+    this.ensureSingleConversation(userId);
+    return this.service.primary(userId);
   }
 
   get(userId, id) {
@@ -23,12 +30,14 @@ class ReplicatedConversationService {
   }
 
   createWithRequestId(userId, input, requestId) {
+    this.ensureSingleConversation(userId);
     return this.replicationUnitOfWork.execute(userId, requestId, () => {
+      const existing = this.service.primary(userId);
       const conversation = this.service.create(userId, input);
       return {
-        status: 201,
+        status: existing ? 200 : 201,
         result: conversation,
-        changes: [conversationUpsert(conversation)]
+        changes: existing ? [] : [conversationUpsert(conversation)]
       };
     });
   }
@@ -85,6 +94,38 @@ class ReplicatedConversationService {
   rawMessages(conversationId) {
     return this.service.repository.messages(conversationId);
   }
+
+  ensureSingleConversation(userId) {
+    const conversations = this.service.repository.list(userId);
+    if (conversations.length <= 1) return;
+    const requestId = migrationRequestId(conversations);
+    try {
+      this.replicationUnitOfWork.execute(userId, requestId, () => {
+        const merged = this.service.mergeIntoPrimary(userId);
+        return {
+          result: {
+            conversationId: merged.primary?.id || null,
+            mergedConversationIds: merged.removedConversations.map((item) => item.id)
+          },
+          changes: mergeChanges(merged)
+        };
+      });
+    } catch (error) {
+      if (error?.code !== "HUB_NOT_ACTIVE") throw error;
+    }
+  }
+}
+
+function mergeChanges(merged) {
+  if (!merged.primary || !merged.removedConversations.length) return [];
+  return [
+    conversationUpsert(merged.primary),
+    ...merged.messages.map((message) =>
+      conversationMessageUpsert(message, merged.primary.id)
+    ),
+    ...merged.evidence.map(memoryEvidenceUpsert),
+    ...merged.removedConversations.map(conversationDelete)
+  ];
 }
 
 function conversationUpsert(conversation) {
@@ -145,12 +186,35 @@ function conversationMessageDelete(message, conversationId) {
   };
 }
 
+function memoryEvidenceUpsert(evidence) {
+  return {
+    entityType: "memory_evidence",
+    entityId: evidence.id,
+    operation: "upsert",
+    payload: {
+      id: evidence.id,
+      memory_id: evidence.memoryId,
+      conversation_id: evidence.conversationId,
+      evidence: evidence.evidence,
+      evidence_hash: evidence.evidenceHash,
+      confidence: evidence.confidence,
+      created_at: evidence.createdAt
+    }
+  };
+}
+
 function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function internalRequestId() {
   return `internal:${randomUUID()}`;
+}
+
+function migrationRequestId(conversations) {
+  const identity = conversations.map((item) => item.id).sort().join("\n");
+  const digest = createHash("sha256").update(identity).digest("hex");
+  return `internal:conversation-singleton:v1:${digest}`;
 }
 
 module.exports = {

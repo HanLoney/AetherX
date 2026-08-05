@@ -216,17 +216,6 @@ document.querySelector("#createNavGroup").append(
   imageModuleBtn
 );
 
-const historyPanel = document.createElement("section");
-historyPanel.className = "history-panel";
-historyPanel.innerHTML = `
-  <header>
-    <span>历史对话</span>
-    <button id="newConversationBtn" type="button" title="新对话">＋</button>
-  </header>
-  <div id="conversationHistoryList" class="history-list"></div>
-`;
-document.querySelector(".nav-list").after(historyPanel);
-
 const aiNavBtn = document.querySelector(".nav-list .nav-item.active");
 const chatWorkspace = document.querySelector(".main");
 const moduleViewHost = document.createElement("section");
@@ -992,27 +981,19 @@ async function deliverReminder(reminder) {
     createdAt: message.createdAt
   };
   try {
-    if (state.sending) {
-      const conversation = await window.desktop.createConversation("主动提醒");
-      await window.desktop.saveConversationMessages(conversation.id, [
-        conversationRecord(message, "display", 0),
-        conversationRecord(modelMessage, "model", 0)
-      ]);
-    } else {
-      if (!state.conversationId) {
-        const conversation = await window.desktop.createConversation("主动提醒");
-        state.conversationId = conversation.id;
-      }
-      const stored = await window.desktop.getConversation(state.conversationId);
-      const displayPosition = stored.displayMessages.length;
-      const modelPosition = stored.modelMessages.length;
-      state.messages.push(message);
-      renderMessages();
-      await window.desktop.saveConversationMessages(state.conversationId, [
-        conversationRecord(message, "display", displayPosition),
-        conversationRecord(modelMessage, "model", modelPosition)
-      ]);
-    }
+    await waitForConversationWriteSlot();
+    const conversation = await window.desktop.createConversation("和小玄的对话");
+    const stored = await window.desktop.getConversation(conversation.id);
+    const displayPosition = stored.displayMessages.length;
+    const modelPosition = stored.modelMessages.length;
+    state.conversationId = conversation.id;
+    state.messages = [...stored.displayMessages, message];
+    conversationCache.set(conversation.id, state.messages);
+    renderMessages();
+    await window.desktop.saveConversationMessages(conversation.id, [
+      conversationRecord(message, "display", displayPosition),
+      conversationRecord(modelMessage, "model", modelPosition)
+    ]);
     await refreshConversationHistory();
   } catch (error) {
     console.warn("Unable to persist proactive reminder:", error.message);
@@ -1024,6 +1005,13 @@ async function deliverReminder(reminder) {
     });
   } catch (error) {
     console.warn("Unable to show desktop reminder notification:", error.message);
+  }
+}
+
+async function waitForConversationWriteSlot(timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while ((state.sending || state.conversationLoading) && Date.now() < deadline) {
+    await wait(200);
   }
 }
 
@@ -1297,46 +1285,8 @@ async function refreshProfiles() {
   renderMessages();
 }
 
-function renderConversationHistory() {
-  const list = document.querySelector("#conversationHistoryList");
-  list.replaceChildren();
-  state.conversations.forEach((conversation) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "history-item";
-    button.classList.toggle("active", conversation.id === state.conversationId);
-    button.classList.toggle(
-      "loading",
-      conversation.id === state.conversationId && state.conversationLoading
-    );
-    button.setAttribute(
-      "aria-busy",
-      String(conversation.id === state.conversationId && state.conversationLoading)
-    );
-    const title = document.createElement("strong");
-    title.textContent = conversation.title || "新对话";
-    const time = document.createElement("small");
-    time.textContent = new Intl.DateTimeFormat("zh-CN", {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    }).format(conversation.updatedAt);
-    button.append(title, time);
-    button.addEventListener("click", () => loadConversation(conversation.id));
-    list.append(button);
-  });
-  if (!state.conversations.length) {
-    const empty = document.createElement("div");
-    empty.className = "history-empty";
-    empty.textContent = "还没有历史对话";
-    list.append(empty);
-  }
-}
-
 async function refreshConversationHistory() {
-  state.conversations = await window.desktop.listConversations();
-  renderConversationHistory();
+  state.conversations = (await window.desktop.listConversations()).slice(0, 1);
 }
 
 async function loadConversation(id, options = {}) {
@@ -1350,7 +1300,6 @@ async function loadConversation(id, options = {}) {
   state.pendingApprovals.clear();
   renderMessages();
   if (!options.fromSync) showChatWorkspace();
-  renderConversationHistory();
   try {
     const result = await window.desktop.getConversation(id);
     if (loadId !== conversationLoadId || state.conversationId !== id) return;
@@ -1364,21 +1313,7 @@ async function loadConversation(id, options = {}) {
     if (loadId !== conversationLoadId || state.conversationId !== id) return;
     state.conversationLoading = false;
     renderMessages();
-    renderConversationHistory();
   }
-}
-
-async function startNewConversation() {
-  if (state.sending) return;
-  conversationLoadId += 1;
-  state.conversationId = null;
-  state.conversationLoading = false;
-  state.conversationError = "";
-  state.messages = [];
-  state.pendingApprovals.clear();
-  renderMessages();
-  showChatWorkspace();
-  renderConversationHistory();
 }
 
 function updateToolActivity(activity, status, statusText) {
@@ -2004,12 +1939,6 @@ elements.messageInput.addEventListener("keydown", (event) => {
   }
 });
 elements.sendBtn.addEventListener("click", sendMessage);
-document
-  .querySelector("#clearChatBtn")
-  .addEventListener("click", startNewConversation);
-document
-  .querySelector("#newConversationBtn")
-  .addEventListener("click", startNewConversation);
 document.querySelectorAll(".suggestion").forEach((button) => {
   button.addEventListener("click", () => {
     elements.messageInput.value = button.dataset.prompt;
@@ -2057,8 +1986,7 @@ async function refreshCoreHubData(options = {}) {
     return;
   }
 
-  state.conversations = conversationsResult.value;
-  renderConversationHistory();
+  state.conversations = conversationsResult.value.slice(0, 1);
   const currentExists = state.conversations.some(
     (conversation) => conversation.id === state.conversationId
   );

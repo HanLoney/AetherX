@@ -7,6 +7,7 @@ const { moduleForTool } = require("../src/modules/module-settings/module-manifes
 function fixture(completions, tool = { name: "todo.list", title: "查询待办", risk: "read" }) {
   const saved = [];
   const calls = [];
+  const conversationCalls = [];
   const providerPayloads = [];
   const registry = {
     modelTools: () => [{ type: "function", function: { name: tool.name.replaceAll(".", "_"), parameters: {} } }],
@@ -19,8 +20,14 @@ function fixture(completions, tool = { name: "todo.list", title: "查询待办",
   };
   const services = {
     conversationService: {
-      create: () => ({ id: "conversation-1", title: "测试", summary: "", createdAt: 1, updatedAt: 1 }),
-      get: () => ({ conversation: { id: "conversation-1" }, displayMessages: [], modelMessages: [] }),
+      create: (_userId, input) => {
+        conversationCalls.push({ type: "create", input });
+        return { id: "conversation-1", title: "测试", summary: "", createdAt: 1, updatedAt: 1 };
+      },
+      get: (_userId, id) => {
+        conversationCalls.push({ type: "get", id });
+        return { conversation: { id: "conversation-1" }, displayMessages: [], modelMessages: [] };
+      },
       saveMessages: (_userId, _id, input) => saved.push(input.messages)
     },
     memoryIntelligenceService: {
@@ -43,10 +50,26 @@ function fixture(completions, tool = { name: "todo.list", title: "查询待办",
     service: new AgentService(services, runtime),
     saved,
     calls,
+    conversationCalls,
     providerPayloads,
     services
   };
 }
+
+test("Agent Hub always routes chat into the primary conversation", async () => {
+  const context = fixture([{ choices: [{ message: { content: "继续聊吧。" } }] }]);
+
+  await context.service.chat("user-1", {
+    conversationId: "archived-conversation",
+    content: "接着说",
+    runtime: {}
+  });
+
+  assert.deepEqual(context.conversationCalls.slice(0, 2), [
+    { type: "create", input: { title: "接着说" } },
+    { type: "get", id: "conversation-1" }
+  ]);
+});
 
 test("Agent Hub owns the complete read-tool loop and conversation persistence", async () => {
   const { service, saved, calls } = fixture([

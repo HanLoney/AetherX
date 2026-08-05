@@ -21,14 +21,21 @@ test("sidebar uses compact navigation rows and a distinct active state", () => {
   assert.match(css, /\.nav-group-label\s*\{/);
 });
 
-test("history conversations keep visible space when navigation grows", () => {
+test("single conversation mode exposes no conversation selector", () => {
   assert.match(css, /\.nav-list\s*\{[^}]*flex:\s*0 1 auto;/s);
-  assert.match(
-    css,
-    /\.history-panel\s*\{[^}]*min-height:\s*120px;[^}]*flex:\s*1 1 150px;[^}]*overflow:\s*hidden;/s
-  );
-  assert.match(css, /\.history-list\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-y:\s*auto;/s);
+  assert.doesNotMatch(javascript, /conversationHistoryList|historyPanel|history-item/);
+  assert.doesNotMatch(css, /\.history-panel|\.history-list|\.history-item/);
   assert.match(css, /\.provider-card\s*\{[^}]*flex:\s*0 0 auto;/s);
+});
+
+test("desktop keeps one primary conversation and appends proactive reminders to it", () => {
+  assert.doesNotMatch(html, /id="clearChatBtn"/);
+  assert.doesNotMatch(javascript, /newConversationBtn|startNewConversation/);
+  assert.doesNotMatch(javascript, /当前对话|conversationHistoryList/);
+  assert.match(javascript, /listConversations\(\)\)\.slice\(0, 1\)/);
+  assert.match(javascript, /await waitForConversationWriteSlot\(\)/);
+  assert.match(javascript, /createConversation\("和小玄的对话"\)/);
+  assert.doesNotMatch(javascript, /createConversation\("主动提醒"\)/);
 });
 
 test("functional navigation uses one consistent SVG icon system", () => {
@@ -74,11 +81,11 @@ test("background conversation refresh does not steal the active workspace", () =
   assert.match(javascript, /if \(!options\.fromSync\) showChatWorkspace\(\)/);
 });
 
-test("conversation switching is immediate and stale requests cannot win", () => {
+test("primary conversation loading is immediate and stale requests cannot win", () => {
   assert.match(javascript, /const loadId = \+\+conversationLoadId;/);
   assert.match(
     javascript,
-    /state\.conversationId = id;[\s\S]*?renderConversationHistory\(\);[\s\S]*?await window\.desktop\.getConversation\(id\)/
+    /state\.conversationId = id;[\s\S]*?await window\.desktop\.getConversation\(id\)/
   );
   assert.match(
     javascript,

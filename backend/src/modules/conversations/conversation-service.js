@@ -8,22 +8,36 @@ class ConversationService {
   }
 
   list(userId) {
-    return this.repository.list(userId);
+    const primary = this.repository.primary(userId);
+    return primary ? [primary] : [];
   }
 
   page(userId, query = {}) {
     const limit = boundedInteger(query.limit, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
     const offset = nonNegativeInteger(query.offset);
-    const result = this.repository.page(userId, offset, limit);
+    const primary = this.repository.primary(userId);
+    const items = primary && offset === 0 ? [primary] : [];
+    const total = primary ? 1 : 0;
     return {
-      ...result,
+      items,
+      total,
       offset,
       limit,
-      hasMore: offset + result.items.length < result.total
+      hasMore: offset + items.length < total
     };
   }
 
+  primary(userId) {
+    return this.repository.primary(userId);
+  }
+
+  mergeIntoPrimary(userId) {
+    return this.repository.mergeIntoPrimary(userId);
+  }
+
   create(userId, input) {
+    const primary = this.repository.primary(userId);
+    if (primary) return primary;
     const title = String(input.title || "新对话").trim().slice(0, 120) || "新对话";
     return this.repository.create(userId, title);
   }

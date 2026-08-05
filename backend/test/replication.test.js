@@ -736,6 +736,75 @@ test("replicated service facades capture writes outside HTTP routes", () => {
   });
 });
 
+test("legacy conversation migration reproduces one primary conversation on the peer Hub", () => {
+  withDatabase(({ database: sourceDatabase }) => {
+    withDatabase(({ database: targetDatabase }) => {
+      const userId = "conversation-migration-user";
+      createUser(sourceDatabase, userId);
+      createUser(targetDatabase, userId);
+      seedLegacyConversationState(sourceDatabase, userId);
+      seedLegacyConversationState(targetDatabase, userId);
+      const repository = new ReplicationRepository(sourceDatabase);
+      const clusterService = new ClusterService(new ClusterRepository(sourceDatabase));
+      const service = new ReplicatedConversationService(
+        new ConversationService(new ConversationRepository(sourceDatabase)),
+        new ReplicationUnitOfWork({ repository, clusterService })
+      );
+
+      assert.deepEqual(service.list(userId).map((item) => item.id), ["conversation-primary"]);
+      const context = clusterService.status(userId);
+      const operations = repository.listOperations(
+        context.spaceId,
+        context.localNodeId,
+        0,
+        100
+      );
+      assert.deepEqual(
+        operations.map((operation) => `${operation.entityType}:${operation.operation}`),
+        [
+          "conversations:upsert",
+          "messages:upsert",
+          "messages:upsert",
+          "messages:upsert",
+          "memory_evidence:upsert",
+          "conversations:delete"
+        ]
+      );
+      service.list(userId);
+      assert.equal(
+        repository.listOperations(context.spaceId, context.localNodeId, 0, 100).length,
+        operations.length
+      );
+
+      const applier = new ReplicationEntityApplier(targetDatabase);
+      for (const operation of operations) applier.apply(userId, operation);
+      assert.deepEqual(
+        targetDatabase.prepare(
+          "SELECT id FROM conversations WHERE user_id = ? ORDER BY id"
+        ).all(userId).map((row) => row.id),
+        ["conversation-primary"]
+      );
+      assert.deepEqual(
+        targetDatabase.prepare(
+          `SELECT id, conversation_id, stream_type, position
+           FROM messages ORDER BY stream_type, position, id`
+        ).all().map((row) => ({ ...row })),
+        [
+          { id: "message-old", conversation_id: "conversation-primary", stream_type: "display", position: 0 },
+          { id: "message-primary", conversation_id: "conversation-primary", stream_type: "display", position: 1 },
+          { id: "message-model", conversation_id: "conversation-primary", stream_type: "model", position: 0 }
+        ]
+      );
+      assert.equal(
+        targetDatabase.prepare(
+          "SELECT conversation_id FROM memory_evidence WHERE id = 'evidence-old'"
+        ).get().conversation_id,
+        "conversation-primary"
+      );
+    });
+  });
+});
+
 test("Provider credentials replicate through the Space Key and re-encrypt locally", () => {
   withDatabase(({ database: sourceDatabase, dataDir: sourceDataDir }) => {
     withDatabase(({ database: targetDatabase, dataDir: targetDataDir }) => {
@@ -1773,6 +1842,39 @@ test("standby Hub applies authenticated pilot entities atomically and rejects ga
     });
   });
 });
+
+function seedLegacyConversationState(database, userId) {
+  database.prepare(
+    `INSERT INTO conversations(id, user_id, title, summary, created_at, updated_at)
+     VALUES (?, ?, ?, '', ?, ?)`
+  ).run("conversation-old", userId, "Old", 1, 100);
+  database.prepare(
+    `INSERT INTO conversations(id, user_id, title, summary, created_at, updated_at)
+     VALUES (?, ?, ?, '', ?, ?)`
+  ).run("conversation-primary", userId, "Primary", 2, 200);
+  const insertMessage = database.prepare(
+    `INSERT INTO messages(
+       id, conversation_id, stream_type, position, role, content, payload_json, created_at
+     ) VALUES (?, ?, ?, ?, 'assistant', ?, '{}', ?)`
+  );
+  insertMessage.run("message-old", "conversation-old", "display", 7, "old", 10);
+  insertMessage.run("message-primary", "conversation-primary", "display", 9, "primary", 20);
+  insertMessage.run("message-model", "conversation-old", "model", 5, "model", 15);
+  database.prepare(
+    `INSERT INTO memories(
+       id, user_id, domain, memory_type, content, source, confidence,
+       importance, sensitivity, status, created_at, updated_at
+     ) VALUES ('memory-old', ?, 'life', 'fact', 'legacy evidence', 'explicit', 1, 1,
+               'normal', 'active', 1, 1)`
+  ).run(userId);
+  database.prepare(
+    `INSERT INTO memory_evidence(
+       id, user_id, memory_id, conversation_id, evidence, evidence_hash,
+       confidence, created_at
+     ) VALUES ('evidence-old', ?, 'memory-old', 'conversation-old',
+               'legacy evidence', ?, 1, 1)`
+  ).run(userId, "b".repeat(64));
+}
 
 function withDatabase(run) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aetherx-replication-"));

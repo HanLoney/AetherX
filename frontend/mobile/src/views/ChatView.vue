@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { ArrowLeft, History, Menu, Plus, SendHorizontal, Smile, X } from "@lucide/vue";
+import { ArrowLeft, SendHorizontal, Smile } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import ChatActivity from "../components/ChatActivity.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -28,7 +28,6 @@ const emojiButton = ref<HTMLButtonElement | null>(null);
 const composerInput = ref<HTMLTextAreaElement | null>(null);
 const sending = ref(false);
 const error = ref("");
-const historyOpen = ref(false);
 const messageList = ref<HTMLElement | null>(null);
 let conversationRefreshPending = false;
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
@@ -97,11 +96,6 @@ function closeEmojiOnOutsidePointer(event: PointerEvent) {
 }
 
 function handleNativeBack(event: Event) {
-  if (historyOpen.value) {
-    historyOpen.value = false;
-    event.preventDefault();
-    return;
-  }
   if (emojiOpen.value) {
     emojiOpen.value = false;
     event.preventDefault();
@@ -113,7 +107,6 @@ onMounted(async () => {
   window.addEventListener(NATIVE_BACK_EVENT, handleNativeBack);
   void prepareCompactEmojiPicker();
   await data.refreshConversationPage(true).catch(() => undefined);
-  void data.loadRemainingConversations();
   if (data.conversations.value[0]) {
     await openConversation(data.conversations.value[0]).catch((cause) => {
       error.value = cause instanceof Error ? cause.message : "最新对话暂时没有打开。";
@@ -130,7 +123,6 @@ async function openConversation(conversation: Conversation) {
   const result = await session.requireApi().conversation(conversation.id);
   current.value = result.conversation;
   displayMessages.value = normalizeStoredDisplayMessages(result.displayMessages);
-  historyOpen.value = false;
   await scrollToBottom();
 }
 
@@ -142,19 +134,14 @@ watch(() => data.conversationRevision.value, async () => {
   }
   const latest = data.conversations.value.find((item) => item.id === current.value?.id);
   if (!latest) {
-    newConversation();
+    resolveAllApprovals(false);
+    current.value = null;
+    displayMessages.value = [];
     return;
   }
   if ((latest.updatedAt || 0) <= (current.value.updatedAt || 0)) return;
   await openConversation(latest).catch(() => undefined);
 });
-
-function newConversation() {
-  resolveAllApprovals(false);
-  current.value = null;
-  displayMessages.value = [];
-  historyOpen.value = false;
-}
 
 async function send() {
   const content = draft.value.trim();
@@ -245,13 +232,10 @@ async function scrollToBottom() {
       <button class="liquid-control" type="button" aria-label="返回主页" @click="router.push('/home')">
         <ArrowLeft :size="20" />
       </button>
-      <button class="liquid-control" type="button" aria-label="对话记录" @click="historyOpen = true">
-        <History :size="20" />
-      </button>
     </nav>
 
     <section ref="messageList" class="message-list">
-      <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="新的对话会从第一句话开始，慢慢留下只属于你们的上下文。" />
+      <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="你们会一直在这一段对话里延续共同的上下文。" />
       <template v-for="(message, index) in displayMessages" :key="message.id || index">
         <ChatActivity v-if="message.role === 'tool' || message.role === 'memory'" :message="message" @decide="decideTool(message, $event)" />
         <article v-else-if="message.role === 'assistant' || message.role === 'user'" class="message-row" :class="message.role">
@@ -299,22 +283,6 @@ async function scrollToBottom() {
       </div>
     </template>
 
-    <Transition name="fade">
-      <div v-if="historyOpen" class="history-backdrop" @click.self="historyOpen = false">
-        <aside class="history-drawer">
-          <header><div><span class="eyebrow">CONVERSATIONS</span><h2>对话记录</h2></div><button class="icon-button" @click="historyOpen = false"><X :size="18" /></button></header>
-          <button class="new-chat" @click="newConversation"><Plus :size="18" /> 开始新对话</button>
-          <div class="history-list">
-            <button v-for="conversation in data.conversations.value" :key="conversation.id" :class="{ active: current?.id === conversation.id }" @click="openConversation(conversation)">
-              <Menu :size="15" /><span>{{ conversation.title || '未命名对话' }}</span>
-            </button>
-            <p v-if="data.conversationPageLoading.value || data.conversationHasMore.value" class="history-loading">
-              正在继续加载更早的对话…
-            </p>
-          </div>
-        </aside>
-      </div>
-    </Transition>
   </AppShell>
 </template>
 
@@ -345,10 +313,6 @@ async function scrollToBottom() {
 .chat-composer > * { position:relative; z-index:1; }
 .chat-composer textarea { min-width:0; max-height:100px; flex:1; resize:none; border:0; outline:0; color:var(--ink); background:transparent; font-size: calc(13px * var(--font-scale, 1)); line-height:1.55; }
 .chat-error { width:calc(100% - 14px);margin:0 auto 7px;padding:9px 12px;border:1px solid rgba(255,255,255,.66);border-radius:16px;color:#b95770;background:rgba(255,235,243,.56);font-size: calc(10px * var(--font-scale, 1));text-align:center;box-shadow:0 8px 24px rgba(95,70,90,.1);backdrop-filter:blur(24px)}
-.history-backdrop { position:fixed;z-index:50;inset:0;display:flex;align-items:flex-end;background:rgba(42,39,59,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px) }
-.history-drawer { width:100%;height:min(76dvh,650px);padding:16px 19px calc(20px + env(safe-area-inset-bottom));border:1px solid rgba(255,255,255,.72);border-radius:32px 32px 0 0;background:linear-gradient(145deg,rgba(255,255,255,.83),rgba(247,247,253,.66));box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 -24px 70px rgba(62,57,88,.18);backdrop-filter:blur(34px) saturate(175%);-webkit-backdrop-filter:blur(34px) saturate(175%) }
-.history-drawer::before { content:""; display:block; width:38px; height:4px; margin:0 auto 17px; border-radius:99px; background:rgba(100,92,119,.16); }
-.history-drawer header{display:flex;align-items:center;justify-content:space-between}.history-drawer h2{margin:5px 0 0;font-size: calc(25px * var(--font-scale, 1));letter-spacing:-.05em}.new-chat{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:8px;margin:25px 0 16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size: calc(12px * var(--font-scale, 1));font-weight:700}.history-list{display:grid;gap:5px;max-height:calc(100dvh - 180px);overflow:auto}.history-list button{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 13px;border:0;border-radius:14px;color:#777183;background:transparent;text-align:left;font-size: calc(11px * var(--font-scale, 1))}.history-list button.active{color:#5e7398;background:linear-gradient(135deg,rgba(235,160,191,.14),rgba(126,188,239,.18))}.history-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-loading{margin:8px 0 2px;color:#9b95a5;font-size:calc(9px * var(--font-scale, 1));text-align:center}
 .emoji-panel {
   position: absolute;
   z-index: 1;

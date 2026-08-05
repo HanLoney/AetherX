@@ -90,6 +90,7 @@ export class LocalHubClient extends AetherApi {
   readonly isLocalHub = true;
   private readonly localHub: ReturnType<typeof useLocalHub>;
   private readonly pendingAgentRuns = new Map<string, LocalAgentRun>();
+  private singleConversationMigration: Promise<void> | null = null;
 
   constructor(
     private readonly localUser: AuthUser,
@@ -437,10 +438,72 @@ export class LocalHubClient extends AetherApi {
     ]);
   }
 
-  async listConversations(): Promise<Conversation[]> {
+  private async rawConversations(): Promise<Conversation[]> {
     return (await this.rows("conversations"))
       .map(conversationFromRow)
-      .sort((left, right) => right.updatedAt - left.updatedAt || right.id.localeCompare(left.id));
+      .sort((left, right) => right.updatedAt - left.updatedAt || compareTextDescending(left.id, right.id));
+  }
+
+  private async allConversations(): Promise<Conversation[]> {
+    await this.ensureSingleConversation();
+    return this.rawConversations();
+  }
+
+  private async ensureSingleConversation() {
+    if (this.singleConversationMigration) return this.singleConversationMigration;
+    const migration = this.mergeConversationsIfNeeded();
+    this.singleConversationMigration = migration;
+    try {
+      await migration;
+    } finally {
+      if (this.singleConversationMigration === migration) {
+        this.singleConversationMigration = null;
+      }
+    }
+  }
+
+  private async mergeConversationsIfNeeded() {
+    const conversations = await this.rawConversations();
+    if (conversations.length <= 1) return;
+    const status = await this.clusterStatus();
+    if (status.localRole !== "active" || status.state !== "stable") return;
+
+    const primary = conversations[0];
+    const removed = conversations.slice(1);
+    const conversationIds = new Set(conversations.map((item) => item.id));
+    const removedIds = new Set(removed.map((item) => item.id));
+    const [messageRows, evidenceRows] = await Promise.all([
+      this.rows("messages"),
+      this.rows("memory_evidence")
+    ]);
+    const messages = (["display", "model"] as const).flatMap((stream) =>
+      messageRows
+        .filter((row) => row.stream_type === stream && conversationIds.has(String(row.conversation_id || "")))
+        .sort(compareMessageRows)
+        .map((row, position) => messageMigration(row, primary.id, position))
+    );
+    const evidence = evidenceRows
+      .filter((row) => removedIds.has(String(row.conversation_id || "")))
+      .map((row) => memoryEvidenceMigration(row, primary.id));
+    const mutations: LocalMutation[] = [
+      conversationMigration(primary),
+      ...messages,
+      ...evidence,
+      ...removed.map((conversation) => ({
+        entityType: "conversations",
+        entityId: conversation.id,
+        operation: "delete" as const,
+        payload: { id: conversation.id, deleted_version_updated_at: conversation.updatedAt },
+        documentPayload: {}
+      }))
+    ];
+    for (let offset = 0; offset < mutations.length; offset += 100) {
+      await this.mutateBatch(mutations.slice(offset, offset + 100));
+    }
+  }
+
+  async listConversations(): Promise<Conversation[]> {
+    return (await this.allConversations()).slice(0, 1);
   }
 
   async conversationPage(offset = 0, limit = 12): Promise<ConversationPage> {
@@ -450,7 +513,7 @@ export class LocalHubClient extends AetherApi {
   }
 
   async conversation(id: string) {
-    const conversation = (await this.listConversations()).find((item) => item.id === id);
+    const conversation = (await this.allConversations()).find((item) => item.id === id);
     if (!conversation) throw new ApiError("没有找到这段对话。", 404, "CONVERSATION_NOT_FOUND");
     const messages = (await this.rows("messages", {
       payloadField: "conversation_id",
@@ -465,6 +528,8 @@ export class LocalHubClient extends AetherApi {
   }
 
   async createConversation(title = "新对话") {
+    const primary = (await this.listConversations())[0];
+    if (primary) return primary;
     const now = Date.now();
     const conversation: Conversation = {
       id: crypto.randomUUID(),
@@ -542,7 +607,7 @@ export class LocalHubClient extends AetherApi {
   }
 
   async getJournalMaterial(from: number, to: number) {
-    const conversations = await this.listConversations();
+    const conversations = await this.allConversations();
     const messages = (await this.rows("messages"))
       .filter((row) => row.stream_type === "display" && Number(row.created_at) >= from && Number(row.created_at) <= to)
       .map(messageFromRow);
@@ -921,14 +986,7 @@ export class LocalHubClient extends AetherApi {
     await this.ensureActiveHub();
     const content = String(input.content || "").trim();
     if (!content) throw new ApiError("消息不能为空。", 400, "AGENT_MESSAGE_REQUIRED");
-    const now = Date.now();
-    let conversation = input.conversationId
-      ? (await this.listConversations()).find((item) => item.id === input.conversationId)
-      : undefined;
-    if (!conversation) {
-      conversation = { id: crypto.randomUUID(), title: content.slice(0, 60), summary: "", createdAt: now, updatedAt: now };
-      await this.saveConversation(conversation);
-    }
+    const conversation = await this.createConversation(content.slice(0, 60));
     const loaded = await this.conversation(conversation.id);
     const userDisplay = chatMessage("user", content);
     const userModel = chatMessage("user", content);
@@ -1642,7 +1700,7 @@ export class LocalHubClient extends AetherApi {
   }
 
   private async galleryItems(): Promise<GalleryImage[]> {
-    const conversations = new Map((await this.listConversations()).map((item) => [item.id, item]));
+    const conversations = new Map((await this.allConversations()).map((item) => [item.id, item]));
     const messages = await this.rows("messages");
     const items: GalleryImage[] = [];
     for (const row of messages) {
@@ -2137,6 +2195,79 @@ function memoryPayload(memory: Memory & Record<string, any>) { return { id: memo
 function memoryRow(memory: Memory & Record<string, any>) { const payload = memoryPayload(memory); const { entities, ...row } = payload; return { ...row, user_id: CURRENT_USER, entities_json: canonicalJson(entities) }; }
 function conversationFromRow(row: Record<string, any>): Conversation { return { id: String(row.id), title: String(row.title || ""), summary: String(row.summary || ""), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) }; }
 function messageFromRow(row: Record<string, any>): ChatMessage { return { id: String(row.id), role: row.role, content: row.content == null ? null : String(row.content), createdAt: Number(row.created_at), ...object(row.payload_json) }; }
+function conversationMigration(conversation: Conversation): LocalMutation {
+  const payload = {
+    id: conversation.id,
+    title: conversation.title,
+    summary: conversation.summary,
+    created_at: conversation.createdAt,
+    updated_at: conversation.updatedAt
+  };
+  return {
+    entityType: "conversations",
+    entityId: conversation.id,
+    payload,
+    documentPayload: { ...payload, user_id: CURRENT_USER }
+  };
+}
+function messageMigration(row: Record<string, any>, conversationId: string, position: number): LocalMutation {
+  const payloadValue = object(row.payload_json);
+  const payload = {
+    id: String(row.id),
+    conversation_id: conversationId,
+    stream_type: row.stream_type,
+    position,
+    role: String(row.role || "user"),
+    content: row.content == null ? null : String(row.content),
+    payload: payloadValue,
+    created_at: Number(row.created_at || 0)
+  };
+  return {
+    entityType: "messages",
+    entityId: payload.id,
+    payload,
+    documentPayload: {
+      id: payload.id,
+      conversation_id: conversationId,
+      stream_type: payload.stream_type,
+      position,
+      role: payload.role,
+      content: payload.content,
+      payload_json: canonicalJson(payloadValue),
+      created_at: payload.created_at
+    }
+  };
+}
+function memoryEvidenceMigration(row: Record<string, any>, conversationId: string): LocalMutation {
+  const payload = {
+    id: String(row.id),
+    memory_id: String(row.memory_id),
+    conversation_id: conversationId,
+    evidence: String(row.evidence || ""),
+    evidence_hash: String(row.evidence_hash || ""),
+    confidence: Number(row.confidence || 0),
+    created_at: Number(row.created_at || 0)
+  };
+  return {
+    entityType: "memory_evidence",
+    entityId: payload.id,
+    payload,
+    documentPayload: { ...payload, user_id: CURRENT_USER }
+  };
+}
+function compareMessageRows(left: Record<string, any>, right: Record<string, any>) {
+  return Number(left.created_at || 0) - Number(right.created_at || 0) ||
+    Number(left.position || 0) - Number(right.position || 0) ||
+    compareTextAscending(String(left.id || ""), String(right.id || ""));
+}
+function compareTextAscending(left: string, right: string) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+function compareTextDescending(left: string, right: string) {
+  return compareTextAscending(right, left);
+}
 function journalFromRow(row: Record<string, any>): Journal { return { id: String(row.id), type: row.journal_type, periodKey: String(row.period_key), title: String(row.title), content: String(row.content), mood: String(row.mood), sourceFrom: Number(row.source_from), sourceTo: Number(row.source_to), sourceMessageCount: Number(row.source_message_count), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) }; }
 function preferenceFromRow(row: Record<string, any>) { return {
   id: String(row.id),
