@@ -70,6 +70,7 @@
         "filter": [
           "tool-registry.js",
           "todo-tools.js",
+          "wallet-tools.js",
           "memory-tools.js",
           "journal-illustrator.js",
           "journal-tools.js",

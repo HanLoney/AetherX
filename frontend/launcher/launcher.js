@@ -34,6 +34,17 @@ const selectors = {
   remoteQrLoading: document.querySelector("[data-remote-qr-loading]"),
   remoteAction: document.querySelector("[data-remote-action]"),
   copyRemote: document.querySelector("[data-copy-remote]"),
+  mobileHubCard: document.querySelector("[data-mobile-hub-node]"),
+  mobileHubTitle: document.querySelector("[data-mobile-hub-title]"),
+  mobileHubRole: document.querySelector("[data-mobile-hub-role]"),
+  mobileHubPill: document.querySelector("[data-mobile-hub-pill]"),
+  mobileHubSummary: document.querySelector("[data-mobile-hub-summary]"),
+  mobileHubState: document.querySelector("[data-mobile-hub-state]"),
+  mobileHubSyncState: document.querySelector("[data-mobile-hub-sync-state]"),
+  mobileHubRecords: document.querySelector("[data-mobile-hub-records]"),
+  mobileHubProgress: document.querySelector("[data-mobile-hub-progress]"),
+  mobileHubPrimary: document.querySelector("[data-mobile-hub-primary]"),
+  mobileHubSwitch: document.querySelector("[data-mobile-hub-switch-action]"),
   mobileSummary: document.querySelector("[data-mobile-summary]"),
   mobileClients: document.querySelector("[data-mobile-clients]"),
   mobileManager: document.querySelector("[data-mobile-hub-manager]"),
@@ -89,10 +100,14 @@ function updateMapGeometry() {
       y: rect.top + rect.height / 2 - mapRect.top
     };
   };
+  const activeHub = map.querySelector('[data-mobile-hub-node][data-cluster-role="active"]')
+    ? "mobile-hub"
+    : "computer-hub";
   const links = {
-    desktop: ["hub", "desktop"],
-    remote: ["hub", "remote"],
-    mobile: ["remote", "mobile"]
+    desktop: [activeHub, "desktop"],
+    mobile: [activeHub, "mobile-client"],
+    remote: ["computer-hub", "remote"],
+    "remote-mobile": ["mobile-hub", "remote"]
   };
   for (const [name, [fromName, toName]] of Object.entries(links)) {
     const from = point(fromName);
@@ -100,9 +115,13 @@ function updateMapGeometry() {
     const group = svg.querySelector(`[data-map-link="${name}"]`);
     if (!from || !to || !group) continue;
     let path;
-    if (name === "mobile") {
-      const bend = Math.max(36, Math.abs(to.y - from.y) * 0.46);
-      path = `M${from.x} ${from.y} C${from.x} ${from.y + bend} ${to.x} ${to.y - bend} ${to.x} ${to.y}`;
+    if (name === "desktop" || name === "mobile") {
+      const direction = Math.sign(to.x - from.x) || 1;
+      const bend = Math.max(58, Math.abs(to.x - from.x) * 0.38);
+      const controlY = name === "desktop"
+        ? Math.min(from.y, to.y) - 74
+        : Math.max(from.y, to.y) + 74;
+      path = `M${from.x} ${from.y} C${from.x + direction * bend} ${controlY} ${to.x - direction * bend} ${controlY} ${to.x} ${to.y}`;
     } else {
       const direction = Math.sign(to.x - from.x) || 1;
       const bend = Math.max(52, Math.abs(to.x - from.x) * 0.42);
@@ -118,7 +137,9 @@ function renderRuntimeMonitor(status) {
   const tailscale = status.tailscale || {};
   const remote = status.remote || {};
   const mobile = status.mobile || {};
+  const hubs = Array.isArray(mobile.hubs) ? mobile.hubs : [];
   const clients = Array.isArray(mobile.clients) ? mobile.clients : [];
+  const activeMobileHub = hubs.find((item) => item.active) || null;
   const summary = mobile.summary && typeof mobile.summary === "object" ? mobile.summary : {};
   const onlinePeers = (mobile.tailscalePeers || []).filter((peer) => peer.online);
   const healthyClients = clients.filter((client) => client.status === "healthy").length || Number(summary.healthy || 0);
@@ -156,10 +177,17 @@ function renderRuntimeMonitor(status) {
   setMonitorText(desktopNode, "[data-monitor-desktop-install]", desktopVersion);
   setMonitorText(desktopNode, "[data-monitor-desktop-process]", desktop.running ? `运行中 · PID ${desktop.pid || "未知"}` : "当前未运行");
   setMonitorText(desktopNode, "[data-monitor-desktop-control]", desktop.controllable ? "可安全控制" : desktop.running ? "外部进程" : "未连接");
-  const desktopLinked = Boolean(hub.healthy && desktop.healthy);
-  setMonitorText(desktopNode, "[data-monitor-desktop-hub]", desktopLinked ? "连接正常" : hub.healthy ? "等待桌面端" : "Hub 离线");
-  const desktopLinkState = desktopLinked ? "healthy" : hub.healthy || desktop.running ? "warning" : "idle";
-  setMonitorLink("desktop", desktopLinkState, desktopLinked ? "IPC LINK" : hub.healthy ? "WAITING" : "OFFLINE");
+  const activeHubReachable = activeMobileHub
+    ? activeMobileHub.client?.status === "healthy"
+    : hub.healthy;
+  const desktopLinked = Boolean(activeHubReachable && desktop.healthy);
+  setMonitorText(
+    desktopNode,
+    "[data-monitor-desktop-hub]",
+    desktopLinked ? "连接正常" : activeHubReachable ? "等待桌面端" : activeMobileHub ? "手机 Hub 离线" : "电脑 Hub 离线"
+  );
+  const desktopLinkState = desktopLinked ? "healthy" : activeHubReachable || desktop.running ? "warning" : "idle";
+  setMonitorLink("desktop", desktopLinkState, desktopLinked ? "ACTIVE HUB" : activeHubReachable ? "WAITING" : "OFFLINE");
   setMapLink("desktop", desktopLinkState);
 
   const remoteNode = monitorNode("remote");
@@ -198,6 +226,7 @@ function renderRuntimeMonitor(status) {
   const remoteLinkState = remote.conflict ? "danger" : remote.healthy ? "healthy" : tailscale.connected ? "warning" : "idle";
   setMonitorLink("remote", remoteLinkState, remote.healthy ? "TLS LINK" : tailscale.connected ? "READY" : "OFFLINE");
   setMapLink("remote", remoteLinkState);
+  setMapLink("remote-mobile", hubs.length ? remoteLinkState : "idle");
   const mobileLinkState = clients.some((client) => client.status === "incompatible" || client.status === "offline")
     ? "danger"
     : healthyClients
@@ -209,7 +238,7 @@ function renderRuntimeMonitor(status) {
   const mobileSector = document.querySelector("[data-mobile-monitor]");
   if (mobileSector) mobileSector.dataset.state = mobileLinkState;
 
-  const coreHealthy = Boolean(hub.healthy && desktop.healthy);
+  const coreHealthy = Boolean(activeHubReachable && desktop.healthy);
   const allHealthy = Boolean(coreHealthy && remote.healthy);
   const hasDanger = Boolean(hub.portConflict || remoteDanger);
   const anyRunning = Boolean(hub.running || desktop.running || tailscale.connected);
@@ -345,15 +374,17 @@ function renderRemote(status) {
 
 function renderMobileHealth(mobile) {
   const hubs = Array.isArray(mobile.hubs) ? mobile.hubs : [];
-  const clients = Array.isArray(mobile.clients) ? mobile.clients : [];
+  const reportedClients = Array.isArray(mobile.clients) ? mobile.clients : [];
+  const clients = reportedClients.length
+    ? reportedClients
+    : hubs.flatMap((hub) => hub.client ? [{ ...hub.client, localHub: hub.progress || null }] : []);
   const summary = mobile.summary && typeof mobile.summary === "object"
     ? mobile.summary
     : null;
   const onlinePeers = (mobile.tailscalePeers || []).filter((peer) => peer.online);
+  renderMobileHubCard(hubs, mobile.managementAvailable);
   selectors.mobileClients.replaceChildren();
-  if (hubs.length) {
-    selectors.mobileSummary.textContent = `${hubs.filter((hub) => hub.active || hub.ready).length}/${hubs.length} Hub 就绪`;
-  } else if (clients.length) {
+  if (clients.length) {
     selectors.mobileSummary.textContent = `${clients.filter((client) => client.status === "healthy").length} 台正常`;
   } else if (summary?.tracked) {
     selectors.mobileSummary.textContent = summary.healthy
@@ -361,21 +392,6 @@ function renderMobileHealth(mobile) {
       : `${summary.tracked} 台已连接`;
   } else {
     selectors.mobileSummary.textContent = mobile.available ? "等待手机心跳" : "等待 Hub";
-  }
-
-  if (hubs.length) {
-    for (const hub of hubs.slice(0, 4)) {
-      const client = hub.client || clients.find((item) => item.localHub?.nodeId === hub.id) || null;
-      appendMobileHubNode(hub, client);
-    }
-    if (!mobile.managementAvailable) {
-      const hint = document.createElement("p");
-      hint.className = "mobile-empty";
-      hint.textContent = "启动桌面端并登录后可管理手机 Hub。";
-      selectors.mobileClients.append(hint);
-    }
-    renderMobileHubManager();
-    return;
   }
 
   if (!clients.length) {
@@ -422,56 +438,87 @@ function renderMobileHealth(mobile) {
   }
 }
 
-function appendMobileHubNode(hub, client) {
-  const status = hub.active || hub.ready ? "healthy" : hub.revokedAt ? "offline" : "warning";
-  const snapshot = hub.snapshot || null;
-  const recordCount = mobileHubRecordCount(hub);
-  const detail = hub.active
-    ? `正在承载 · ${recordCount} 条记录`
-    : hub.ready
-    ? `完整副本 · ${recordCount} 条记录`
-    : snapshot
-      ? `全量迁入 ${snapshotStatusLabel(snapshot.status)}`
-      : "尚未建立完整快照";
-  const heartbeat = client ? ` · App ${relativeHeartbeat(client.ageMs)}` : "";
-  const item = appendMobileNode({
-    name: hub.name || "Android Local Hub",
-    status,
-    detail,
-    meta: `${hub.active ? "当前 Hub" : "备用 Hub"} · ${nodeStatusLabel(hub.status)}${heartbeat}`
-  });
-  const actions = document.createElement("div");
-  actions.className = "mobile-client-actions";
+function selectMobileHub(hubs) {
+  return hubs.find((hub) => hub.active) ||
+    hubs.find((hub) => hub.ready && !hub.revokedAt) ||
+    hubs.find((hub) => !hub.revokedAt) ||
+    hubs[0] || null;
+}
+
+function renderMobileHubCard(hubs, managementAvailable) {
+  const hub = selectMobileHub(hubs);
+  const computerHub = componentCard("hub");
+  const computerRole = computerHub?.querySelector("[data-computer-hub-role]");
+  const mobileIsActive = Boolean(hub?.active);
+  if (computerHub) computerHub.dataset.clusterRole = mobileIsActive ? "standby" : "active";
+  if (computerRole) computerRole.textContent = mobileIsActive ? "STANDBY HUB" : "ACTIVE HUB";
+  selectors.mobileHubCard.dataset.clusterRole = mobileIsActive ? "active" : "standby";
+  selectors.mobileHubSummary.textContent = hubs.length
+    ? `${hubs.filter((item) => item.active || item.ready).length}/${hubs.length} 就绪`
+    : "未配对";
+  selectors.mobileHubProgress.replaceChildren();
+  selectors.mobileHubPrimary.removeAttribute("data-mobile-sync");
+  selectors.mobileHubSwitch.removeAttribute("data-mobile-switch");
+  selectors.mobileHubSwitch.hidden = true;
+
+  if (!hub) {
+    selectors.mobileHubCard.dataset.runtime = "missing";
+    selectors.mobileHubTitle.textContent = "手机 Hub";
+    selectors.mobileHubRole.textContent = "STANDBY HUB";
+    selectors.mobileHubPill.textContent = "等待配对";
+    selectors.mobileHubPill.dataset.state = "missing";
+    selectors.mobileHubState.textContent = "尚未接入";
+    selectors.mobileHubSyncState.textContent = "等待手机 Hub";
+    selectors.mobileHubRecords.textContent = "—";
+    selectors.mobileHubPrimary.textContent = "等待配对";
+    selectors.mobileHubPrimary.hidden = false;
+    selectors.mobileHubPrimary.disabled = true;
+    selectors.mobileHubCard.querySelector('[data-map-anchor="mobile-hub"]').dataset.state = "idle";
+    return;
+  }
+
   const progress = mobileHubProgress(hub);
+  const recordCount = mobileHubRecordCount(hub);
+  const replicationCaughtUp = hub.replication?.caughtUp === true;
+  const runtime = hub.revokedAt ? "conflict" : hub.active || hub.ready ? "running" : "stopped";
+  const linkState = hub.revokedAt ? "danger" : hub.active || hub.ready ? "healthy" : "warning";
+  selectors.mobileHubCard.dataset.runtime = runtime;
+  selectors.mobileHubTitle.textContent = hub.name || "Android Local Hub";
+  selectors.mobileHubRole.textContent = hub.active ? "ACTIVE HUB" : "STANDBY HUB";
+  selectors.mobileHubPill.textContent = hub.active ? "当前活动" : hub.ready ? "热备就绪" : nodeStatusLabel(hub.status);
+  selectors.mobileHubPill.dataset.state = hub.active || hub.ready ? "running" : hub.revokedAt ? "conflict" : "stopped";
+  selectors.mobileHubState.textContent = hub.active ? "承载全部客户端" : hub.ready ? "等待接管" : nodeStatusLabel(hub.status);
+  selectors.mobileHubSyncState.textContent = replicationCaughtUp
+    ? "已追平电脑 Hub"
+    : hub.ready
+      ? "增量同步中"
+      : hub.snapshot
+        ? snapshotStatusLabel(hub.snapshot.status)
+        : "尚未建立完整副本";
+  selectors.mobileHubRecords.textContent = `${recordCount} 条记录`;
+  selectors.mobileHubCard.querySelector('[data-map-anchor="mobile-hub"]').dataset.state = linkState;
+  appendMobileHubProgress(selectors.mobileHubProgress, progress);
+
+  selectors.mobileHubPrimary.dataset.mobileSync = hub.id;
   if (!progress?.switching) {
-    const sync = document.createElement("button");
-    sync.type = "button";
-    sync.dataset.mobileSync = hub.id;
-    sync.textContent = progress?.active
+    selectors.mobileHubPrimary.hidden = false;
+    selectors.mobileHubPrimary.textContent = progress?.active
       ? `${progress.label} ${progress.percent}%`
       : hub.active || hub.ready
         ? hub.active ? "同步到电脑" : "同步到手机"
         : "继续迁入";
-    sync.disabled = !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
-    actions.append(sync);
+    selectors.mobileHubPrimary.disabled = !managementAvailable || Boolean(progress?.active);
+  } else {
+    selectors.mobileHubPrimary.hidden = true;
   }
   if (hub.active || hub.ready) {
-    const switchHub = document.createElement("button");
-    switchHub.type = "button";
-    switchHub.dataset.mobileSwitch = hub.id;
-    switchHub.textContent = progress?.switching
+    selectors.mobileHubSwitch.hidden = false;
+    selectors.mobileHubSwitch.dataset.mobileSwitch = hub.id;
+    selectors.mobileHubSwitch.textContent = progress?.switching
       ? `${progress.label} ${progress.percent}%`
       : hub.active ? "切回电脑 Hub" : "切换为当前 Hub";
-    switchHub.disabled = !state.status?.mobile?.managementAvailable || Boolean(progress?.active);
-    actions.append(switchHub);
+    selectors.mobileHubSwitch.disabled = !managementAvailable || Boolean(progress?.active);
   }
-  const manage = document.createElement("button");
-  manage.type = "button";
-  manage.dataset.mobileManage = hub.id;
-  manage.textContent = "管理";
-  actions.append(manage);
-  appendMobileHubProgress(item, progress);
-  item.append(actions);
 }
 
 function mobileHubRecordCount(hub) {
@@ -910,7 +957,8 @@ function renderInstallProgress(name) {
 function renderComponent(name, component, linked) {
   const card = componentCard(name);
   card.dataset.runtime = component.portConflict ? "conflict" : component.status;
-  const mapPort = card.querySelector(`[data-map-anchor="${name}"]`);
+  const mapAnchor = name === "hub" ? "computer-hub" : name;
+  const mapPort = card.querySelector(`[data-map-anchor="${mapAnchor}"]`);
   if (mapPort) mapPort.dataset.state = component.portConflict ? "danger" : component.healthy ? "healthy" : component.running ? "warning" : "idle";
   const pill = card.querySelector("[data-status-pill]");
   pill.textContent = statusLabel(component);
@@ -990,7 +1038,11 @@ function render(status) {
   renderRuntimeMonitor(status);
   selectors.lastCheck.textContent = "刚刚更新";
   renderComponent("hub", status.hub, status.hub.healthy);
-  renderComponent("desktop", status.desktop, status.hub.healthy && status.desktop.healthy);
+  const activeMobileHub = (status.mobile?.hubs || []).find((hub) => hub.active) || null;
+  const activeHubReachable = activeMobileHub
+    ? activeMobileHub.client?.status === "healthy"
+    : status.hub.healthy;
+  renderComponent("desktop", status.desktop, activeHubReachable && status.desktop.healthy);
   renderRemote(status);
   if (selectors.mobileManager && !selectors.mobileManager.hidden) renderMobileHubManager();
   const allInstalled = status.hub.installed && status.desktop.installed;

@@ -100,26 +100,30 @@
           <div class="network-coordinates" aria-hidden="true"><span>AX-NET / LOCAL</span><span>ROUTE 4318</span></div>
           <svg class="network-map-links" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
             <g data-map-link="desktop" data-state="idle">
-              <path class="map-link-glow" d="M500 280 C405 280 315 265 155 265" />
-              <path class="map-link-signal" d="M500 280 C405 280 315 265 155 265" />
-            </g>
-            <g data-map-link="remote" data-state="idle">
-              <path class="map-link-glow" d="M500 280 C620 270 690 170 840 155" />
-              <path class="map-link-signal" d="M500 280 C620 270 690 170 840 155" />
+              <path class="map-link-glow" d="M370 280 C310 250 250 220 155 220" />
+              <path class="map-link-signal" d="M370 280 C310 250 250 220 155 220" />
             </g>
             <g data-map-link="mobile" data-state="idle">
-              <path class="map-link-glow" d="M840 155 C875 225 875 330 840 400" />
-              <path class="map-link-signal" d="M840 155 C875 225 875 330 840 400" />
+              <path class="map-link-glow" d="M370 280 C310 340 250 470 155 500" />
+              <path class="map-link-signal" d="M370 280 C310 340 250 470 155 500" />
+            </g>
+            <g data-map-link="remote" data-state="idle">
+              <path class="map-link-glow" d="M370 280 C560 150 690 150 840 220" />
+              <path class="map-link-signal" d="M370 280 C560 150 690 150 840 220" />
+            </g>
+            <g data-map-link="remote-mobile" data-state="idle">
+              <path class="map-link-glow" d="M610 280 C700 240 760 220 840 220" />
+              <path class="map-link-signal" d="M610 280 C700 240 760 220 840 220" />
             </g>
           </svg>
 
-          <article class="map-node map-node-hub" data-component="hub">
+          <article class="map-node map-node-hub" data-component="hub" data-cluster-role="active">
             <div class="map-node-orb hub-orb" aria-hidden="true">
               <i class="orb-ring ring-a"></i><i class="orb-ring ring-b"></i><i class="orb-scan"></i>
-              <i class="map-terminal map-core-port core-port-hub" data-map-anchor="hub" data-state="healthy"></i>
+              <i class="map-terminal map-core-port core-port-hub" data-map-anchor="computer-hub" data-state="healthy"></i>
               <div class="component-icon hub-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="7" r="1.6"/><circle cx="19" cy="7" r="1.6"/><circle cx="12" cy="20" r="1.6"/><path d="m7 8.4 2.5 1.8m7.5-1.8-2.5 1.8M12 15v3.3"/></svg></div>
             </div>
-            <div class="map-node-title"><span>PRIMARY CORE</span><h3>AetherX Hub</h3></div>
+            <div class="map-node-title"><span data-computer-hub-role>ACTIVE HUB</span><h3>电脑 Hub</h3></div>
             <div class="map-node-meta"><span class="status-pill" data-status-pill>未安装</span><span class="version" data-version>—</span></div>
             <div class="health-details">
               <div><span>接口</span><strong data-health>等待检测</strong></div>
@@ -155,10 +159,30 @@
             </div>
           </article>
 
-          <div class="map-right-rail">
+          <article class="map-node map-node-mobile-hub" data-mobile-hub-node data-runtime="missing" data-cluster-role="standby">
+            <div class="map-node-orb hub-orb" aria-hidden="true">
+              <i class="orb-ring ring-a"></i><i class="orb-ring ring-b"></i><i class="orb-scan"></i>
+              <i class="map-terminal map-core-port" data-map-anchor="mobile-hub" data-map-link-state="remote-mobile" data-state="idle"></i>
+              <div class="component-icon mobile-hub-icon"><svg viewBox="0 0 24 24"><rect x="7" y="2.8" width="10" height="18.4" rx="2.4"/><circle cx="12" cy="17.8" r=".8"/><path d="M9.5 7.5h5m-5 3h5m-5 3h3"/></svg></div>
+            </div>
+            <div class="map-node-title"><span data-mobile-hub-role>STANDBY HUB</span><h3 data-mobile-hub-title>手机 Hub</h3></div>
+            <div class="map-node-meta"><span class="status-pill" data-mobile-hub-pill>等待配对</span><span class="version" data-mobile-hub-summary>0 Hub</span></div>
+            <div class="health-details">
+              <div><span>角色</span><strong data-mobile-hub-state>尚未接入</strong></div>
+              <div><span>同步</span><strong data-mobile-hub-sync-state>等待手机 Hub</strong></div>
+              <div><span>数据</span><strong data-mobile-hub-records>—</strong></div>
+            </div>
+            <div data-mobile-hub-progress></div>
+            <div class="card-actions mobile-hub-map-actions">
+              <button class="component-primary" type="button" data-mobile-hub-primary disabled>等待配对</button>
+              <button class="component-secondary" type="button" data-mobile-hub-switch-action hidden>切换</button>
+              <button class="icon-action" type="button" data-mobile-manage-all title="管理手机 Hub" aria-label="管理手机 Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.36-6.36-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0-1.42-1.42M7.06 7.06 5.64 5.64"/></svg></button>
+            </div>
+          </article>
+
           <article class="map-node map-node-remote" data-component="remote">
             <div class="map-node-orb remote-orb" aria-hidden="true"><i class="orb-ring ring-a"></i><i class="orb-scan"></i><i class="map-terminal map-core-port" data-map-anchor="remote" data-map-link-state="remote" data-state="idle"></i><div class="component-icon remote-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="7" r="2.4"/><circle cx="18" cy="17" r="2.4"/><path d="m8.2 11 7.5-3m-7.5 5 7.5 3"/></svg></div></div>
-            <div class="map-node-title"><span>PRIVATE GATEWAY</span><h3>Anywhere</h3></div>
+            <div class="map-node-title"><span>PRIVATE TRANSPORT</span><h3>Anywhere</h3></div>
             <div class="map-node-meta"><span class="status-pill" data-remote-pill>正在检查</span><span class="version" data-tailscale-version>—</span></div>
             <div class="remote-onboarding">
               <div class="remote-qr"><img data-remote-qr alt="Tailscale 与 AetherX 连接二维码" /><span data-remote-qr-loading>准备二维码</span></div>
@@ -176,13 +200,12 @@
           </article>
 
           <section class="mobile-monitor map-mobile-sector" data-mobile-monitor>
-            <header><span>MOBILE HUBS</span><strong data-mobile-summary>等待心跳</strong><button type="button" data-mobile-manage-all>管理</button></header>
-            <div class="mobile-sector-core"><i class="map-terminal map-core-port" data-map-anchor="mobile" data-map-link-state="mobile" data-state="idle" aria-hidden="true"></i><span>DEVICE BUS</span></div>
+            <header><span>MOBILE CLIENT</span><strong data-mobile-summary>等待心跳</strong></header>
+            <div class="mobile-sector-core"><i class="map-terminal map-core-port" data-map-anchor="mobile-client" data-map-link-state="mobile" data-state="idle" aria-hidden="true"></i><span>手机客户端</span></div>
             <div class="mobile-client-list" data-mobile-clients>
-              <p class="mobile-empty">移动端接入后会成为独立节点。</p>
+              <p class="mobile-empty">手机客户端接入后会与桌面端共同连接当前活动 Hub。</p>
             </div>
           </section>
-          </div>
         </section>
       </section>
 

@@ -11,6 +11,7 @@ const {
 } = require("../control-channel");
 const {
   HUB_START_TIMEOUT_MS,
+  attachMobileHubClients,
   compareVersions,
   copyDirectoryWithProgress,
   inspectTcpPort,
@@ -29,6 +30,41 @@ const {
 } = require("../tailscale-manager");
 
 const launcherDir = path.resolve(__dirname, "..");
+
+test("启动器用手机客户端心跳补全合成的手机 Hub", () => {
+  const hubs = attachMobileHubClients([{
+    id: "android-1",
+    active: true,
+    status: "active"
+  }], [{
+    id: "phone-1",
+    status: "healthy",
+    localHub: { nodeId: "android-1", documentCount: 6726 }
+  }]);
+
+  assert.equal(hubs[0].client.id, "phone-1");
+  assert.equal(hubs[0].client.status, "healthy");
+  assert.equal(hubs[0].progress.documentCount, 6726);
+});
+
+test("Hub 详情超时时启动器仍从集群和手机心跳恢复活动手机 Hub", () => {
+  const hubs = attachMobileHubClients([], [{
+    id: "phone-1",
+    name: "洛尼的手机",
+    platform: "android",
+    status: "healthy",
+    localHub: { nodeId: "android-1", status: "completed", documentCount: 6726 }
+  }], {
+    activeNodeId: "android-1",
+    nodes: [{ id: "android-1", name: "Android Local Hub", status: "active" }]
+  });
+
+  assert.equal(hubs.length, 1);
+  assert.equal(hubs[0].active, true);
+  assert.equal(hubs[0].role, "active");
+  assert.equal(hubs[0].client.id, "phone-1");
+  assert.equal(hubs[0].progress.documentCount, 6726);
+});
 
 test("本地控制通道可以确认健康状态并接收关闭指令", async () => {
   const pipe = getControlPipe(`test-${process.pid}`);
@@ -154,11 +190,19 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   const main = fs.readFileSync(path.join(launcherDir, "main.js"), "utf8");
   const hubHost = fs.readFileSync(path.join(launcherDir, "hub-host.js"), "utf8");
   const manager = fs.readFileSync(path.join(launcherDir, "component-manager.js"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(launcherDir, "package.json"), "utf8"));
   assert.match(html, /data-action="deploy-all"/);
   assert.match(html, /data-action="stop-all"/);
   assert.match(html, /data-component="hub"/);
   assert.match(html, /data-component="desktop"/);
   assert.match(html, /data-component="remote"/);
+  assert.match(html, /data-mobile-hub-node/);
+  assert.match(html, /data-cluster-role="active"/);
+  assert.match(html, /data-map-anchor="computer-hub"/);
+  assert.match(html, /data-map-anchor="mobile-hub"/);
+  assert.match(html, /data-map-anchor="mobile-client"/);
+  assert.match(html, /data-map-link="remote-mobile"/);
+  assert.match(html, /PRIVATE TRANSPORT/);
   assert.match(html, /data-remote-qr/);
   assert.match(html, /data-mobile-clients/);
   assert.match(html, /data-mobile-manage-all/);
@@ -182,6 +226,10 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(script, /renderMobileHubManager/);
   assert.match(script, /synchronizeMobileHub/);
   assert.match(script, /switchMobileHub/);
+  assert.match(script, /desktop: \[activeHub, "desktop"\]/);
+  assert.match(script, /mobile: \[activeHub, "mobile-client"\]/);
+  assert.match(script, /"remote-mobile": \["mobile-hub", "remote"\]/);
+  assert.match(script, /mobileIsActive \? "standby" : "active"/);
   assert.match(script, /切换为当前 Hub/);
   assert.match(script, /切回电脑 Hub/);
   assert.match(script, /同步到电脑 Hub/);
@@ -197,6 +245,8 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(script, /等待手机响应/);
   assert.match(script, /继续迁入/);
   assert.match(styles, /\.mobile-hub-progress/);
+  assert.match(styles, /\.map-node-hub, \.map-node-mobile-hub/);
+  assert.match(styles, /data-cluster-role="active"/);
   assert.match(styles, /\.toast \{[^}]*z-index: 200/);
   assert.match(styles, /bottom: 76px/);
   assert.match(styles, /overflow-wrap: anywhere/);
@@ -207,6 +257,8 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(manager, /desktopUpdateAvailable/);
   assert.match(manager, /prepareHubLog/);
   assert.match(manager, /HUB_PORT_CONFLICT/);
+  const agentTools = packageJson.build.extraResources.find((resource) => resource.to === "agent-tools");
+  assert.ok(agentTools.filter.includes("wallet-tools.js"));
   assert.match(script, /\$\{name\}-stop/);
   assert.match(main, /"hub-stop"/);
   assert.match(main, /"desktop-stop"/);
