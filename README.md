@@ -4,7 +4,7 @@
   <h1>AetherX</h1>
 
   <p><strong>把 AI 从一次性问答，变成住在你自己设备里的长期伙伴。</strong></p>
-  <p>开源 · 自托管 · 长期记忆 · 桌面与 Android 协作</p>
+  <p>开源 · 自托管 · 长期记忆 · 双 Hub 单活动</p>
 
   <p>
     <a href="https://github.com/HanLoney/AetherX/actions/workflows/ci.yml"><img src="https://github.com/HanLoney/AetherX/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -24,9 +24,11 @@
 
 ---
 
-AetherX 是一个以长期陪伴为目标的个人 AI 伙伴。它不只保存聊天记录，还会在你的确认和控制下整理记忆、理解偏好，并把待办、手记、成长记录、梦境与纪念册连接成连续的个人空间。
+AetherX 是一个以长期陪伴为目标的个人 AI 伙伴。它不只保存聊天记录，还会在你的确认和控制下整理记忆、理解偏好，并把待办、钱包、手记、成长记录、梦境与纪念册连接成连续的个人空间。
 
-所有核心数据都保存在你自己的 **AetherX Hub** 中。桌面端和 Android 客户端通过统一 API 访问 Hub；你可以把它运行在个人电脑、NAS 或私人服务器上，并自由选择支持 OpenAI 兼容接口的模型服务。
+所有核心数据都保存在你自己的 **AetherX Hub** 中。默认情况下，电脑上的 Node Hub 负责业务与 Agent；完成备用 Hub 配对后，Android Local Hub 会保存经过校验的完整副本，并能在安全切换后接管活动 Hub 身份。两个 Hub 始终只有一个接受业务写入和运行 Agent，重新连通后再通过签名 Operation 与媒体校验继续复制。
+
+你可以只使用电脑 Hub，也可以把电脑和 Android 组成双 Hub。模型服务仍由你自由选择，支持 OpenAI 兼容接口的 Provider；账号、对话、记忆、配置和原始媒体不依赖 AetherX 官方数据云。
 
 > [!IMPORTANT]
 > AetherX 仍处于快速迭代阶段。升级、迁移或尝试开发版本前，请备份数据目录和主密钥。
@@ -37,32 +39,49 @@ AetherX 是一个以长期陪伴为目标的个人 AI 伙伴。它不只保存�
 | --- | --- | --- |
 | 🧠 | **可控的长期记忆** | 从对话中提取、确认、搜索和召回记忆；不是把所有内容偷偷塞进黑盒。 |
 | 🏠 | **数据留在自己的 Hub** | 账号、对话、记忆和 AI 配置由你部署和备份，不依赖官方数据云。 |
-| 💻 | **桌面与 Android 协作** | 使用短时配对码连接设备，通过增量游标与 SSE 同步变化。 |
+| 🔁 | **双 Hub 安全切换** | 电脑 Hub 与 Android Local Hub 保存完整副本，追平并校验后才移交活动身份。 |
 | 🌱 | **不止是聊天窗口** | 待办、画像、偏好、手记、成长、梦境和纪念册共同构成长线体验。 |
 | 🔌 | **模型服务可替换** | 在前端配置 Provider、模型和 API Key，不绑定单一厂商。 |
-| 🛡️ | **明确的安全边界** | 多账号数据隔离，令牌只保存哈希，AI API Key 由 Hub 加密保存。 |
+| 🛡️ | **明确的安全边界** | 多账号隔离，节点身份与用户会话分离，Provider Key 在每台 Hub 上重新加密。 |
 
 ## 它如何工作
 
 ```text
-Electron 桌面端 ─┐
-                  ├── REST API / SSE ── AetherX Hub ── SQLite
-Android 客户端 ──┘                         │
-                                          └── AI Provider
+Electron 桌面端 ── Hub Router ──┐
+                                ├── 当前活动 Hub ── AI Provider
+Android 界面 ───── Hub Router ──┘          │
+                                           │ 唯一业务写入与 Agent 执行权
+
+电脑 Node Hub        <── 签名 Operation / Blob / 完整性证明 ──>        Android Local Hub
+active 或 standby                                                      standby 或 active
 ```
 
-Hub 是业务数据的唯一写入者，也是账号、记忆、工具调用和多端同步的权威来源。客户端不会直接打开数据库，更不会依赖网盘或共享目录同步正在运行的 SQLite 文件。
+AetherX 采用**双节点、单活动**模型：
+
+- 当前活动 Hub 是账号数据、业务写入、Agent 和后台任务的唯一权威执行者；
+- 备用 Hub 只接收并校验复制操作，不重复运行 Agent，也不产生业务副作用；
+- 每次业务写入与对应 Operation 在同一数据库事务提交，重试通过请求 ID 保持幂等；
+- 原始媒体按内容摘要分块传输并支持断点续传，不能只凭“记录已同步”就认为图片完整；
+- 计划切换会等待写入排空，执行最终同步、结构化数据与媒体校验，再递增 `epoch` 并移交活动身份；
+- 客户端不会直接打开 Hub 数据库，也不会通过网盘、共享目录或复制运行中的 SQLite 文件实现同步。
+
+普通手机客户端配对与备用 Hub 配对是两种不同权限。前者只建立用户设备登录，后者会交换独立节点凭据、Space Key 密钥信封并复制完整 Space 数据。
+
+> [!NOTE]
+> 当前已支持两端在线时的安全计划切换。强制接管和分叉恢复尚未开放；手机 Hub 独立运行且电脑完全离线时，暂时不能直接导出或恢复兼容 `.aetherx` 完整存档。
 
 - [家庭节点与多端同步架构](docs/architecture/home-hub-sync.md)
 - [双 Hub 复制与安全切换实现方案](docs/architecture/dual-hub-replication.md)
+- [模型上下文与富数据隔离](docs/architecture/model-context-budget.md)
 - [工具系统与安全边界](docs/architecture/tool-system.md)
 - [服务端 Agent Hub 决策记录](docs/adr/0003-server-owned-agent-hub.md)
+- [双 Hub 单活动架构决策](docs/adr/0004-dual-hub-single-active-replication.md)
 
 ## 快速开始
 
 ### Windows 一键部署
 
-Windows 用户可以使用 **AetherX 启动器** 在统一界面中安装、启动和停止 Hub 与桌面端。启动器会实时检测 Hub 接口、响应延迟和桌面端进程状态，并在前后端联动异常时直接提示。
+Windows 用户可以使用 **AetherX 启动器** 在统一界面中安装、启动和停止电脑 Hub 与桌面端。启动器会实时检测 Hub 接口、响应延迟、桌面端进程、手机节点和复制状态，并在前后端联动异常时直接提示。
 
 需要在局域网之外使用手机端时，启动器还可以通过 **Tailscale Serve** 开启私人 HTTPS 入口。手机扫码即可完成 Tailscale 安装引导或读取远程 Hub 地址；Hub 仍只监听本机，不需要公网 IP 和路由器端口映射。
 
@@ -92,7 +111,7 @@ npm start
 2. 在“接入设置”中填写 AI Provider、模型和 API Key；
 3. 开始对话，并按自己的节奏启用记忆、待办和其他生活模块。
 
-API Key 由 Hub 使用主密钥加密保存，不写入仓库，也不会下发到手机端。完整流程见[快速上手](docs/getting-started.md)。
+API Key 由电脑 Hub 使用本机主密钥加密保存，不写入仓库，也不会通过普通用户 API 返回。只有在配对 Android Local Hub 时，凭证才会以 Space Key 加密信封进入复制协议，并立即由 Android Keystore 重新加密保存。完整流程见[快速上手](docs/getting-started.md)。
 
 ### 运行 Android 客户端
 
@@ -103,7 +122,26 @@ npm run android:sync
 npm run android:open
 ```
 
-Android 客户端支持账号注册、登录和一次性电脑配对。真机调试、Keystore 凭证保护与网络限制见[移动端说明](frontend/mobile/README.md)。
+Android 客户端有两种使用方式：
+
+1. **普通手机客户端**：注册或登录电脑 Hub，也可以扫描桌面端生成的普通连接码；数据仍由当前活动 Hub 提供。
+2. **Android Local Hub**：扫描桌面端生成的备用 Hub 配对码，把结构化数据、Operation、Provider 凭证信封和原始媒体复制到手机本机。
+
+Local Hub 的 Space Key、Peer 凭据和 Provider Key 都由 Android Keystore 保护，不写入 WebView 存储。完成首轮复制和最终确认后，手机会成为可切换的备用 Hub；切换到手机 Hub 后，已迁移模块可以在电脑关闭时继续运行。
+
+真机调试、Keystore 凭证保护与网络限制见[移动端说明](frontend/mobile/README.md)。
+
+### 配置电脑与手机双 Hub
+
+1. 先让手机以普通客户端身份登录电脑 Hub，确认账号和 AI Provider 可以正常使用；
+2. 在桌面端打开设备管理，选择“生成备用 Hub 配对码”；
+3. 在手机设置中打开 Local Hub 配对，扫描或粘贴这份专用配对码；
+4. 等待首轮结构化数据、Operation 和原始媒体复制完成，状态变为“待命”；
+5. 需要电脑离线时，在手机设置中选择“切换到手机 Hub”；
+6. 系统追平最后一批变更并通过完整性门禁后，手机成为当前活动 Hub；
+7. 电脑恢复在线后，可从手机发起“切换到电脑 Hub”，手机继续作为备用副本同步。
+
+切换期间普通写入会短暂锁定；任何预检、最终同步或完整性校验失败都会阻止切换，原活动 Hub 保持权威。不要在两端失联时手工修改数据库或尝试让两个 Hub 同时写入。
 
 ### 部署独立 Hub
 
@@ -139,9 +177,11 @@ curl.exe http://127.0.0.1:4318/health
 | 长期记忆 | 提取候选、人工确认、语义召回、维护与合并 |
 | 画像与偏好 | 保存明确的用户资料和可独立管理的偏好 |
 | 待办与提醒 | 管理时间范围、完成状态和桌面提醒 |
+| 钱包 | 使用整数分管理多项存款、收支流水与历史余额链 |
 | AI 伙伴成长 | 记录人格变化、共同记忆、情绪与关系叙事 |
 | 手记、梦境与纪念册 | 从真实历史中整理可回顾的长期内容 |
-| 多端同步 | 通过变更游标和 SSE 在桌面端与 Android 间同步 |
+| 双 Hub 复制 | 使用签名 Operation、Watermark、完整性摘要与媒体分块维持电脑和手机副本 |
+| 安全切换 | 在 Agent 空闲、数据追平和媒体完整后移交活动 Hub 身份，并通知客户端重新路由 |
 
 ## 仓库结构
 
@@ -150,7 +190,8 @@ AetherX/
 ├─ backend/             Node.js Hub、SQLite、REST API 与 SSE
 ├─ frontend/
 │  ├─ desktop/          Electron 桌面客户端
-│  └─ mobile/           Vue + Capacitor Android 客户端
+│  ├─ launcher/         Windows 安装、进程与连接状态管理
+│  └─ mobile/           Vue + Capacitor Android 客户端与原生 Local Hub
 ├─ docs/
 │  ├─ architecture/     架构与边界
 │  ├─ adr/              已接受的架构决策
