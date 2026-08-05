@@ -2,6 +2,7 @@ const { HttpError } = require("../../lib/http-error");
 
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 const DEFAULT_MAX_BACKOFF_MS = 5 * 60 * 1000;
+const DEFAULT_MEDIA_RESCAN_INTERVAL_MS = 5 * 60 * 1000;
 
 class ReplicationScheduler {
   constructor({
@@ -13,6 +14,7 @@ class ReplicationScheduler {
     mediaReplicationService,
     pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     maxBackoffMs = DEFAULT_MAX_BACKOFF_MS,
+    mediaRescanIntervalMs = DEFAULT_MEDIA_RESCAN_INTERVAL_MS,
     now = () => Date.now(),
     random = Math.random
   }) {
@@ -27,12 +29,17 @@ class ReplicationScheduler {
       this.pollIntervalMs,
       normalizeInterval(maxBackoffMs, DEFAULT_MAX_BACKOFF_MS)
     );
+    this.mediaRescanIntervalMs = Math.max(
+      this.pollIntervalMs,
+      normalizeInterval(mediaRescanIntervalMs, DEFAULT_MEDIA_RESCAN_INTERVAL_MS)
+    );
     this.now = now;
     this.random = random;
     this.running = false;
     this.timer = null;
     this.inFlight = null;
-    this.syncingUsers = new Set();
+    this.syncRuns = new Map();
+    this.lastMediaScanAt = new Map();
     this.activeControllers = new Set();
   }
 
@@ -47,7 +54,9 @@ class ReplicationScheduler {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     for (const controller of this.activeControllers) controller.abort();
-    if (this.inFlight) await this.inFlight;
+    const pending = [...this.syncRuns.values()].map((entry) => entry.promise);
+    if (this.inFlight) pending.push(this.inFlight);
+    await Promise.allSettled(pending);
   }
 
   schedule(delay) {
@@ -79,18 +88,24 @@ class ReplicationScheduler {
   }
 
   async runNow(userId, options = {}) {
-    if (this.syncingUsers.has(userId)) {
-      throw new HttpError(409, "REPLICATION_SYNC_BUSY", "当前账号正在执行增量同步。");
+    const existing = this.syncRuns.get(userId);
+    if (existing) {
+      if (requiresFreshRun(options)) {
+        await existing.promise.catch(() => {});
+        return this.runNow(userId, options);
+      }
+      return existing.promise;
     }
-    this.syncingUsers.add(userId);
     const controller = new AbortController();
     this.activeControllers.add(controller);
-    try {
-      return await this.runUnlocked(userId, controller.signal, options);
-    } finally {
-      this.activeControllers.delete(controller);
-      this.syncingUsers.delete(userId);
-    }
+    const entry = {};
+    entry.promise = this.runUnlocked(userId, controller.signal, options)
+      .finally(() => {
+        this.activeControllers.delete(controller);
+        if (this.syncRuns.get(userId) === entry) this.syncRuns.delete(userId);
+      });
+    this.syncRuns.set(userId, entry);
+    return entry.promise;
   }
 
   async runUnlocked(userId, signal, options = {}) {
@@ -143,12 +158,38 @@ class ReplicationScheduler {
         peerNodeId,
         { signal }
       );
-      const media = await this.mediaReplicationService.synchronizeFromPeer(
-        userId,
-        peerNodeId,
-        this.peerTransport,
-        { signal }
-      );
+      const mediaKey = `${context.space_id}:${peerNodeId}`;
+      const mediaStatus = this.mediaReplicationService.status(userId, peerNodeId);
+      const sequenceUnchanged = Boolean(previous) &&
+        progress.localSequence === previous.localSequence &&
+        progress.remoteSequence === previous.remoteSequence;
+      const lastMediaScanAt = this.lastMediaScanAt.get(mediaKey);
+      const mediaScanDue = lastMediaScanAt === undefined ||
+        attemptedAt - lastMediaScanAt >= this.mediaRescanIntervalMs;
+      const shouldScanMedia = requiresFreshRun(options) ||
+        previous?.state !== "healthy" ||
+        !sequenceUnchanged ||
+        mediaStatus.pendingCount > 0 ||
+        mediaScanDue;
+      let media;
+      if (shouldScanMedia) {
+        media = await this.mediaReplicationService.synchronizeFromPeer(
+          userId,
+          peerNodeId,
+          this.peerTransport,
+          { signal }
+        );
+        this.lastMediaScanAt.set(mediaKey, this.now());
+      } else {
+        media = {
+          discovered: 0,
+          transferred: 0,
+          skipped: 0,
+          pages: 0,
+          scanSkipped: true,
+          ...mediaStatus
+        };
+      }
       const succeededAt = this.now();
       const health = this.repository.save({
         spaceId: context.space_id,
@@ -221,7 +262,12 @@ function normalizeInterval(value, fallback) {
   return Number.isSafeInteger(number) && number >= 250 ? number : fallback;
 }
 
+function requiresFreshRun(options) {
+  return options.allowTransition === true || options.forceMedia === true;
+}
+
 module.exports = {
+  DEFAULT_MEDIA_RESCAN_INTERVAL_MS,
   DEFAULT_MAX_BACKOFF_MS,
   DEFAULT_POLL_INTERVAL_MS,
   ReplicationScheduler
