@@ -182,6 +182,9 @@ const {
   ReplicationUnitOfWork
 } = require("./modules/replication/replication-unit-of-work");
 const {
+  MobileHubSyncNotifier
+} = require("./modules/replication/mobile-hub-sync-notifier");
+const {
   PeerReplicationService
 } = require("./modules/replication/peer-replication-service");
 const {
@@ -303,6 +306,10 @@ function createApp(config) {
     replicationHealthProvider: (spaceId, nodeId) =>
       replicationHealthRepository.find(spaceId, nodeId)
   });
+  const mobileHubSyncNotifier = new MobileHubSyncNotifier({
+    clusterService,
+    syncEventBroker
+  });
   const replicationRepository = new ReplicationRepository(database);
   const spaceKeyService = new SpaceKeyService({
     repository: new SpaceKeyRepository(database),
@@ -311,7 +318,9 @@ function createApp(config) {
   const replicationUnitOfWork = new ReplicationUnitOfWork({
     repository: replicationRepository,
     clusterService,
-    spaceKeyService
+    spaceKeyService,
+    onOperationsCommitted: (userId, change) =>
+      mobileHubSyncNotifier.notify(userId, change)
   });
   const peerReplicationService = new PeerReplicationService({
     repository: replicationRepository,
@@ -698,6 +707,7 @@ function createApp(config) {
     async close() {
       await switchRecoveryService.stop();
       await replicationScheduler.stop();
+      mobileHubSyncNotifier.close();
       return new Promise((resolve, reject) => {
         syncEventBroker.close();
         server.close((error) => {

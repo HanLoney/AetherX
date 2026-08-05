@@ -495,9 +495,17 @@ test("replication unit of work writes a hash chain and deduplicates requests", (
       platform: "android"
     });
     const repository = new ReplicationRepository(database);
+    const notifications = [];
     const unitOfWork = new ReplicationUnitOfWork({
       repository,
       clusterService,
+      onOperationsCommitted: (userId, change) => notifications.push({
+        userId,
+        change,
+        committedOperationCount: Number(
+          database.prepare("SELECT COUNT(*) AS count FROM replication_operations").get().count
+        )
+      }),
       now: () => 1780000000000
     });
     let calls = 0;
@@ -539,6 +547,11 @@ test("replication unit of work writes a hash chain and deduplicates requests", (
     assert.equal(created.operations.length, 1);
     assert.equal(created.operations[0].originSequence, 1);
     assert.equal(created.operations[0].previousOperationHash, "");
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].userId, "user-two");
+    assert.equal(notifications[0].change.operationCount, 1);
+    assert.equal(notifications[0].change.headSequence, 1);
+    assert.equal(notifications[0].committedOperationCount, 1);
 
     const updated = unitOfWork.execute("user-two", "request-update-todo", () => {
       database.prepare(
@@ -569,6 +582,9 @@ test("replication unit of work writes a hash chain and deduplicates requests", (
       database.prepare("SELECT COUNT(*) AS count FROM idempotency_requests").get().count,
       2
     );
+    assert.equal(notifications.length, 2);
+    assert.equal(notifications[1].change.headSequence, 2);
+    assert.equal(notifications[1].committedOperationCount, 2);
   });
 });
 

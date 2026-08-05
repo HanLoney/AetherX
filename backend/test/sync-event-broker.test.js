@@ -181,3 +181,40 @@ test("流式通道被代理缓冲时，控制命令仍可由轮询取走且只�
     broker.close();
   }
 });
+
+test("离线自动同步命令按手机节点合并为最新一条", () => {
+  const broker = createBroker();
+  try {
+    broker.publish("user-7", "hub-command", {
+      commandId: "command-old",
+      type: "synchronize-local-hub",
+      nodeId: "android-7",
+      headSequence: 10
+    }, {
+      clientId: "phone-client",
+      alwaysQueue: true,
+      coalesceKey: "auto-sync:android-7",
+      ttlMs: 24 * 60 * 60 * 1000
+    });
+    broker.publish("user-7", "hub-command", {
+      commandId: "command-new",
+      type: "synchronize-local-hub",
+      nodeId: "android-7",
+      headSequence: 18
+    }, {
+      clientId: "phone-client",
+      alwaysQueue: true,
+      coalesceKey: "auto-sync:android-7",
+      ttlMs: 24 * 60 * 60 * 1000
+    });
+
+    assert.deepEqual(broker.consumePending("user-7", "phone-client"), [{
+      commandId: "command-new",
+      type: "synchronize-local-hub",
+      nodeId: "android-7",
+      headSequence: 18
+    }]);
+  } finally {
+    broker.close();
+  }
+});
