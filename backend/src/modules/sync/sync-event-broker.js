@@ -101,6 +101,7 @@ class SyncEventBroker {
 
   publish(userId, event, data, options = {}) {
     const targetClientId = String(options.clientId || "");
+    const coalesceKey = String(options.coalesceKey || "");
     let delivered = 0;
     for (const subscriber of this.subscribers) {
       if (subscriber.userId !== userId) continue;
@@ -114,8 +115,21 @@ class SyncEventBroker {
       options.alwaysQueue === true ||
       (delivered === 0 && options.queueWhenOffline === true)
     ) {
-      const pending = this.pendingEvents.get(userId) || [];
-      pending.push({ event, data, clientId: targetClientId, expiresAt: Date.now() + 10 * 60_000 });
+      const existing = this.pendingEvents.get(userId) || [];
+      const pending = coalesceKey
+        ? existing.filter((item) => !(
+          item.event === event &&
+          item.clientId === targetClientId &&
+          item.coalesceKey === coalesceKey
+        ))
+        : existing;
+      pending.push({
+        event,
+        data,
+        clientId: targetClientId,
+        coalesceKey,
+        expiresAt: Date.now() + normalizePendingTtl(options.ttlMs)
+      });
       this.pendingEvents.set(userId, pending.slice(-20));
       queued = true;
     }
@@ -179,6 +193,12 @@ class SyncEventBroker {
     this.subscribers.clear();
     this.pendingEvents.clear();
   }
+}
+
+function normalizePendingTtl(value) {
+  const ttlMs = Number(value);
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 1000) return 10 * 60_000;
+  return Math.min(ttlMs, 24 * 60 * 60 * 1000);
 }
 
 module.exports = { SyncEventBroker };

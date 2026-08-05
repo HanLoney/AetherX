@@ -9,10 +9,17 @@ const {
 const IDEMPOTENCY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 class ReplicationUnitOfWork {
-  constructor({ repository, clusterService, spaceKeyService = null, now = () => Date.now() }) {
+  constructor({
+    repository,
+    clusterService,
+    spaceKeyService = null,
+    onOperationsCommitted = null,
+    now = () => Date.now()
+  }) {
     this.repository = repository;
     this.clusterService = clusterService;
     this.spaceKeyService = spaceKeyService;
+    this.onOperationsCommitted = onOperationsCommitted;
     this.now = now;
   }
 
@@ -34,7 +41,7 @@ class ReplicationUnitOfWork {
     assertLocalActive(context);
     const spaceKey = this.spaceKeyService?.ensure(context.space_id) || null;
     const syncKey = spaceKey?.key;
-    return this.repository.transaction(() => {
+    const committed = this.repository.transaction(() => {
       const repeated = this.repository.findIdempotency(
         context.space_id,
         normalizedRequestId
@@ -107,6 +114,21 @@ class ReplicationUnitOfWork {
         operations
       };
     });
+    if (!committed.repeated && committed.operations.length && this.onOperationsCommitted) {
+      try {
+        this.onOperationsCommitted(userId, {
+          spaceId: context.space_id,
+          nodeId: context.local_node_id,
+          epoch: Number(context.epoch),
+          operationCount: committed.operations.length,
+          headSequence: committed.operations.at(-1).originSequence,
+          committedAt: committed.createdAt
+        });
+      } catch {
+        // Replication notification is best-effort after the business transaction commits.
+      }
+    }
+    return committed;
   }
 }
 
