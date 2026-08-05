@@ -11,7 +11,11 @@ export function ensureMobileDataStarted() {
     startPromise = (async () => {
       await useModuleStore().hydrate().catch(() => undefined);
       const restored = await data.restoreCache();
-      if (!restored) await data.refreshAll().catch(() => undefined);
+      if (restored) {
+        void data.refreshAll().catch(() => undefined);
+      } else {
+        await data.refreshAll().catch(() => undefined);
+      }
       void data.preloadGallery().catch(() => undefined);
       await data.startSync();
       started = true;

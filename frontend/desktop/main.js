@@ -14,39 +14,69 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { XuanApiClient } = require("./api-client");
-const { AuthStore } = require("./auth-store");
+const {
+  AuthStore,
+  isDirectMobileHubUrl,
+  selectAuthenticationSession
+} = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
-const { DesktopSyncCoordinator } = require("./sync-runtime");
+const {
+  DesktopControlCoordinator,
+  DesktopSyncCoordinator
+} = require("./sync-runtime");
 const { generatePairingQrDataUrl } = require("./qr-code");
 const { createDesktopControlServer } = require("./desktop-control");
+const { discoverHubPairingEndpoints } = require("./pairing-endpoints");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
+const localHubServerUrl = "http://127.0.0.1:4318";
 const defaultServerUrl =
   process.env.AETHERX_SERVER_URL ||
   process.env.XUANAI_SERVER_URL ||
-  "http://127.0.0.1:4318";
+  localHubServerUrl;
 let authStore;
 let mainWindow;
 let currentUser = null;
+let hubRouting = null;
 let localHub = null;
 let tray = null;
 let isQuitting = false;
 let hubShutdownComplete = false;
 let hubShutdownPromise = null;
 let desktopControlServer = null;
+let authenticationServerUrl = defaultServerUrl;
+let authenticationToken = "";
+let latestClusterStatus = null;
+let clusterRecoveryPromise = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 const api = new XuanApiClient({
   baseUrl: defaultServerUrl,
+  onConnectionChanged: handleHubConnectionChanged,
   onUnauthorized: () => {
     if (!api.token || !authStore) return;
+    if (api.baseUrl !== authenticationServerUrl && authenticationToken) {
+      api.setBaseUrl(authenticationServerUrl);
+      api.setToken(authenticationToken);
+      saveAuthenticatedState();
+      return;
+    }
     api.setToken("");
+    authenticationToken = "";
     currentUser = null;
+    hubRouting = null;
     desktopSync.stop();
+    desktopControl.stop();
+    latestClusterStatus = null;
+    api.setBaseUrl(authenticationServerUrl || localHubServerUrl);
     authStore.clearSession(api.baseUrl);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadFile("auth.html");
   }
 });
+
+function currentHubEndpoints() {
+  return discoverHubPairingEndpoints({ serverUrl: api.baseUrl });
+}
 const desktopSync = new DesktopSyncCoordinator({
   api,
   onChanges: async (changes) => {
@@ -54,17 +84,166 @@ const desktopSync = new DesktopSyncCoordinator({
     if (changes.some((change) => change.entityType === "archive_restore" && change.operation === "reset")) {
       const session = await api.getSession();
       currentUser = session.user;
-      authStore?.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+      saveAuthenticatedState();
       mainWindow.webContents.reload();
       return;
     }
     mainWindow.webContents.send("sync:received", changes);
   }
 });
+const desktopControl = new DesktopControlCoordinator({
+  onEvent: handleDesktopControlEvent
+});
+
+function startAuthenticatedControl() {
+  if (!currentUser || !authenticationToken) {
+    desktopControl.stop();
+    return;
+  }
+  desktopControl.start({
+    baseUrl: authenticationServerUrl,
+    token: authenticationToken,
+    clientId: `desktop:${currentUser.id || currentUser.username}`
+  });
+}
 
 async function startAuthenticatedSync() {
   if (!currentUser || !api.token) return;
-  await desktopSync.start(`${api.baseUrl}|${currentUser.id}`);
+  startAuthenticatedControl();
+  const scope = hubRouting?.spaceId || api.baseUrl;
+  await desktopSync.start(`${scope}|${currentUser.username}`);
+}
+
+function saveAuthenticatedState() {
+  authStore?.save({
+    serverUrl: authenticationServerUrl,
+    token: authenticationToken,
+    user: currentUser,
+    routing: hubRouting
+  });
+}
+
+function upsertRoutingNode(routing, node) {
+  const nodes = Array.isArray(routing?.nodes) ? [...routing.nodes] : [];
+  const next = {
+    nodeId: String(node.nodeId || ""),
+    serverUrl: String(node.serverUrl || ""),
+    token: String(node.token || ""),
+    lastSeenAt: Date.now()
+  };
+  const index = nodes.findIndex((item) => item.nodeId === next.nodeId);
+  if (index >= 0) nodes[index] = next;
+  else nodes.push(next);
+  return nodes;
+}
+
+function applyClusterStatus(status) {
+  if (!status?.spaceId || !status.localNodeId) return;
+  latestClusterStatus = status;
+  hubRouting = {
+    spaceId: status.spaceId,
+    activeNodeId: status.activeNodeId,
+    localNodeId: status.localNodeId,
+    epoch: Number(status.epoch) || 1,
+    nodes: upsertRoutingNode(hubRouting, {
+      nodeId: status.localNodeId,
+      serverUrl: api.baseUrl,
+      token: api.token
+    })
+  };
+}
+
+function sendHubClusterChanged(status) {
+  if (!status || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("hub:cluster-changed", status);
+}
+
+async function handleDesktopControlEvent(message) {
+  if (message?.event === "ready") return recoverHubRoutingAfterControlEvent();
+  if (message?.event !== "cluster-change") return;
+  const cluster = message.data?.cluster;
+  if (!cluster?.spaceId) return;
+  latestClusterStatus = cluster;
+  sendHubClusterChanged(cluster);
+  if (cluster.state !== "stable") return;
+  return recoverHubRoutingAfterControlEvent();
+}
+
+function recoverHubRoutingAfterControlEvent() {
+  if (clusterRecoveryPromise) return clusterRecoveryPromise;
+  clusterRecoveryPromise = recoverHubRoutingFromAuthority()
+    .catch((error) => {
+      console.warn("Unable to refresh desktop Hub routing.", error?.message || error);
+    })
+    .finally(() => {
+      clusterRecoveryPromise = null;
+    });
+  return clusterRecoveryPromise;
+}
+
+async function recoverHubRoutingFromAuthority() {
+  if (!currentUser || !authenticationToken) return null;
+  const previousBaseUrl = api.baseUrl;
+  const previousToken = api.token;
+  const previousRouting = hubRouting
+    ? { ...hubRouting, nodes: Array.isArray(hubRouting.nodes) ? [...hubRouting.nodes] : [] }
+    : null;
+  try {
+    api.setBaseUrl(authenticationServerUrl);
+    api.setToken(authenticationToken);
+    const status = await ensureActiveHub();
+    desktopSync.stop();
+    await startAuthenticatedSync();
+    sendHubClusterChanged(status);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("hub:routed", {
+        serverUrl: api.baseUrl,
+        nodeId: status.localNodeId,
+        activeNodeId: status.activeNodeId,
+        epoch: status.epoch
+      });
+    }
+    return status;
+  } catch (error) {
+    api.setBaseUrl(previousBaseUrl);
+    api.setToken(previousToken);
+    hubRouting = previousRouting;
+    saveAuthenticatedState();
+    throw error;
+  }
+}
+
+async function ensureActiveHub() {
+  if (!api.token || !currentUser) return null;
+  const status = await api.ensureActiveHub();
+  applyClusterStatus(status);
+  saveAuthenticatedState();
+  return status;
+}
+
+async function handleHubConnectionChanged(connection) {
+  currentUser = connection.user;
+  hubRouting = {
+    spaceId: connection.spaceId,
+    activeNodeId: connection.activeNodeId,
+    localNodeId: connection.nodeId,
+    epoch: Number(connection.epoch) || 1,
+    nodes: upsertRoutingNode(hubRouting, {
+      nodeId: connection.nodeId,
+      serverUrl: connection.baseUrl,
+      token: connection.token
+    })
+  };
+  saveAuthenticatedState();
+  await startAuthenticatedSync();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("hub:routed", {
+      serverUrl: connection.baseUrl,
+      nodeId: connection.nodeId,
+      activeNodeId: connection.activeNodeId,
+      epoch: connection.epoch
+    });
+  }
 }
 
 function registerIpcHandlers() {
@@ -98,46 +277,62 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("auth:state", () => ({
-    serverUrl: api.baseUrl,
-    hasSession: Boolean(api.token),
+    serverUrl: authenticationServerUrl,
+    hasSession: Boolean(authenticationToken),
     user: currentUser
   }));
   ipcMain.handle("auth:bootstrap", async (event) => {
     if (!api.token) return { authenticated: false };
     const session = await api.getSession();
     currentUser = session.user;
-    authStore.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+    await ensureActiveHub();
+    saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { authenticated: true, user: currentUser };
   });
   ipcMain.handle("auth:config", async (_event, serverUrl) => {
-    const previousServerUrl = api.baseUrl;
-    api.setBaseUrl(serverUrl);
-    if (api.baseUrl !== previousServerUrl) {
+    const nextServerUrl = isDirectMobileHubUrl(serverUrl)
+      ? localHubServerUrl
+      : serverUrl;
+    const previousServerUrl = authenticationServerUrl;
+    api.setBaseUrl(nextServerUrl);
+    authenticationServerUrl = api.baseUrl;
+    if (authenticationServerUrl !== previousServerUrl) {
       desktopSync.stop();
+      desktopControl.stop();
       api.setToken("");
+      authenticationToken = "";
       currentUser = null;
+      hubRouting = null;
+      latestClusterStatus = null;
       authStore.clearSession(api.baseUrl);
     }
-    return api.getAuthConfig();
+    return {
+      ...await api.getAuthConfig(),
+      serverUrl: authenticationServerUrl
+    };
   });
   ipcMain.handle("auth:login", async (event, input) => {
-    api.setBaseUrl(input.serverUrl);
+    api.setBaseUrl(isDirectMobileHubUrl(input.serverUrl) ? localHubServerUrl : input.serverUrl);
+    authenticationServerUrl = api.baseUrl;
     api.setToken("");
     const result = await api.login({
       username: input.username,
       password: input.password
     });
     api.setToken(result.token);
+    authenticationToken = result.token;
     currentUser = result.user;
-    authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    await ensureActiveHub();
+    saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { user: result.user };
   });
   ipcMain.handle("auth:register", async (event, input) => {
-    api.setBaseUrl(input.serverUrl);
+    api.setBaseUrl(isDirectMobileHubUrl(input.serverUrl) ? localHubServerUrl : input.serverUrl);
+    authenticationServerUrl = api.baseUrl;
     api.setToken("");
     const result = await api.register({
       username: input.username,
@@ -146,8 +341,10 @@ function registerIpcHandlers() {
       registrationSecret: input.registrationSecret
     });
     api.setToken(result.token);
+    authenticationToken = result.token;
     currentUser = result.user;
-    authStore.save({ serverUrl: api.baseUrl, token: result.token, user: result.user });
+    await ensureActiveHub();
+    saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return {
@@ -159,13 +356,29 @@ function registerIpcHandlers() {
     user: currentUser,
     serverUrl: api.baseUrl
   }));
+  ipcMain.handle("hub:status", async () => {
+    if (!currentUser || !api.token) return null;
+    try {
+      const status = await api.getClusterStatus();
+      applyClusterStatus(status);
+      return status;
+    } catch (error) {
+      if (latestClusterStatus) return latestClusterStatus;
+      throw error;
+    }
+  });
   ipcMain.handle("auth:logout", async (event) => {
     try {
       if (api.token) await api.logout();
     } finally {
       desktopSync.stop();
+      desktopControl.stop();
       api.setToken("");
+      authenticationToken = "";
       currentUser = null;
+      hubRouting = null;
+      latestClusterStatus = null;
+      api.setBaseUrl(authenticationServerUrl || localHubServerUrl);
       authStore.clearSession(api.baseUrl);
       openPage(event.sender, "auth.html");
     }
@@ -179,6 +392,18 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("devices:pairing:approve", (_event, id) =>
     api.approvePairingSession(id)
+  );
+  ipcMain.handle("hubs:pairing:create", (_event, input) =>
+    api.createHubPairingSession(input)
+  );
+  ipcMain.handle("hubs:pairing:endpoints", () =>
+    discoverHubPairingEndpoints({ serverUrl: api.baseUrl })
+  );
+  ipcMain.handle("hubs:pairing:get", (_event, id) =>
+    api.getHubPairingSession(id)
+  );
+  ipcMain.handle("hubs:pairing:approve", (_event, id) =>
+    api.approveHubPairingSession(id)
   );
   ipcMain.handle("devices:list", () => api.listDevices());
   ipcMain.handle("devices:revoke", (_event, id) => api.revokeDevice(id));
@@ -231,7 +456,8 @@ function registerIpcHandlers() {
     );
     const session = await api.getSession();
     currentUser = session.user;
-    authStore.save({ serverUrl: api.baseUrl, token: api.token, user: currentUser });
+    await ensureActiveHub();
+    saveAuthenticatedState();
     desktopSync.stop();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
@@ -504,6 +730,21 @@ async function startDesktopControl() {
       setImmediate(showMainWindow);
       return { focused: true };
     }
+    if (command?.type === "mobile-hubs-status") {
+      if (!currentUser || !api.token) return { authenticated: false, hubs: [] };
+      const result = await api.listMobileHubs();
+      return { authenticated: true, hubs: result.hubs || [] };
+    }
+    if (command?.type === "mobile-hub-sync") {
+      if (!currentUser || !api.token) throw new Error("请先在桌面端登录 AetherX。");
+      const result = await api.synchronizeMobileHub(command.nodeId, await currentHubEndpoints());
+      return { synchronized: true, ...result };
+    }
+    if (command?.type === "mobile-hub-switch") {
+      if (!currentUser || !api.token) throw new Error("请先在桌面端登录 AetherX。");
+      const result = await api.switchMobileHub(command.nodeId, await currentHubEndpoints());
+      return { switching: true, ...result };
+    }
     if (command === "stop") {
       setImmediate(() => {
         isQuitting = true;
@@ -565,13 +806,17 @@ function openPage(sender, file) {
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
   authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
   const storedAuth = authStore.load();
-  if (storedAuth.serverUrl) api.setBaseUrl(storedAuth.serverUrl);
-  api.setToken(storedAuth.token);
-  currentUser = storedAuth.user;
+  const authentication = selectAuthenticationSession(storedAuth, localHubServerUrl);
+  authenticationServerUrl = authentication.serverUrl || localHubServerUrl;
+  authenticationToken = authentication.token;
+  api.setBaseUrl(authenticationServerUrl);
+  api.setToken(authenticationToken);
+  currentUser = authenticationToken ? storedAuth.user : null;
+  hubRouting = storedAuth.routing;
   try {
     localHub = await startLocalHub({
       electronApp: app,
-      baseUrl: api.baseUrl,
+      baseUrl: localHubServerUrl,
       enableAdbReverse: true
     });
   } catch (error) {
@@ -595,6 +840,7 @@ app.on("second-instance", showMainWindow);
 app.on("before-quit", (event) => {
   isQuitting = true;
   desktopSync.stop();
+  desktopControl.stop();
   if (!localHub?.owned || hubShutdownComplete) return;
   event.preventDefault();
   if (!hubShutdownPromise) {

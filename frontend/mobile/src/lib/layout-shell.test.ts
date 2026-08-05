@@ -18,8 +18,16 @@ const loginSource = readFileSync(new URL("../views/LoginView.vue", import.meta.u
 const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf8");
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
+const dataBootstrapSource = readFileSync(new URL("./mobile-data-bootstrap.ts", import.meta.url), "utf8");
 
 describe("adaptive mobile shell", () => {
+  it("shows cached data immediately and still refreshes it from the active Hub", () => {
+    expect(dataBootstrapSource).toContain("const restored = await data.restoreCache()");
+    expect(dataBootstrapSource).toContain("if (restored)");
+    expect(dataBootstrapSource).toContain("void data.refreshAll().catch");
+    expect(dataBootstrapSource).toContain("await data.refreshAll().catch");
+  });
+
   it("keeps chat as a secondary page outside the primary navigation", () => {
     expect(shellSource).toContain('layout?: "browse" | "focus"');
     expect(shellSource).toContain("v-if=\"$slots['bottom-dock']\"");
@@ -112,8 +120,18 @@ describe("adaptive mobile shell", () => {
     expect(dataSource).toContain("saveSyncCursor(scope, resetCursor)");
     expect(settingsSource).toContain("正在后台恢复同步");
     expect(settingsSource).toContain("等待电脑确认…");
-    expect(settingsSource).not.toContain("await data.reconnectHub()");
+    expect(settingsSource).toContain("void data.reconnectHub().catch");
+    expect(settingsSource).toContain("synchronizeLocalHub");
+    expect(settingsSource).toContain("await localHub.synchronize()");
+    expect(settingsSource).toContain("同步到电脑 Hub");
+    expect(settingsSource).toContain("同步到手机 Hub");
     expect(sessionSource).toContain("withConnectionTimeout");
+    expect(sessionSource).toContain("createDesktopControlConnection");
+    expect(dataSource).toContain("startControlSync(session, userId)");
+    expect(dataSource).toContain("{ controlOnly: true }");
+    expect(dataSource).toContain("stopControlSyncTransport()");
+    expect(dataSource).toContain("正在把手机端最新变更同步回电脑 Hub");
+    expect(dataSource).toContain("await localHub.resume()");
     expect(sessionSource).toContain("timeoutMs = 12_000");
     expect(dataSource).toContain("void refreshAll().catch");
     expect(dataSource).toContain("void startSync().catch");

@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AetherApi, hydrateMediaSources, normalizeServerUrl } from "./api";
 import { parsePairingCode } from "../stores/session";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("normalizeServerUrl", () => {
   it("normalizes a valid server url", () => {
@@ -45,5 +50,68 @@ describe("mobile health api", () => {
 describe("conversation pagination api", () => {
   it("exposes a paged conversation method", () => {
     expect(AetherApi.prototype.conversationPage).toBeTypeOf("function");
+  });
+});
+
+describe("Hub Router", () => {
+  it("hands the session to the active Hub and retries a write with the same request id", async () => {
+    vi.stubGlobal("window", {
+      setTimeout,
+      clearTimeout
+    });
+    const requests: Array<{ url: string; requestId: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      requests.push({ url, requestId: headers.get("X-Request-Id") || "" });
+      if (url === "https://old-hub.example/api/v1/todos") {
+        return new Response(JSON.stringify({
+          error: { code: "HUB_NOT_ACTIVE", message: "请切换 Hub" }
+        }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "https://old-hub.example/api/v1/cluster/session-handoff") {
+        return new Response(JSON.stringify({ data: {
+          handedOff: true,
+          serverUrl: "https://new-hub.example",
+          token: "new-token",
+          user: { id: "target-user", username: "loney", displayName: "洛尼" },
+          spaceId: "space-1",
+          nodeId: "new-hub",
+          activeNodeId: "new-hub",
+          epoch: 2
+        } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ data: {
+        id: "todo-1",
+        text: "自动换线后写入",
+        startAt: 1,
+        endAt: 2,
+        completed: false,
+        createdAt: 1,
+        updatedAt: 1
+      } }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }));
+    const changed = vi.fn();
+    const api = new AetherApi({
+      baseUrl: "https://old-hub.example",
+      token: "old-token",
+      onConnectionChanged: changed
+    });
+    const todo = await api.createTodo({ text: "自动换线后写入", startAt: 1, endAt: 2 });
+    expect(todo.id).toBe("todo-1");
+    expect(api.serverUrl).toBe("https://new-hub.example");
+    expect(api.accessToken).toBe("new-token");
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: "https://new-hub.example",
+      nodeId: "new-hub",
+      epoch: 2
+    }));
+    expect(requests.map((item) => item.url)).toEqual([
+      "https://old-hub.example/api/v1/todos",
+      "https://old-hub.example/api/v1/cluster/session-handoff",
+      "https://new-hub.example/api/v1/todos"
+    ]);
+    expect(requests[0].requestId).toBeTruthy();
+    expect(requests[2].requestId).toBe(requests[0].requestId);
   });
 });

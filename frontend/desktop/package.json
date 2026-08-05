@@ -49,6 +49,7 @@
       "interface-settings.js",
       "clock.js",
       "device-manager.js",
+      "pairing-endpoints.js",
       "emoji-picker.js",
       "qr-code.js",
       "home.js",

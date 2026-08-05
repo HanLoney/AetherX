@@ -150,6 +150,7 @@ test("启动器可以识别桌面端的新版本", () => {
 test("启动器界面提供完整的安装、启动、停止与监控入口", () => {
   const html = fs.readFileSync(path.join(launcherDir, "launcher.html"), "utf8");
   const script = fs.readFileSync(path.join(launcherDir, "launcher.js"), "utf8");
+  const styles = fs.readFileSync(path.join(launcherDir, "launcher.css"), "utf8");
   const main = fs.readFileSync(path.join(launcherDir, "main.js"), "utf8");
   const hubHost = fs.readFileSync(path.join(launcherDir, "hub-host.js"), "utf8");
   const manager = fs.readFileSync(path.join(launcherDir, "component-manager.js"), "utf8");
@@ -160,6 +161,8 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(html, /data-component="remote"/);
   assert.match(html, /data-remote-qr/);
   assert.match(html, /data-mobile-clients/);
+  assert.match(html, /data-mobile-manage-all/);
+  assert.match(html, /data-mobile-hub-manager/);
   assert.match(html, /<img src="app-icon-rounded\.png" alt="">/);
   assert.match(html, /LIVE RUNTIME MATRIX/);
   assert.match(html, /data-monitor-node="hub"/);
@@ -176,6 +179,28 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(script, /portConflict/);
   assert.match(script, /dataset\.runtime/);
   assert.match(script, /renderRuntimeMonitor/);
+  assert.match(script, /renderMobileHubManager/);
+  assert.match(script, /synchronizeMobileHub/);
+  assert.match(script, /switchMobileHub/);
+  assert.match(script, /切换为当前 Hub/);
+  assert.match(script, /切回电脑 Hub/);
+  assert.match(script, /同步到电脑 Hub/);
+  assert.match(script, /同步到手机 Hub/);
+  assert.match(script, /hub\.active \|\| hub\.ready/);
+  assert.match(script, /mobileHubJobs/);
+  assert.match(script, /syncProof\?\.caughtUp === true/);
+  assert.match(script, /syncProof\.lastSuccessAt/);
+  assert.match(script, /电脑 Hub 已追平手机端最新变更/);
+  assert.match(script, /appendMobileHubProgress/);
+  assert.match(script, /mobileHubRecordCount/);
+  assert.match(script, /hub\?\.progress\?\.documentCount/);
+  assert.match(script, /等待手机响应/);
+  assert.match(script, /继续迁入/);
+  assert.match(styles, /\.mobile-hub-progress/);
+  assert.match(styles, /\.toast \{[^}]*z-index: 200/);
+  assert.match(styles, /bottom: 76px/);
+  assert.match(styles, /overflow-wrap: anywhere/);
+  assert.match(script, /error \? 7200 : 4200/);
   assert.match(script, /desktop\.updateAvailable/);
   assert.match(script, /tailscale\.connected/);
   assert.match(manager, /copyDirectoryWithProgress/);
@@ -189,9 +214,12 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(script, /onStatus/);
   assert.match(main, /"remote-enable"/);
   assert.match(main, /"remote-disable"/);
+  assert.match(main, /"launcher:mobile-hub:sync"/);
+  assert.match(main, /"launcher:mobile-hub:switch"/);
   assert.match(hubHost, /mobileClients: hub\.mobileHealth\(\)/);
   assert.match(manager, /hubControl\?\.mobileClients/);
   assert.match(manager, /summary: hubHealth\.mobile/);
+  assert.match(manager, /getMobileHubControl/);
 });
 
 test("Tailscale Serve 状态只识别属于 AetherX 的 HTTPS 转发", () => {

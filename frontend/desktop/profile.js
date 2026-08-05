@@ -154,7 +154,7 @@ function renderAssistant() {
   renderJournals();
   renderGallery();
   renderAssistantOverview();
-  setAssistantView(assistantView);
+  setAssistantView(assistantView, { resetScroll: false });
 }
 
 function loadGalleryOriginal(source, priority = "low") {
@@ -193,7 +193,7 @@ function upgradeGalleryPreview(element, image, priority = "low") {
   else element.addEventListener("load", upgrade, { once: true });
 }
 
-function setAssistantView(view) {
+function setAssistantView(view, { resetScroll = true } = {}) {
   const allowed = ["overview", "journal", "gallery", "growth"];
   assistantView = allowed.includes(view) ? view : "overview";
   document.querySelectorAll("[data-assistant-view]").forEach((panel) => {
@@ -204,7 +204,7 @@ function setAssistantView(view) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (resetScroll) window.scrollTo({ top: 0, behavior: "smooth" });
   if (assistantView === "gallery" && galleryHasMore) {
     void loadMoreGallery().catch(showGalleryLoadFailure);
   }

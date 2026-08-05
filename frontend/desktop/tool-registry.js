@@ -1,4 +1,68 @@
 (function exposeToolRegistry(global) {
+  const MODEL_RESULT_MAX_CHARS = 32_000;
+  const MODEL_STRING_MAX_CHARS = 6_000;
+  const MEDIA_PLACEHOLDER = "[内嵌媒体数据已省略，可通过媒体引用查看]";
+
+  function sanitizeModelText(value, limit = MODEL_STRING_MAX_CHARS) {
+    const maximum = Math.max(32, Number(limit) || MODEL_STRING_MAX_CHARS);
+    const source = String(value ?? "");
+    const withoutDataUrls = source
+      .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+=[^;,]+)*(?:;base64)?,[a-z0-9+/_=-]+/gi, MEDIA_PLACEHOLDER)
+      .replace(/(["'])(?:[a-z0-9+/_=-]{4096,})\1/gi, `$1${MEDIA_PLACEHOLDER}$1`);
+    if (withoutDataUrls.length <= maximum) return withoutDataUrls;
+    return `${withoutDataUrls.slice(0, maximum)}\n[内容过长，已截取前 ${maximum} 个字符]`;
+  }
+
+  function projectValue(value, options = {}, depth = 0) {
+    const stringLimit = options.stringLimit || MODEL_STRING_MAX_CHARS;
+    const arrayLimit = options.arrayLimit || 20;
+    const maxDepth = options.maxDepth || 6;
+    if (value === null || value === undefined || typeof value === "boolean" || typeof value === "number") {
+      return value ?? null;
+    }
+    if (typeof value === "string") return sanitizeModelText(value, stringLimit);
+    if (depth >= maxDepth) return "[嵌套数据已省略]";
+    if (Array.isArray(value)) {
+      return value.slice(0, arrayLimit).map((item) => projectValue(item, options, depth + 1));
+    }
+    if (typeof value !== "object") return sanitizeModelText(value, stringLimit);
+    const result = {};
+    for (const key of Object.keys(value).slice(0, 40)) {
+      if (/^(image|avatar|personaImage)(DataUrl)?$/i.test(key)) {
+        result[key] = MEDIA_PLACEHOLDER;
+        continue;
+      }
+      result[key] = projectValue(value[key], options, depth + 1);
+    }
+    return result;
+  }
+
+  function projectToolResult(result) {
+    const source = result && typeof result === "object" ? result : { ok: false, content: String(result || "") };
+    const base = {
+      ok: source.ok === true,
+      content: sanitizeModelText(source.content || "", 4_000),
+      ...(source.data === undefined ? {} : { data: projectValue(source.data) }),
+      ...(source.error === undefined ? {} : { error: projectValue(source.error, { stringLimit: 2_000 }) })
+    };
+    if (JSON.stringify(base).length <= MODEL_RESULT_MAX_CHARS) return base;
+    const compact = {
+      ...base,
+      ...(source.data === undefined
+        ? {}
+        : { data: projectValue(source.data, { stringLimit: 800, arrayLimit: 12, maxDepth: 4 }) })
+    };
+    if (JSON.stringify(compact).length <= MODEL_RESULT_MAX_CHARS) return compact;
+    return {
+      ok: base.ok,
+      content: base.content,
+      data: Array.isArray(source.data)
+        ? { itemCount: source.data.length, note: "结果过大，模型仅保留摘要；完整数据仍在界面中可用。" }
+        : { note: "结果过大，模型仅保留摘要；完整数据仍在界面中可用。" },
+      ...(base.error === undefined ? {} : { error: base.error })
+    };
+  }
+
   class ToolRegistry {
     constructor(options = {}) {
       this.tools = new Map();
@@ -42,6 +106,14 @@
           parameters: tool.inputSchema
         }
         }));
+    }
+
+    modelResult(name, result) {
+      const tool = this.resolve(name);
+      const projected = typeof tool?.projectResult === "function"
+        ? tool.projectResult(result)
+        : result;
+      return projectToolResult(projected);
     }
 
     async call(name, rawInput) {
@@ -158,7 +230,11 @@
   }
 
   global.XuanToolRegistry = ToolRegistry;
+  global.XuanModelContext = Object.freeze({
+    projectToolResult,
+    sanitizeText: sanitizeModelText
+  });
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { ToolRegistry };
+    module.exports = { ToolRegistry, projectToolResult, sanitizeModelText };
   }
 })(typeof window === "undefined" ? globalThis : window);

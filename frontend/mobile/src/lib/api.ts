@@ -11,6 +11,35 @@ export interface AuthConfig {
   requiresRegistrationSecret: boolean;
 }
 
+export interface ClusterStatus {
+  spaceId: string;
+  localNodeId: string;
+  activeNodeId: string;
+  epoch: number;
+  state: string;
+  localRole: "active" | "standby";
+  transitionId: string;
+  transitionTargetNodeId: string;
+  nodes: Array<{
+    id: string;
+    name: string;
+    platform: string;
+    status: string;
+    role: "active" | "standby";
+    lastSeenAt: number;
+  }>;
+}
+
+export interface HubConnectionChange {
+  baseUrl: string;
+  token: string;
+  user: AuthUser;
+  spaceId: string;
+  nodeId: string;
+  activeNodeId: string;
+  epoch: number;
+}
+
 export interface Todo {
   id: string;
   text: string;
@@ -105,6 +134,20 @@ export interface DeviceHeartbeatInput {
   foreground: boolean;
   latencyMs: number | null;
   lastError?: string;
+  localHubNodeId?: string;
+  localHubStage?: string;
+  localHubProgress?: number;
+  localHubStatus?: string;
+  localHubDocuments?: number;
+  localHubMediaBytes?: number;
+  localHubMediaTotalBytes?: number;
+  localHubPendingMedia?: number;
+  localHubUpdatedAt?: number;
+  localHubEndpoints?: ReadonlyArray<{
+    transport: "lan" | "tailscale";
+    address: string;
+    priority: number;
+  }>;
 }
 
 export interface ChatToolCall {
@@ -167,15 +210,24 @@ export class ApiError extends Error {
 }
 
 type UnauthorizedHandler = () => void;
+type ConnectionChangedHandler = (connection: HubConnectionChange) => void | Promise<void>;
 
 export class AetherApi {
   private baseUrl = "";
   private token = "";
   private onUnauthorized?: UnauthorizedHandler;
+  private onConnectionChanged?: ConnectionChangedHandler;
+  private routePromise: Promise<boolean> | null = null;
 
-  constructor(options: { baseUrl: string; token?: string; onUnauthorized?: UnauthorizedHandler }) {
+  constructor(options: {
+    baseUrl: string;
+    token?: string;
+    onUnauthorized?: UnauthorizedHandler;
+    onConnectionChanged?: ConnectionChangedHandler;
+  }) {
     this.setConnection(options.baseUrl, options.token || "");
     this.onUnauthorized = options.onUnauthorized;
+    this.onConnectionChanged = options.onConnectionChanged;
   }
 
   setConnection(baseUrl: string, token = this.token) {
@@ -200,28 +252,16 @@ export class AetherApi {
       ? 300_000
       : 65_000;
     const timeout = ownController ? window.setTimeout(() => ownController.abort(), timeoutMs) : 0;
+    const requestId = isWriteMethod(method) ? crypto.randomUUID() : "";
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      return await this.performRequest<T>(
         method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: activeSignal
-      });
-      const payload = response.status === 204 ? { data: null } : await response.json();
-      if (!response.ok) {
-        const error = new ApiError(
-          payload?.error?.message || `请求失败（HTTP ${response.status}）`,
-          response.status,
-          payload?.error?.code || "API_ERROR",
-          payload?.requestId || ""
-        );
-        if (response.status === 401) this.onUnauthorized?.();
-        throw error;
-      }
-      return hydrateMediaSources(payload.data, this.baseUrl, this.token) as T;
+        path,
+        body,
+        activeSignal,
+        requestId,
+        true
+      );
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).name === "AbortError") {
@@ -233,6 +273,100 @@ export class AetherApi {
     }
   }
 
+  private async performRequest<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    signal: AbortSignal | undefined,
+    requestId: string,
+    allowRoute: boolean
+  ): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        ...(requestId ? { "X-Request-Id": requestId } : {})
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal
+    });
+    const payload = response.status === 204 ? { data: null } : await response.json();
+    if (!response.ok) {
+      const error = new ApiError(
+        payload?.error?.message || `请求失败（HTTP ${response.status}）`,
+        response.status,
+        payload?.error?.code || "API_ERROR",
+        payload?.requestId || ""
+      );
+      if (
+        allowRoute &&
+        response.status === 409 &&
+        error.code === "HUB_NOT_ACTIVE" &&
+        path !== "/api/v1/cluster/session-handoff" &&
+        await this.routeToActiveHub(signal)
+      ) {
+        return this.performRequest<T>(method, path, body, signal, requestId, false);
+      }
+      if (response.status === 401) this.onUnauthorized?.();
+      throw error;
+    }
+    return hydrateMediaSources(payload.data, this.baseUrl, this.token) as T;
+  }
+
+  async routeToActiveHub(signal?: AbortSignal) {
+    if (!this.token) return false;
+    if (this.routePromise) return this.routePromise;
+    this.routePromise = (async () => {
+      const response = await fetch(`${this.baseUrl}/api/v1/cluster/session-handoff`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.token}`,
+          "X-Request-Id": crypto.randomUUID()
+        },
+        body: "{}",
+        signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new ApiError(
+          payload?.error?.message || "无法切换到当前活动 Hub。",
+          response.status,
+          payload?.error?.code || "HUB_HANDOFF_FAILED",
+          payload?.requestId || ""
+        );
+      }
+      const handoff = payload.data;
+      if (!handoff?.handedOff) return false;
+      const baseUrl = normalizeServerUrl(handoff.serverUrl);
+      if (!baseUrl || !handoff.token || !handoff.user || !handoff.spaceId) {
+        throw new ApiError("活动 Hub 返回了无效的会话交接结果。", 502, "HUB_HANDOFF_INVALID");
+      }
+      this.setConnection(baseUrl, handoff.token);
+      await this.onConnectionChanged?.({
+        baseUrl,
+        token: handoff.token,
+        user: handoff.user,
+        spaceId: handoff.spaceId,
+        nodeId: handoff.nodeId,
+        activeNodeId: handoff.activeNodeId,
+        epoch: Number(handoff.epoch)
+      });
+      return true;
+    })().finally(() => { this.routePromise = null; });
+    return this.routePromise;
+  }
+
+  async ensureActiveHub(signal?: AbortSignal) {
+    const status = await this.clusterStatus(signal);
+    if (status.localNodeId !== status.activeNodeId) {
+      await this.routeToActiveHub(signal);
+      return this.clusterStatus(signal);
+    }
+    return status;
+  }
+
   health(signal?: AbortSignal) { return this.request<{ status: string; service: string }>("GET", "/health", undefined, signal); }
   authConfig() { return this.request<AuthConfig>("GET", "/api/v1/auth/config"); }
   register(input: { username: string; displayName?: string; password: string; registrationSecret?: string }) {
@@ -242,12 +376,25 @@ export class AetherApi {
     return this.request<{ token: string; user: AuthUser; expiresAt: number }>("POST", "/api/v1/auth/login", input);
   }
   session(signal?: AbortSignal) { return this.request<{ user: AuthUser }>("GET", "/api/v1/auth/session", undefined, signal); }
+  clusterStatus(signal?: AbortSignal) { return this.request<ClusterStatus>("GET", "/api/v1/cluster/status", undefined, signal); }
   logout() { return this.request<null>("POST", "/api/v1/auth/logout"); }
   claimPairingSession(id: string, input: { secret: string; deviceName: string; publicKey?: string }) {
     return this.request<{ status: "pending" }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/claim`, input);
   }
   redeemPairingSession(id: string, secret: string) {
     return this.request<{ token: string; device: { id: string; name: string } }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/redeem`, { secret });
+  }
+  claimHubPairingSession(id: string, input: Record<string, unknown>) {
+    return this.request<{ status: "pending" }>("POST", `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/claim`, input);
+  }
+  redeemHubPairingSession(id: string, secret: string) {
+    return this.request<{
+      status: "redeemed";
+      spaceId: string;
+      nodeId: string;
+      sourceNodeId: string;
+      envelope: Record<string, unknown>;
+    }>("POST", `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/redeem`, { secret });
   }
   deviceHeartbeat(input: DeviceHeartbeatInput) {
     return this.request<{ serverTime: number }>("POST", "/api/v1/devices/heartbeat", input);
@@ -308,6 +455,12 @@ export class AetherApi {
   }
   syncChanges(after: number, limit = 200) {
     return this.request<{ changes: SyncChange[]; nextCursor: number; hasMore: boolean }>("GET", `/api/v1/sync/changes?after=${after}&limit=${limit}`);
+  }
+  syncCommands(clientId: string) {
+    return this.request<{ commands: Array<Record<string, unknown>> }>(
+      "GET",
+      `/api/v1/sync/commands?client_id=${encodeURIComponent(clientId)}`
+    );
   }
   createArchiveExport(password: string) {
     return this.request<{
@@ -397,6 +550,10 @@ export interface AgentChatResult {
 export function normalizeServerUrl(value: string) {
   const normalized = String(value || "").trim().replace(/\/+$/, "");
   return /^https?:\/\//i.test(normalized) ? normalized : "";
+}
+
+function isWriteMethod(method: string) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(String(method).toUpperCase());
 }
 
 function utf8Base64(value: string) {

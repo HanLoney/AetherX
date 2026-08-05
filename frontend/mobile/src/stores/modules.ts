@@ -10,7 +10,7 @@ let loadPromise: Promise<ModuleState[]> | null = null;
 
 function currentScope() {
   const session = useSessionStore();
-  return `${session.serverUrl.value}|${session.user.value?.id || ""}`;
+  return `${session.spaceId.value || session.serverUrl.value}|${session.user.value?.username || ""}`;
 }
 
 async function hydrate(force = false) {
@@ -65,6 +65,7 @@ function reset() {
 }
 
 window.addEventListener("aetherx:session-invalidated", reset);
+window.addEventListener("aetherx:hub-routed", reset);
 
 export function useModuleStore() {
   return {

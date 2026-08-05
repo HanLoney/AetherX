@@ -176,7 +176,7 @@
           </article>
 
           <section class="mobile-monitor map-mobile-sector" data-mobile-monitor>
-            <header><span>MOBILE NODES</span><strong data-mobile-summary>等待心跳</strong></header>
+            <header><span>MOBILE HUBS</span><strong data-mobile-summary>等待心跳</strong><button type="button" data-mobile-manage-all>管理</button></header>
             <div class="mobile-sector-core"><i class="map-terminal map-core-port" data-map-anchor="mobile" data-map-link-state="mobile" data-state="idle" aria-hidden="true"></i><span>DEVICE BUS</span></div>
             <div class="mobile-client-list" data-mobile-clients>
               <p class="mobile-empty">移动端接入后会成为独立节点。</p>
@@ -191,6 +191,20 @@
         <span>PRIVATE NETWORK · Tailscale 远程入口仅对你的私有网络开放</span>
       </footer>
     </main>
+    <div class="mobile-hub-backdrop" data-mobile-hub-manager hidden>
+      <section class="mobile-hub-manager" role="dialog" aria-modal="true" aria-labelledby="mobileHubManagerTitle">
+        <header>
+          <div><span>DUAL HUB CONTROL</span><h2 id="mobileHubManagerTitle">手机 Hub 管理</h2></div>
+          <button type="button" data-mobile-manager-close aria-label="关闭">×</button>
+        </header>
+        <p class="mobile-hub-manager-intro">查看手机副本、完整性快照与同步状态；手机离线时，同步指令会等待实时通道恢复后下发。</p>
+        <div class="mobile-hub-manager-list" data-mobile-hub-manager-list></div>
+        <footer>
+          <button type="button" data-mobile-open-desktop>打开桌面端配对管理</button>
+          <button type="button" data-mobile-manager-close>完成</button>
+        </footer>
+      </section>
+    </div>
     <div class="toast" data-toast role="status"></div>
     <script src="launcher.js"></script>
   </body>
