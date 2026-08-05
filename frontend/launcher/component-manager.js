@@ -342,6 +342,9 @@ class ComponentManager {
     );
     const remoteStatus = await this.tailscale.getStatus({ hubHealthy: hubRunning });
     const mobilePeers = (remoteStatus.tailscale?.peers || []).filter((peer) => peer.mobile);
+    const mobileClients = hubControl?.mobileClients || [];
+    const mobileCluster = mobileHubControl?.cluster || desktopControl?.cluster || null;
+    const mobileHubs = attachMobileHubClients(mobileHubControl?.hubs, mobileClients, mobileCluster);
     return {
       checkedAt: new Date().toISOString(),
       overall: desktopRunning && hubRunning ? "healthy" : "attention",
@@ -379,8 +382,9 @@ class ComponentManager {
         available: hubRunning,
         detailAvailable: Boolean(hubControl),
         managementAvailable: Boolean(mobileHubControl?.authenticated),
-        hubs: mobileHubControl?.hubs || [],
-        clients: hubControl?.mobileClients || [],
+        cluster: mobileCluster,
+        hubs: mobileHubs,
+        clients: mobileClients,
         summary: hubHealth.mobile,
         tailscalePeers: mobilePeers,
         networkOnline: mobilePeers.some((peer) => peer.online)
@@ -624,10 +628,58 @@ class ComponentManager {
   }
 }
 
+function attachMobileHubClients(hubs = [], clients = [], cluster = null) {
+  const clientList = Array.isArray(clients) ? clients : [];
+  const activeNodeId = String(cluster?.activeNodeId || "");
+  const merged = (Array.isArray(hubs) ? hubs : []).map((hub) => ({ ...hub }));
+  const knownIds = new Set(merged.map((hub) => String(hub.id || "")));
+  for (const node of Array.isArray(cluster?.nodes) ? cluster.nodes : []) {
+    const id = String(node?.id || "");
+    const platform = String(node?.platform || "").toLowerCase();
+    if (!id || knownIds.has(id) || (!["android", "ios"].includes(platform) && !/^(android|ios)-/i.test(id))) continue;
+    const active = activeNodeId ? id === activeNodeId : node.active === true || node.status === "active";
+    merged.push({
+      ...node,
+      id,
+      active,
+      ready: active ? false : node.ready === true || node.status === "standby",
+      role: active ? "active" : "standby"
+    });
+    knownIds.add(id);
+  }
+  for (const client of clientList) {
+    const localHub = client?.localHub;
+    const id = String(localHub?.nodeId || "");
+    if (!id || knownIds.has(id)) continue;
+    const active = activeNodeId ? id === activeNodeId : localHub.status === "active";
+    merged.push({
+      id,
+      name: "Android Local Hub",
+      platform: client.platform || "android",
+      status: active ? "active" : "standby",
+      role: active ? "active" : "standby",
+      active,
+      ready: !active && ["completed", "standby"].includes(String(localHub.status || "")),
+      client,
+      progress: localHub
+    });
+    knownIds.add(id);
+  }
+  return merged.map((hub) => {
+    const matched = clientList.find((client) => client.localHub?.nodeId === hub.id) || null;
+    return {
+      ...hub,
+      client: hub.client || matched,
+      progress: hub.progress || matched?.localHub || null
+    };
+  });
+}
+
 module.exports = {
   ComponentManager,
   HUB_URL,
   HUB_START_TIMEOUT_MS,
+  attachMobileHubClients,
   compareVersions,
   copyDirectoryWithProgress,
   inspectTcpPort,

@@ -27,6 +27,7 @@ const {
 const { generatePairingQrDataUrl } = require("./qr-code");
 const { createDesktopControlServer } = require("./desktop-control");
 const { discoverHubPairingEndpoints } = require("./pairing-endpoints");
+const { loadMobileHubStatus } = require("./mobile-hub-status");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const localHubServerUrl = "http://127.0.0.1:4318";
@@ -723,7 +724,8 @@ async function startDesktopControl() {
         component: "desktop",
         pid: process.pid,
         version: app.getVersion(),
-        healthy: Boolean(mainWindow && !mainWindow.isDestroyed())
+        healthy: Boolean(mainWindow && !mainWindow.isDestroyed()),
+        cluster: latestClusterStatus
       };
     }
     if (command === "focus") {
@@ -732,8 +734,12 @@ async function startDesktopControl() {
     }
     if (command?.type === "mobile-hubs-status") {
       if (!currentUser || !api.token) return { authenticated: false, hubs: [] };
-      const result = await api.listMobileHubs();
-      return { authenticated: true, hubs: result.hubs || [] };
+      const result = await loadMobileHubStatus({
+        api,
+        cachedCluster: latestClusterStatus
+      });
+      if (result.cluster) latestClusterStatus = result.cluster;
+      return { authenticated: true, ...result };
     }
     if (command?.type === "mobile-hub-sync") {
       if (!currentUser || !api.token) throw new Error("请先在桌面端登录 AetherX。");
