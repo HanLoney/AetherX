@@ -250,15 +250,24 @@ async function refreshCurrentUser() {
 }
 
 async function activateLocalHub() {
+  return activateLocalHubMode(false);
+}
+
+async function forceActivateLocalHub() {
+  return activateLocalHubMode(true);
+}
+
+async function activateLocalHubMode(force: boolean) {
   const currentUser = user.value;
   if (!currentUser) throw new Error("登录状态已失效，请重新登录。 ");
   busy.value = true;
   error.value = "";
   try {
     const localHub = useLocalHub();
-    await localHub.switchToLocal();
+    if (force) await localHub.forceTakeover();
+    else await localHub.switchToLocal();
     const local = localHub.status.value;
-    if (!local || local.role !== "active" || local.state !== "stable") {
+    if (!local || local.role !== "active" || !["stable", "forced_active"].includes(local.state)) {
       throw new Error("手机 Hub 尚未完成安全切换。 ");
     }
     api = new LocalHubClient(currentUser);
@@ -394,6 +403,7 @@ export function useSessionStore() {
     pair,
     reconnect,
     activateLocalHub,
+    forceActivateLocalHub,
     activateDesktopHub,
     refreshCurrentUser,
     logout,

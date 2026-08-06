@@ -373,7 +373,7 @@ async function startControlSync(
 }
 
 async function handleHubCommand(command: Record<string, unknown>) {
-  if (!["synchronize-local-hub", "switch-local-hub", "switch-desktop-hub"].includes(String(command.type || ""))) return;
+  if (!["synchronize-local-hub", "switch-local-hub", "switch-desktop-hub", "resolve-hub-divergence"].includes(String(command.type || ""))) return;
   const session = useSessionStore();
   const localHub = useLocalHub();
   const localStatus = localHub.status.value || await localHub.refresh();
@@ -382,6 +382,10 @@ async function handleHubCommand(command: Record<string, unknown>) {
     await localHub.updatePeerEndpoints({
       endpoints: command.endpoints as Array<Record<string, unknown>>
     });
+  }
+  if (command.type === "resolve-hub-divergence") {
+    await handleDivergenceRecovery(session, localHub, command);
+    return;
   }
   if (command.type === "switch-local-hub" || command.type === "switch-desktop-hub") {
     await handleRemoteHubSwitch(session, localHub, String(command.type));
@@ -434,6 +438,55 @@ async function handleHubCommand(command: Record<string, unknown>) {
     window.clearInterval(progressTimer);
   }
   void reportMobileHealth();
+}
+
+async function handleDivergenceRecovery(
+  session: ReturnType<typeof useSessionStore>,
+  localHub: ReturnType<typeof useLocalHub>,
+  command: Record<string, unknown>
+) {
+  const recoveryId = String(command.recoveryId || "");
+  const authorityNodeId = String(command.authorityNodeId || "");
+  if (!recoveryId || !authorityNodeId) return;
+  localHubSyncError = "";
+  localHubOperation = {
+    stage: "divergence_recovery",
+    progress: 8,
+    message: "正在冻结双 Hub 写入并校验权威分支",
+    updatedAt: Date.now()
+  };
+  await reportMobileHealth();
+  try {
+    const localNodeId = localHub.status.value?.localNodeId || "";
+    localHubOperation = {
+      stage: "divergence_snapshot",
+      progress: 28,
+      message: authorityNodeId === localNodeId
+        ? "正在加密并上传手机 Hub 完整快照"
+        : "正在下载并验证电脑 Hub 完整快照",
+      updatedAt: Date.now()
+    };
+    await reportMobileHealth();
+    await localHub.recoverDivergence({ recoveryId, authorityNodeId });
+    localHubOperation = {
+      stage: "divergence_recovered",
+      progress: 100,
+      message: "双 Hub 分歧已经闭环，正在恢复统一路由",
+      updatedAt: Date.now()
+    };
+    if (authorityNodeId === localNodeId) await session.activateLocalHub();
+    else await session.activateDesktopHub();
+  } catch (cause) {
+    const error = cause as Error | null;
+    localHubSyncError = error instanceof Error ? error.message : "双 Hub 分歧恢复失败";
+    localHubOperation = {
+      stage: "divergence_recovery_error",
+      progress: 0,
+      message: localHubSyncError,
+      updatedAt: Date.now()
+    };
+  }
+  await reportMobileHealth();
 }
 
 async function handleRemoteHubSwitch(

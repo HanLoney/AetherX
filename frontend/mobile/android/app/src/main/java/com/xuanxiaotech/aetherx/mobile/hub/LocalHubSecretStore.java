@@ -132,6 +132,14 @@ public final class LocalHubSecretStore {
         }
     }
 
+    public synchronized JSONObject providerCredentials() throws Exception {
+        JSONObject value = load();
+        JSONObject credentials = value == null ? null : value.optJSONObject("providerCredentials");
+        return credentials == null
+            ? new JSONObject().put("aiApiKey", "").put("imageApiKey", "")
+            : new JSONObject(LocalHubDatabase.canonical(credentials));
+    }
+
     public synchronized void clear() {
         preferences().edit().clear().apply();
     }

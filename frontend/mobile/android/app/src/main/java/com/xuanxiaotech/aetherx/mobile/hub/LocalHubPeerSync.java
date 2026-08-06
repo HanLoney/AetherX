@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 import javax.crypto.Cipher;
@@ -119,6 +120,330 @@ public final class LocalHubPeerSync {
             .put("completedAt", System.currentTimeMillis());
         database.recordSyncResult(result);
         return result;
+    }
+
+    public JSONObject recoverDivergence(JSONObject input) throws Exception {
+        String recoveryId = input.optString("recoveryId", "").trim();
+        if (recoveryId.isEmpty()) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_ID_INVALID");
+        }
+        JSONObject config = database.replicationConfig();
+        JSONObject secrets = requireSecrets();
+        JSONObject credential = secrets.getJSONObject("peerCredential");
+        String endpoint = selectEndpoint(config);
+        byte[] syncKey = Base64.decode(secrets.getString("spaceSyncKey"), Base64.DEFAULT);
+        JSONObject recovery = request(
+            endpoint,
+            config,
+            credential,
+            secrets,
+            "GET",
+            "/api/v1/peer/divergence-recoveries/" + encode(recoveryId),
+            new JSONObject()
+        );
+        if (
+            !recoveryId.equals(recovery.optString("id")) ||
+            !config.getString("spaceId").equals(recovery.optString("spaceId")) ||
+            !config.getString("localNodeId").equals(recovery.optString("authorityNodeId")) &&
+                !config.getString("localNodeId").equals(recovery.optString("targetNodeId"))
+        ) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_CONTEXT_MISMATCH");
+        }
+        if ("completed".equals(recovery.optString("status"))) {
+            database.clearDivergenceRecoveryAcknowledgement();
+            return new JSONObject()
+                .put("completed", true)
+                .put("recovery", recovery)
+                .put("completedAt", System.currentTimeMillis());
+        }
+        if ("failed".equals(recovery.optString("status"))) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_FAILED");
+        }
+        JSONObject savedAck = database.divergenceRecoveryAcknowledgement(recoveryId);
+        if (savedAck != null) {
+            return acknowledgeRecovery(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                recoveryId,
+                savedAck
+            );
+        }
+        database.beginDivergenceRecovery(recovery);
+        JSONObject signedControl;
+        if (config.getString("localNodeId").equals(recovery.getString("authorityNodeId"))) {
+            if ("awaiting_peer_ack".equals(recovery.optString("status"))) {
+                signedControl = recovery.getJSONObject("signedControl");
+            } else {
+                pushActiveMedia(endpoint, config, credential, secrets);
+                JSONObject packageValue = database.exportRecoverySnapshot(
+                    recovery,
+                    secretStore.providerCredentials()
+                );
+                String snapshotHash = LocalHubDatabase.sha256(LocalHubDatabase.canonical(packageValue));
+                database.rememberRecoverySnapshot(recoveryId, snapshotHash);
+                JSONObject aad = recoveryAad(recovery, snapshotHash);
+                JSONObject envelope = encryptRecoveryEnvelope(packageValue, syncKey, aad);
+                byte[] encoded = LocalHubDatabase.canonical(envelope).getBytes(StandardCharsets.UTF_8);
+                uploadRecoveryEnvelope(
+                    endpoint,
+                    config,
+                    credential,
+                    secrets,
+                    recoveryId,
+                    encoded
+                );
+                JSONObject completed = request(
+                    endpoint,
+                    config,
+                    credential,
+                    secrets,
+                    "POST",
+                    "/api/v1/peer/divergence-recoveries/" + encode(recoveryId) + "/snapshot/complete",
+                    new JSONObject()
+                        .put("byteSize", encoded.length)
+                        .put("payloadHash", LocalHubDatabase.sha256(LocalHubDatabase.canonical(envelope)))
+                );
+                signedControl = completed.getJSONObject("signedControl");
+            }
+        } else {
+            JSONObject envelope = downloadRecoveryEnvelope(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                recovery
+            );
+            JSONObject packageValue = decryptSnapshotEnvelope(
+                envelope,
+                secrets.getString("spaceSyncKey")
+            );
+            String snapshotHash = LocalHubDatabase.sha256(LocalHubDatabase.canonical(packageValue));
+            if (
+                !snapshotHash.equals(recovery.optString("snapshotHash")) ||
+                !LocalHubDatabase.canonical(recoveryAad(recovery, snapshotHash))
+                    .equals(LocalHubDatabase.canonical(envelope.optJSONObject("aad"))) ||
+                !recoveryId.equals(packageValue.optString("recoveryId")) ||
+                !config.getString("spaceId").equals(packageValue.optString("spaceId"))
+            ) {
+                throw new IllegalStateException("DIVERGENCE_RECOVERY_SNAPSHOT_INVALID");
+            }
+            packageValue.put("recoverySnapshotHash", snapshotHash);
+            secretStore.merge(new JSONObject()
+                .put("providerCredentials", packageValue.getJSONObject("credentials")));
+            database.importSnapshot(packageValue, syncKey);
+            downloadRecoveryBlobs(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                recoveryId
+            );
+            database.markRecoverySnapshotCompleted();
+            signedControl = recovery.getJSONObject("signedControl");
+        }
+        JSONObject signedAck = database.applyDivergenceRecovery(signedControl, syncKey);
+        return acknowledgeRecovery(
+            endpoint,
+            config,
+            credential,
+            secrets,
+            recoveryId,
+            signedAck
+        );
+    }
+
+    private JSONObject acknowledgeRecovery(
+        String endpoint,
+        JSONObject config,
+        JSONObject credential,
+        JSONObject secrets,
+        String recoveryId,
+        JSONObject signedAck
+    ) throws Exception {
+        JSONObject acknowledged = request(
+            endpoint,
+            config,
+            credential,
+            secrets,
+            "POST",
+            "/api/v1/peer/divergence-recoveries/" + encode(recoveryId) + "/ack",
+            signedAck
+        );
+        if ("completed".equals(acknowledged.optString("status"))) {
+            database.clearDivergenceRecoveryAcknowledgement();
+        }
+        return new JSONObject()
+            .put("completed", "completed".equals(acknowledged.optString("status")))
+            .put("recovery", acknowledged)
+            .put("acknowledgement", signedAck)
+            .put("completedAt", System.currentTimeMillis());
+    }
+
+    private void uploadRecoveryEnvelope(
+        String endpoint,
+        JSONObject config,
+        JSONObject credential,
+        JSONObject secrets,
+        String recoveryId,
+        byte[] bytes
+    ) throws Exception {
+        int offset = 0;
+        while (offset < bytes.length) {
+            int length = Math.min(STRUCTURED_SNAPSHOT_CHUNK_BYTES, bytes.length - offset);
+            byte[] chunk = new byte[length];
+            System.arraycopy(bytes, offset, chunk, 0, length);
+            JSONObject result = request(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                "POST",
+                "/api/v1/peer/divergence-recoveries/" + encode(recoveryId) + "/snapshot/chunks",
+                new JSONObject()
+                    .put("offset", offset)
+                    .put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+                    .put("chunkHash", LocalHubDatabase.sha256(chunk))
+            );
+            int next = result.optInt("receivedBytes", offset);
+            if (next != offset + length) {
+                throw new IllegalStateException("DIVERGENCE_RECOVERY_UPLOAD_STALLED");
+            }
+            offset = next;
+        }
+    }
+
+    private JSONObject downloadRecoveryEnvelope(
+        String endpoint,
+        JSONObject config,
+        JSONObject credential,
+        JSONObject secrets,
+        JSONObject recovery
+    ) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        long offset = 0;
+        long totalBytes = -1;
+        String payloadHash = "";
+        while (totalBytes < 0 || offset < totalBytes) {
+            JSONObject chunk = request(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                "GET",
+                "/api/v1/peer/divergence-recoveries/" + encode(recovery.getString("id")) +
+                    "/snapshot/chunks?offset=" + offset +
+                    "&length=" + STRUCTURED_SNAPSHOT_CHUNK_BYTES,
+                new JSONObject()
+            );
+            if (chunk.optLong("offset", -1) != offset) {
+                throw new IllegalStateException("DIVERGENCE_RECOVERY_SNAPSHOT_INVALID");
+            }
+            byte[] bytes = Base64.decode(chunk.optString("data", ""), Base64.DEFAULT);
+            if (bytes.length == 0 ||
+                !LocalHubDatabase.sha256(bytes).equals(chunk.optString("chunkHash"))) {
+                throw new IllegalStateException("DIVERGENCE_RECOVERY_SNAPSHOT_INVALID");
+            }
+            long currentTotal = chunk.optLong("totalBytes", -1);
+            if (currentTotal < 1 || totalBytes >= 0 && currentTotal != totalBytes) {
+                throw new IllegalStateException("DIVERGENCE_RECOVERY_SNAPSHOT_INVALID");
+            }
+            totalBytes = currentTotal;
+            payloadHash = chunk.optString("payloadHash", payloadHash);
+            output.write(bytes);
+            offset += bytes.length;
+        }
+        JSONObject envelope = new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
+        if (
+            offset != totalBytes ||
+            !payloadHash.equals(LocalHubDatabase.sha256(LocalHubDatabase.canonical(envelope)))
+        ) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_SNAPSHOT_INVALID");
+        }
+        return envelope;
+    }
+
+    private void downloadRecoveryBlobs(
+        String endpoint,
+        JSONObject config,
+        JSONObject credential,
+        JSONObject secrets,
+        String recoveryId
+    ) throws Exception {
+        JSONArray blobs = database.pendingBootstrapBlobs();
+        for (int index = 0; index < blobs.length(); index += 1) {
+            JSONObject blob = blobs.getJSONObject(index);
+            String mediaId = blob.getString("mediaId");
+            long offset = blobStore.reconcile(blob);
+            long byteSize = blob.getLong("byteSize");
+            while (offset < byteSize) {
+                int length = (int) Math.min(1024 * 1024, byteSize - offset);
+                BinaryResponse response = requestBinary(
+                    endpoint,
+                    config,
+                    credential,
+                    secrets,
+                    "/api/v1/peer/divergence-recoveries/" + encode(recoveryId) +
+                        "/media/" + encode(mediaId) +
+                        "?offset=" + offset + "&length=" + length
+                );
+                if (
+                    !blob.getString("contentHash").equals(response.header("X-AetherX-Blob-Hash")) ||
+                    offset != parseLong(response.header("X-AetherX-Blob-Offset")) ||
+                    byteSize != parseLong(response.header("X-AetherX-Blob-Size")) ||
+                    !LocalHubDatabase.sha256(response.bytes)
+                        .equals(response.header("X-AetherX-Chunk-Hash"))
+                ) {
+                    throw new IllegalStateException("DIVERGENCE_RECOVERY_MEDIA_INVALID");
+                }
+                offset = blobStore.append(blob, offset, response.bytes);
+                database.updateBlobProgress(mediaId, offset, "pending", "");
+            }
+            String localPath = blobStore.finalizeBlob(blob);
+            database.updateBlobProgress(mediaId, byteSize, "verified", localPath);
+        }
+    }
+
+    private static JSONObject recoveryAad(JSONObject recovery, String snapshotHash) throws Exception {
+        return new JSONObject()
+            .put("purpose", "aetherx-divergence-recovery")
+            .put("recoveryId", recovery.getString("id"))
+            .put("takeoverId", recovery.getString("takeoverId"))
+            .put("spaceId", recovery.getString("spaceId"))
+            .put("authorityNodeId", recovery.getString("authorityNodeId"))
+            .put("targetNodeId", recovery.getString("targetNodeId"))
+            .put("sourceEpoch", recovery.getLong("sourceEpoch"))
+            .put("targetEpoch", recovery.getLong("targetEpoch"))
+            .put("snapshotHash", snapshotHash);
+    }
+
+    private static JSONObject encryptRecoveryEnvelope(
+        JSONObject packageValue,
+        byte[] key,
+        JSONObject aad
+    ) throws Exception {
+        if (key.length != 32) throw new IllegalStateException("LOCAL_HUB_CREDENTIAL_UNAVAILABLE");
+        byte[] iv = new byte[12];
+        new SecureRandom().nextBytes(iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, iv));
+        cipher.updateAAD(LocalHubDatabase.canonical(aad).getBytes(StandardCharsets.UTF_8));
+        byte[] encrypted = cipher.doFinal(
+            LocalHubDatabase.canonical(packageValue).getBytes(StandardCharsets.UTF_8)
+        );
+        int tagOffset = encrypted.length - 16;
+        byte[] ciphertext = new byte[tagOffset];
+        byte[] tag = new byte[16];
+        System.arraycopy(encrypted, 0, ciphertext, 0, tagOffset);
+        System.arraycopy(encrypted, tagOffset, tag, 0, 16);
+        return new JSONObject()
+            .put("version", 1)
+            .put("algorithm", "A256GCM")
+            .put("aad", aad)
+            .put("iv", Base64.encodeToString(iv, Base64.NO_WRAP))
+            .put("ciphertext", Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+            .put("authenticationTag", Base64.encodeToString(tag, Base64.NO_WRAP));
     }
 
     public JSONObject downloadStructuredSnapshot() throws Exception {
@@ -251,6 +576,15 @@ public final class LocalHubPeerSync {
         JSONObject credential = secrets.getJSONObject("peerCredential");
         String endpoint = selectEndpoint(config);
         String localNodeId = config.getString("localNodeId");
+        JSONObject helloBody = new JSONObject()
+            .put("protocolVersion", config.optInt("protocolVersion", LocalHubDatabase.PROTOCOL_VERSION))
+            .put("schemaVersion", config.optInt("schemaVersion", LocalHubDatabase.NODE_SCHEMA_VERSION))
+            .put("spaceId", config.getString("spaceId"))
+            .put("nodeId", localNodeId)
+            .put("epoch", config.getLong("epoch"))
+            .put("activeNodeId", localNodeId);
+        JSONObject forcedTakeover = config.optJSONObject("forcedTakeover");
+        if (forcedTakeover != null) helloBody.put("forcedTakeover", forcedTakeover);
         JSONObject hello = request(
             endpoint,
             config,
@@ -258,14 +592,15 @@ public final class LocalHubPeerSync {
             secrets,
             "POST",
             "/api/v1/peer/hello",
-            new JSONObject()
-                .put("protocolVersion", config.optInt("protocolVersion", LocalHubDatabase.PROTOCOL_VERSION))
-                .put("schemaVersion", config.optInt("schemaVersion", LocalHubDatabase.NODE_SCHEMA_VERSION))
-                .put("spaceId", config.getString("spaceId"))
-                .put("nodeId", localNodeId)
-                .put("epoch", config.getLong("epoch"))
-                .put("activeNodeId", localNodeId)
+            helloBody
         );
+        if ("divergent".equals(hello.optString("state"))) {
+            throw new IllegalStateException("LOCAL_HUB_DIVERGENCE_DETECTED");
+        }
+        if ("forced_active".equals(config.optString("state")) &&
+            "stable".equals(hello.optString("state"))) {
+            database.settleForcedTakeover();
+        }
         long after = hello.optJSONObject("watermarks") == null
             ? 0
             : hello.getJSONObject("watermarks").optLong(localNodeId, 0);
@@ -322,7 +657,7 @@ public final class LocalHubPeerSync {
         JSONObject secrets,
         JSONObject operationHead
     ) throws Exception {
-        return request(
+        JSONObject result = request(
             endpoint,
             config,
             credential,
@@ -335,6 +670,16 @@ public final class LocalHubPeerSync {
                 .put("operationHash", operationHead.getString("operationHash"))
                 .put("completedAt", System.currentTimeMillis())
         );
+        if ("stable".equals(result.optString("clusterState"))) {
+            database.settleForcedTakeover();
+        }
+        return result;
+    }
+
+    public JSONObject forceTakeover() throws Exception {
+        JSONObject secrets = requireSecrets();
+        byte[] syncKey = Base64.decode(secrets.getString("spaceSyncKey"), Base64.DEFAULT);
+        return database.forceTakeover(syncKey);
     }
 
     private JSONObject pushActiveMedia(
@@ -669,6 +1014,10 @@ public final class LocalHubPeerSync {
             }
             if (!"active".equals(status.getString("role"))) {
                 throw new IllegalStateException("LOCAL_HUB_SWITCH_NOT_READY");
+            }
+            if ("forced_active".equals(state)) {
+                run();
+                continue;
             }
             String transitionId = status.optString("transitionId", "");
             long transitionStartedAt = status.optLong("transitionStartedAt", 0);
