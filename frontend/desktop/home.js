@@ -21,6 +21,10 @@ const state = {
   sending: false,
   conversationLoading: false,
   conversationError: "",
+  messageSearch: {
+    open: false,
+    query: ""
+  },
   testing: false,
   savingImageConfig: false
 };
@@ -102,6 +106,14 @@ const elements = {
   welcome: document.querySelector("#welcome"),
   messageList: document.querySelector("#messageList"),
   conversation: document.querySelector("#conversation"),
+  messageSearchBtn: document.querySelector("#messageSearchBtn"),
+  messageSearchView: document.querySelector("#messageSearchView"),
+  messageSearchInput: document.querySelector("#messageSearchInput"),
+  messageSearchClearBtn: document.querySelector("#messageSearchClearBtn"),
+  messageSearchCancelBtn: document.querySelector("#messageSearchCancelBtn"),
+  messageSearchCount: document.querySelector("#messageSearchCount"),
+  messageSearchResults: document.querySelector("#messageSearchResults"),
+  scrollToLatestBtn: document.querySelector("#scrollToLatestBtn"),
   messageInput: document.querySelector("#messageInput"),
   emojiBtn: document.querySelector("#emojiBtn"),
   emojiPicker: document.querySelector("#emojiPicker"),
@@ -838,6 +850,10 @@ const messageTimestampFormatter = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   hour12: false
 });
+const messageSearchDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "numeric",
+  day: "numeric"
+});
 
 function getMessageTimestamp(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -847,6 +863,147 @@ function getMessageTimestamp(value) {
     label: messageTimestampFormatter.format(date),
     iso: date.toISOString()
   };
+}
+
+function searchableMessageContent(message) {
+  if (!message || !["user", "assistant"].includes(message.role)) return "";
+  return String(message.content || "").replace(/\s+/g, " ").trim();
+}
+
+function messageSearchMatches() {
+  const query = state.messageSearch.query.trim().toLocaleLowerCase();
+  if (!query) return [];
+  return state.messages.flatMap((message, index) => {
+    const content = searchableMessageContent(message);
+    const matchIndex = content.toLocaleLowerCase().indexOf(query);
+    return matchIndex >= 0 ? [{ message, index, content, matchIndex }] : [];
+  });
+}
+
+function messageSearchSnippet(content, matchIndex, queryLength) {
+  const start = Math.max(0, matchIndex - 38);
+  const end = Math.min(content.length, matchIndex + queryLength + 58);
+  return {
+    before: `${start > 0 ? "…" : ""}${content.slice(start, matchIndex)}`,
+    match: content.slice(matchIndex, matchIndex + queryLength),
+    after: `${content.slice(matchIndex + queryLength, end)}${end < content.length ? "…" : ""}`
+  };
+}
+
+function messageSearchDate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : messageSearchDateFormatter.format(date);
+}
+
+function messageSearchSender(role) {
+  const profile = role === "user" ? state.userProfile : state.assistantProfile;
+  return role === "user"
+    ? profile?.preferredName || profile?.displayName || "洛尼"
+    : profile?.name || "小玄";
+}
+
+function renderMessageSearchResults() {
+  if (!elements.messageSearchResults) return;
+  const query = state.messageSearch.query.trim();
+  const matches = messageSearchMatches();
+  elements.messageSearchInput.value = state.messageSearch.query;
+  elements.messageSearchClearBtn.classList.toggle("hidden", !query);
+  elements.messageSearchCount.textContent = query
+    ? matches.length ? `${matches.length} 条结果` : "没有找到相关记录"
+    : "输入关键词开始搜索";
+  elements.messageSearchResults.replaceChildren();
+
+  if (!query || !matches.length) {
+    const empty = document.createElement("div");
+    empty.className = "message-search-empty";
+    empty.textContent = query ? "换个关键词试试" : "可以搜索你和小玄说过的话";
+    elements.messageSearchResults.append(empty);
+    return;
+  }
+
+  for (const match of matches) {
+    const result = document.createElement("button");
+    result.type = "button";
+    result.className = "message-search-result";
+    result.dataset.messageIndex = String(match.index);
+
+    const avatar = document.createElement("span");
+    avatar.className = `message-search-avatar ${match.message.role}-avatar`;
+    applyAvatarSurface(avatar, match.message.role);
+
+    const content = document.createElement("span");
+    content.className = "message-search-result-content";
+    const heading = document.createElement("strong");
+    heading.textContent = messageSearchSender(match.message.role);
+    const snippet = document.createElement("span");
+    snippet.className = "message-search-snippet";
+    const parts = messageSearchSnippet(match.content, match.matchIndex, query.length);
+    snippet.append(document.createTextNode(parts.before));
+    const highlighted = document.createElement("mark");
+    highlighted.textContent = parts.match;
+    snippet.append(highlighted, document.createTextNode(parts.after));
+    content.append(heading, snippet);
+
+    const date = document.createElement("time");
+    date.textContent = messageSearchDate(match.message.createdAt);
+    result.append(avatar, content, date);
+    result.addEventListener("click", () => jumpToSearchedMessage(match.index));
+    elements.messageSearchResults.append(result);
+  }
+}
+
+function openMessageSearch() {
+  state.messageSearch.open = true;
+  elements.conversation.classList.add("search-open");
+  elements.messageSearchView.classList.remove("hidden");
+  elements.messageSearchBtn.classList.add("active");
+  elements.messageSearchBtn.setAttribute("aria-expanded", "true");
+  elements.scrollToLatestBtn.classList.add("hidden");
+  renderMessageSearchResults();
+  window.setTimeout(() => elements.messageSearchInput.focus(), 0);
+}
+
+function closeMessageSearch() {
+  state.messageSearch.open = false;
+  state.messageSearch.query = "";
+  elements.conversation.classList.remove("search-open");
+  elements.messageSearchView.classList.add("hidden");
+  elements.messageSearchBtn.classList.remove("active");
+  elements.messageSearchBtn.setAttribute("aria-expanded", "false");
+  renderMessageSearchResults();
+  updateScrollToLatestButton();
+}
+
+function conversationIsNearLatest() {
+  return elements.conversation.scrollHeight - elements.conversation.scrollTop - elements.conversation.clientHeight < 90;
+}
+
+function updateScrollToLatestButton() {
+  const visible = state.messages.length > 0
+    && !state.messageSearch.open
+    && !conversationIsNearLatest();
+  elements.scrollToLatestBtn.classList.toggle("hidden", !visible);
+}
+
+function scrollConversationToLatest() {
+  elements.scrollToLatestBtn.classList.add("hidden");
+  elements.conversation.scrollTo({
+    top: elements.conversation.scrollHeight,
+    behavior: "smooth"
+  });
+}
+
+function jumpToSearchedMessage(index) {
+  closeMessageSearch();
+  window.requestAnimationFrame(() => {
+    const row = elements.messageList.querySelector(`[data-message-index="${index}"]`);
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.add("search-jump");
+    window.setTimeout(() => row.classList.remove("search-jump"), 1800);
+    window.setTimeout(updateScrollToLatestButton, 350);
+  });
 }
 
 function renderXuanMood(snapshot = {}) {
@@ -1598,9 +1755,10 @@ function renderMessages() {
     elements.messageList.append(error);
   }
 
-  state.messages.forEach((message) => {
+  state.messages.forEach((message, index) => {
     const row = document.createElement("div");
     row.className = `message-row ${message.role}`;
+    row.dataset.messageIndex = String(index);
     if (message.role === "tool") {
       renderToolActivity(row, message);
       elements.messageList.append(row);
@@ -1649,7 +1807,12 @@ function renderMessages() {
     row.append(avatar, typing);
     elements.messageList.append(row);
   }
-  elements.conversation.scrollTop = elements.conversation.scrollHeight;
+  if (!state.messageSearch.open) {
+    elements.conversation.scrollTop = elements.conversation.scrollHeight;
+    updateScrollToLatestButton();
+  } else {
+    renderMessageSearchResults();
+  }
 }
 
 async function testConnection() {
@@ -1967,6 +2130,30 @@ elements.messageInput.addEventListener("keydown", (event) => {
   }
 });
 elements.sendBtn.addEventListener("click", sendMessage);
+elements.messageSearchBtn.addEventListener("click", openMessageSearch);
+elements.messageSearchCancelBtn.addEventListener("click", closeMessageSearch);
+elements.messageSearchClearBtn.addEventListener("click", () => {
+  state.messageSearch.query = "";
+  renderMessageSearchResults();
+  elements.messageSearchInput.focus();
+});
+elements.messageSearchInput.addEventListener("input", (event) => {
+  state.messageSearch.query = event.target.value;
+  renderMessageSearchResults();
+});
+elements.messageSearchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMessageSearch();
+});
+elements.conversation.addEventListener("scroll", updateScrollToLatestButton, { passive: true });
+elements.scrollToLatestBtn.addEventListener("click", scrollConversationToLatest);
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
+    event.preventDefault();
+    openMessageSearch();
+  } else if (event.key === "Escape" && state.messageSearch.open) {
+    closeMessageSearch();
+  }
+});
 document.querySelectorAll(".suggestion").forEach((button) => {
   button.addEventListener("click", () => {
     elements.messageInput.value = button.dataset.prompt;
