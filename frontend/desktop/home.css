@@ -1051,8 +1051,9 @@ button { color: inherit; cursor: pointer; }
 }
 
 .message-bubble {
+  position: relative;
   max-width: 78%;
-  padding: 12px 14px;
+  padding: 12px 14px 20px;
   border: 1px solid rgba(119, 113, 144, .13);
   border-radius: 5px 16px 16px 16px;
   color: #575267;
@@ -1063,11 +1064,32 @@ button { color: inherit; cursor: pointer; }
 }
 
 .user .message-bubble {
+  padding: 12px 14px;
   border: 0;
   border-radius: 16px 16px 5px 16px;
   color: #fff;
   background: linear-gradient(135deg, #df91b1, #75aee0);
 }
+
+.message-timestamp {
+  position: absolute;
+  right: 10px;
+  bottom: 5px;
+  color: rgba(87, 82, 103, .55);
+  font-size: calc(8px * var(--font-scale, 1));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.user .message-timestamp {
+  right: 8px;
+  bottom: 5px;
+  color: rgba(255, 255, 255, .72);
+  font-size: calc(8px * var(--font-scale, 1));
+}
+
+.message-bubble.error .message-timestamp { color: rgba(185, 95, 112, .68); }
 
 .message-bubble.error { color: #b95f70; background: rgba(255, 238, 242, .86); }
 

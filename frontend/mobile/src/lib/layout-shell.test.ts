@@ -161,6 +161,13 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain("backdrop-filter:blur(26px) saturate(165%)");
     expect(chatSource).toContain("border-radius:22px 22px 22px 7px");
     expect(chatSource).toContain("border-radius:22px 22px 7px 22px");
+    expect(chatSource).toContain("messageTimestampFormatter");
+    expect(chatSource).toContain('class="message-timestamp"');
+    expect(chatSource).toContain("message.createdAt");
+    expect(chatSource).toContain("position:absolute; right:11px; bottom:6px");
+    expect(chatSource).toContain("right:8px; bottom:5px");
+    expect(chatSource).not.toContain("message-content::after");
+    expect(chatSource).not.toContain('year: "numeric"');
     expect(chatSource).toContain('class="dock-scrim"');
     expect(chatSource).toContain("isolation:isolate");
     expect(chatSource).toContain('ref="composerInput"');
