@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld("desktop", {
   register: (input) => ipcRenderer.invoke("auth:register", input),
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
   getHubStatus: () => ipcRenderer.invoke("hub:status"),
+  getHubDivergence: () => ipcRenderer.invoke("hub:divergence"),
+  recoverHubDivergence: (authority) =>
+    ipcRenderer.invoke("hub:divergence:recover", authority),
+  exportHubDivergenceEvidence: () =>
+    ipcRenderer.invoke("hub:divergence:export"),
   onHubRouted: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, routing) => callback(routing);

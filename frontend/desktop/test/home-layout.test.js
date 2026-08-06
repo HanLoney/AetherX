@@ -6,6 +6,7 @@ const path = require("node:path");
 const html = fs.readFileSync(path.join(__dirname, "..", "home.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "home.css"), "utf8");
 const javascript = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
+const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
 test("sidebar navigation is grouped into clear functional areas", () => {
   ["dailyNavLabel", "spaceNavGroup", "createNavGroup", "systemNavLabel"].forEach(
@@ -115,6 +116,28 @@ test("desktop header shows the current active Hub separately from AI connectivit
   assert.match(javascript, /手机 Hub/);
   assert.match(javascript, /电脑 Hub/);
   assert.match(css, /\.hub-pill\s*\{/);
+});
+
+test("desktop exposes a complete dual-Hub divergence recovery center", () => {
+  assert.match(html, /id="hubRecoveryMask"/);
+  assert.match(html, /id="hubRecoveryOperations"/);
+  assert.match(html, /id="keepMobileHubBtn"/);
+  assert.match(html, /id="keepDesktopHubBtn"/);
+  assert.match(html, /id="hubRecoveryProgress"/);
+  assert.match(html, /id="retryHubRecoveryBtn"/);
+  assert.match(html, /导出签名证据包/);
+  assert.match(javascript, /window\.desktop\.getHubDivergence/);
+  assert.match(javascript, /window\.desktop\.recoverHubDivergence\(authority\)/);
+  assert.match(javascript, /window\.desktop\.exportHubDivergenceEvidence/);
+  assert.match(javascript, /function renderHubRecoveryOperation/);
+  assert.match(javascript, /"recovering_divergence"/);
+  assert.match(javascript, /startHubRecovery\("mobile"\)/);
+  assert.match(javascript, /startHubRecovery\("desktop"\)/);
+  assert.match(javascript, /retryHubRecoveryCommand/);
+  assert.match(main, /localStatus\.forcedTakeover/);
+  assert.match(css, /\.hub-recovery-panel\s*\{/);
+  assert.match(css, /\.hub-recovery-operation\s*\{/);
+  assert.match(css, /\.hub-recovery-choices\s*\{/);
 });
 
 test("background conversation refresh does not steal the active workspace", () => {

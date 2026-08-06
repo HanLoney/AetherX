@@ -25,6 +25,12 @@ class ReplicationApplyService {
     if (!peer || peer.revoked_at !== null || peer.id === context.local_node_id) {
       throw new HttpError(403, "PEER_NOT_TRUSTED", "对端 Hub 未登记或已经撤销。");
     }
+    if (context.state === "divergent") {
+      throw conflict(
+        "REPLICATION_DIVERGENCE_REQUIRES_RECOVERY",
+        "旧 Hub 存在未确认写入，已停止自动覆盖并等待恢复处理。"
+      );
+    }
     if (
       !Array.isArray(inputOperations) ||
       inputOperations.length < 1 ||

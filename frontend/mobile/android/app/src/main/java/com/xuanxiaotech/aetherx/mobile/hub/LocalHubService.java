@@ -52,7 +52,9 @@ public final class LocalHubService {
         JSONObject current = start();
         if (!current.optBoolean("configured", false)) return current;
         JSONObject pending = database.pendingSwitchExchange();
-        if (pending == null && "stable".equals(current.optString("state"))) return current;
+        if (pending == null &&
+            ("stable".equals(current.optString("state")) ||
+             "forced_active".equals(current.optString("state")))) return current;
         return resumeReplication();
     }
 
@@ -266,6 +268,29 @@ public final class LocalHubService {
         }
     }
 
+    public synchronized JSONObject forceTakeover() {
+        ensureRunning();
+        try {
+            return new LocalHubPeerSync(database, secretStore, blobStore).forceTakeover();
+        } catch (IllegalStateException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("LOCAL_HUB_FORCE_TAKEOVER_FAILED", error);
+        }
+    }
+
+    public synchronized JSONObject recoverDivergence(JSONObject input) {
+        ensureRunning();
+        try {
+            return new LocalHubPeerSync(database, secretStore, blobStore)
+                .recoverDivergence(input);
+        } catch (IllegalStateException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("LOCAL_HUB_DIVERGENCE_RECOVERY_FAILED", error);
+        }
+    }
+
     public JSONObject media(String mediaId) throws JSONException {
         ensureRunning();
         JSONObject blob = database.findMediaBlob(mediaId);
@@ -361,6 +386,7 @@ public final class LocalHubService {
             return "toPeer".equals(pending.optString("mode")) ? switchToPeer() : switchToLocal();
         }
         JSONObject state = status();
+        if ("forced_active".equals(state.optString("state"))) return state;
         if (!"stable".equals(state.optString("state"))) {
             return "active".equals(state.optString("role")) ? switchToPeer() : switchToLocal();
         }

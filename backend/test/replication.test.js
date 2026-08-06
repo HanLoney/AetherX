@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { createHmac } = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -36,6 +37,15 @@ const {
   verifySwitchAck,
   verifySwitchControl
 } = require("../src/modules/hub-cluster/switch-control-codec");
+const {
+  signForcedTakeover
+} = require("../src/modules/hub-cluster/forced-takeover-codec");
+const {
+  ForcedTakeoverRepository
+} = require("../src/modules/hub-cluster/forced-takeover-repository");
+const {
+  DivergenceRecoveryService
+} = require("../src/modules/hub-cluster/divergence-recovery-service");
 const {
   switchRecordsRoot
 } = require("../src/modules/replication/integrity-service");
@@ -1583,6 +1593,168 @@ test("paired test Hubs negotiate hello, pull continuous operations and persist a
   });
 });
 
+test("signed forced takeover fences a stale desktop and settles after replication proof", () => {
+  withDatabase(({ database }) => {
+    const userId = "takeover-user";
+    const spaceId = "space-takeover";
+    const desktopNodeId = "node-desktop";
+    const mobileNodeId = "node-mobile";
+    const now = 1780000005000;
+    const syncKey = Buffer.alloc(32, 7);
+    createUser(database, userId);
+    seedPairedCluster(database, {
+      userId,
+      spaceId,
+      localNodeId: desktopNodeId,
+      desktopNodeId,
+      mobileNodeId
+    });
+    const fixture = forcedPeerFixture(database, syncKey, now);
+    const signed = signForcedTakeover({
+      version: 1,
+      action: "forced_takeover",
+      spaceId,
+      previousEpoch: 1,
+      epoch: 2,
+      previousActiveNodeId: desktopNodeId,
+      activeNodeId: mobileNodeId,
+      takeoverId: "takeover-1",
+      integrity: {
+        snapshotId: "snapshot-mobile",
+        recordsRoot: "a".repeat(64),
+        recordCount: 0,
+        verifiedAt: now
+      },
+      operationHeads: {
+        [desktopNodeId]: { sequence: 0, operationHash: "" },
+        [mobileNodeId]: { sequence: 0, operationHash: "" }
+      },
+      issuedAt: now
+    }, syncKey);
+
+    const hello = fixture.peerService.hello(userId, {
+      protocolVersion: 1,
+      schemaVersion: fixture.clusterService.status(userId).schemaVersion,
+      spaceId,
+      nodeId: mobileNodeId,
+      epoch: 2,
+      activeNodeId: mobileNodeId,
+      forcedTakeover: signed
+    });
+
+    assert.equal(hello.epoch, 2);
+    assert.equal(hello.activeNodeId, mobileNodeId);
+    assert.equal(hello.state, "forced_active");
+    assert.equal(hello.forcedTakeover.divergentOperationCount, 0);
+    assert.equal(fixture.clusterService.status(userId).localRole, "standby");
+
+    const confirmed = fixture.peerService.confirmSync(userId, mobileNodeId, {
+      originNodeId: mobileNodeId,
+      originSequence: 0,
+      operationHash: ""
+    });
+    assert.equal(confirmed.clusterState, "stable");
+    assert.equal(fixture.clusterService.status(userId).forcedTakeover.status, "reconciled");
+  });
+});
+
+test("forced takeover quarantines unconfirmed old-epoch desktop operations", () => {
+  withDatabase(({ database }) => {
+    const userId = "divergent-user";
+    const spaceId = "space-divergent";
+    const desktopNodeId = "node-desktop";
+    const mobileNodeId = "node-mobile";
+    const now = 1780000010000;
+    const syncKey = Buffer.alloc(32, 9);
+    createUser(database, userId);
+    seedPairedCluster(database, {
+      userId,
+      spaceId,
+      localNodeId: desktopNodeId,
+      desktopNodeId,
+      mobileNodeId
+    });
+    const fixture = forcedPeerFixture(database, syncKey, now);
+    const todoService = new ReplicatedTodoService(
+      new TodoService(new TodoRepository(database)),
+      fixture.unitOfWork
+    );
+    todoService.create(userId, { text: "offline desktop write", startAt: 1, endAt: 2 });
+    const signed = signForcedTakeover({
+      version: 1,
+      action: "forced_takeover",
+      spaceId,
+      previousEpoch: 1,
+      epoch: 2,
+      previousActiveNodeId: desktopNodeId,
+      activeNodeId: mobileNodeId,
+      takeoverId: "takeover-divergent",
+      integrity: {
+        snapshotId: "snapshot-mobile",
+        recordsRoot: "b".repeat(64),
+        recordCount: 0,
+        verifiedAt: now
+      },
+      operationHeads: {
+        [desktopNodeId]: { sequence: 0, operationHash: "" },
+        [mobileNodeId]: { sequence: 0, operationHash: "" }
+      },
+      issuedAt: now
+    }, syncKey);
+
+    const hello = fixture.peerService.hello(userId, {
+      protocolVersion: 1,
+      schemaVersion: fixture.clusterService.status(userId).schemaVersion,
+      spaceId,
+      nodeId: mobileNodeId,
+      epoch: 2,
+      activeNodeId: mobileNodeId,
+      forcedTakeover: signed
+    });
+
+    assert.equal(hello.state, "divergent");
+    assert.equal(hello.forcedTakeover.divergentOperationCount, 1);
+    assert.equal(database.prepare(
+      "SELECT status FROM hub_divergent_operations WHERE takeover_id = ?"
+    ).get("takeover-divergent").status, "quarantined");
+    const recoveryService = new DivergenceRecoveryService({
+      clusterService: fixture.clusterService,
+      repository: fixture.takeoverRepository,
+      spaceKeyService: { ensure: () => ({ key: syncKey }) },
+      now: () => now + 1000
+    });
+    const recovery = recoveryService.status(userId);
+    assert.equal(recovery.available, true);
+    assert.equal(recovery.clusterState, "divergent");
+    assert.equal(recovery.divergentOperationCount, 1);
+    assert.equal(recovery.operations[0].entityType, "todos");
+    assert.equal(recovery.operations[0].payload.text, "offline desktop write");
+    assert.equal(recovery.operations[0].divergenceStatus, "quarantined");
+
+    const evidence = recoveryService.exportEvidence(userId);
+    assert.equal(evidence.format, "AetherX Hub Divergence Evidence");
+    assert.equal(evidence.generatedAt, now + 1000);
+    assert.equal(evidence.takeover.id, "takeover-divergent");
+    assert.equal(evidence.takeover.proof.takeoverId, "takeover-divergent");
+    assert.equal(evidence.divergentOperations.length, 1);
+    assert.equal(
+      evidence.authenticationTag,
+      createHmac("sha256", syncKey).update(evidence.evidenceHash, "utf8").digest("hex")
+    );
+    const applyService = new ReplicationApplyService({
+      repository: new ReplicationRepository(database),
+      clusterService: fixture.clusterService,
+      clusterRepository: fixture.clusterRepository,
+      spaceKeyService: { ensure: () => ({ key: syncKey }) },
+      entityApplier: { apply() {} }
+    });
+    assert.throws(
+      () => applyService.apply(userId, mobileNodeId, []),
+      (error) => error.code === "REPLICATION_DIVERGENCE_REQUIRES_RECOVERY"
+    );
+  });
+});
+
 test("space keys sign operations and peer credentials reject tampering and replay", () => {
   withDatabase(({ database, dataDir }) => {
     const userId = "authenticated-peer-user";
@@ -1931,6 +2103,34 @@ function peerFixture(database) {
       clusterService,
       clusterRepository,
       healthRepository
+    })
+  };
+}
+
+function forcedPeerFixture(database, syncKey, now) {
+  const clusterRepository = new ClusterRepository(database);
+  const takeoverRepository = new ForcedTakeoverRepository(database);
+  const healthRepository = new ReplicationHealthRepository(database);
+  const clusterService = new ClusterService(clusterRepository, {
+    forcedTakeoverProvider: (spaceId) => takeoverRepository.status(spaceId)
+  });
+  const replicationRepository = new ReplicationRepository(database);
+  return {
+    clusterRepository,
+    clusterService,
+    takeoverRepository,
+    unitOfWork: new ReplicationUnitOfWork({
+      repository: replicationRepository,
+      clusterService
+    }),
+    peerService: new PeerReplicationService({
+      repository: replicationRepository,
+      clusterService,
+      clusterRepository,
+      healthRepository,
+      spaceKeyService: { ensure: () => ({ key: syncKey }) },
+      takeoverRepository,
+      now: () => now
     })
   };
 }

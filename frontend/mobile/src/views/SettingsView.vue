@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, shallowRef } from "vue";
 import {
+  AlertTriangle,
   Check,
   Blocks,
   ChevronRight,
@@ -49,6 +50,7 @@ const modules = useModuleStore();
 const localHub = useLocalHub();
 const interfaceSettings = useInterfaceSettings();
 const refreshing = ref(false);
+const hubManagementOpen = ref(false);
 const connectionOpen = ref(false);
 const connectionMode = ref<"address" | "pair">("address");
 const connectionUrl = ref("");
@@ -64,6 +66,8 @@ const localHubPairingState = ref("");
 const localHubPairingError = ref("");
 const localHubSwitching = ref(false);
 const localHubSwitchError = ref("");
+const forcedTakeoverOpen = ref(false);
+const forcedTakeoverConfirmed = ref(false);
 const localHubSyncing = ref(false);
 const localHubSyncError = ref("");
 const interfaceOpen = ref(false);
@@ -102,6 +106,23 @@ const occupation = computed(() => String(data.profile.value.occupation || ""));
 const bio = computed(() => String(data.profile.value.bio || ""));
 const avatar = computed(() => String(data.profile.value.avatarDataUrl || ""));
 const archiveNeedsDesktopHub = computed(() => session.serverUrl.value === "capacitor://local-hub");
+const isLocalHubActive = computed(() =>
+  session.serverUrl.value === "capacitor://local-hub" || localHub.status.value?.role === "active"
+);
+const currentHubTitle = computed(() => isLocalHubActive.value ? "手机 Hub" : "电脑 Hub");
+const currentHubDescription = computed(() => {
+  if (isLocalHubActive.value) {
+    return localHub.status.value?.state === "forced_active"
+      ? "手机正在临时接管，电脑恢复后会先核对数据"
+      : "聊天与数据由这台手机处理，电脑 Hub 保持同步";
+  }
+  return "聊天与数据由电脑处理，手机 Hub 保存副本并待命";
+});
+const currentHubBadge = computed(() => {
+  if (localHub.status.value?.state === "forced_active") return "临时接管";
+  if (data.syncState.value === "error" && !isLocalHubActive.value) return "连接异常";
+  return "当前使用";
+});
 const syncDescription = computed(() => data.syncState.value === "online"
   ? "电脑与手机正在实时同步"
   : data.syncState.value === "syncing"
@@ -117,6 +138,7 @@ const localHubDescription = computed(() => {
   if (state.bootstrap?.status !== "completed" || !state.integrity) {
     return "全量副本未完成 · 请重新配对迁入";
   }
+  if (state.state === "forced_active") return "手机已临时接管，正在等待电脑 Hub 上线确认";
   const records = `${state.documentCount} 条记录`;
   return state.role === "active" ? `当前由手机承载 · ${records}` : `本机副本待命 · ${records}`;
 });
@@ -126,6 +148,7 @@ const localHubBootstrapReady = computed(() =>
 );
 const localHubBadge = computed(() => {
   const state = localHub.status.value;
+  if (state?.state === "forced_active") return "接管中";
   if (state?.role === "active") return "当前";
   if (!state?.configured) return "待配对";
   return localHubBootstrapReady.value ? "待命" : "待恢复";
@@ -443,6 +466,16 @@ function openConnectionSettings() {
   connectionOpen.value = true;
 }
 
+function openDesktopHubSettings() {
+  hubManagementOpen.value = false;
+  openConnectionSettings();
+}
+
+function openPhoneHubSettings() {
+  hubManagementOpen.value = false;
+  openLocalHubPairing();
+}
+
 function closeConnectionSettings() {
   if (!reconnecting.value && !scanning.value) connectionOpen.value = false;
 }
@@ -591,6 +624,32 @@ async function switchToDesktopHub() {
   }
 }
 
+function openForcedTakeover() {
+  forcedTakeoverConfirmed.value = false;
+  localHubSwitchError.value = "";
+  forcedTakeoverOpen.value = true;
+}
+
+async function confirmForcedTakeover() {
+  if (!forcedTakeoverConfirmed.value || localHubSwitching.value) return;
+  localHubSwitching.value = true;
+  localHubSwitchError.value = "";
+  connectionNotice.value = "";
+  try {
+    await session.forceActivateLocalHub();
+    forcedTakeoverOpen.value = false;
+    connectionNotice.value = "手机 Hub 已接管；电脑恢复连接后会先核对分歧，再继续同步";
+    await Promise.all([
+      modules.hydrate(true).catch(() => undefined),
+      session.requireApi().aiConfig().then((value) => { aiState.value = value; }).catch(() => undefined)
+    ]);
+  } catch (cause) {
+    localHubSwitchError.value = cause instanceof Error ? cause.message : "手机 Hub 强制接管失败。";
+  } finally {
+    localHubSwitching.value = false;
+  }
+}
+
 async function synchronizeLocalHub() {
   if (localHubSyncing.value || localHubSwitching.value) return;
   localHubSyncing.value = true;
@@ -662,61 +721,41 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </div>
     </section>
 
-    <div class="section-heading"><div><span>CONNECTION</span><h2>连接与设置</h2></div><ShieldCheck :size="18" /></div>
-    <section class="settings-list">
-      <button class="hub-connection-row" type="button" @click="openConnectionSettings">
-        <i><Server :size="18"/></i>
-        <div><strong>电脑端 Hub</strong><span>{{ session.serverUrl.value }}</span></div>
-        <b>管理</b>
+    <div class="section-heading"><div><span>ACTIVE HUB</span><h2>当前 Hub</h2></div><ShieldCheck :size="18" /></div>
+    <section class="current-hub-card" :class="{ mobile: isLocalHubActive }">
+      <div class="current-hub-head">
+        <span><i />当前连接</span>
+        <b :class="{ warning: currentHubBadge === '连接异常' }">{{ currentHubBadge }}</b>
+      </div>
+      <div class="current-hub-main">
+        <i class="current-hub-icon"><Smartphone v-if="isLocalHubActive" :size="25" /><Server v-else :size="25" /></i>
+        <div><h3>{{ currentHubTitle }}</h3><p>{{ currentHubDescription }}</p></div>
+      </div>
+      <div class="hub-route" aria-label="电脑 Hub 与手机 Hub 的当前状态">
+        <div :class="{ active: !isLocalHubActive }"><Server :size="18" /><span>电脑 Hub</span><b>{{ !isLocalHubActive ? '承载中' : '同步端' }}</b></div>
+        <i><span /><Link2 :size="14" /><span /></i>
+        <div :class="{ active: isLocalHubActive }"><Smartphone :size="18" /><span>手机 Hub</span><b>{{ isLocalHubActive ? '承载中' : (localHubBootstrapReady ? '待命' : '未就绪') }}</b></div>
+      </div>
+      <p class="hub-sync-state"><Cloud :size="14" />{{ syncDescription }}</p>
+      <div v-if="localHub.status.value?.configured && localHubBootstrapReady" class="hub-action-row">
+        <button
+          class="hub-switch-button"
+          type="button"
+          :disabled="localHubSwitching || localHubSyncing"
+          @click="isLocalHubActive ? switchToDesktopHub() : switchToLocalHub()"
+        >
+          <Server v-if="isLocalHubActive" :size="17" /><Smartphone v-else :size="17" />
+          {{ localHubSwitching ? '正在校验并切换…' : `切换到${isLocalHubActive ? '电脑' : '手机'} Hub` }}
+        </button>
+        <button class="hub-sync-button" type="button" :disabled="localHubSyncing || localHubSwitching" @click="synchronizeLocalHub">
+          <RefreshCw :size="17" :class="{ spin: localHubSyncing }" />{{ localHubSyncing ? '同步中…' : '立即同步' }}
+        </button>
+      </div>
+      <button class="hub-management-entry" type="button" @click="hubManagementOpen = true">
+        <span>连接管理</span><small>地址、配对与故障处理</small><ChevronRight :size="16" />
       </button>
-      <button class="hub-connection-row" type="button" @click="openLocalHubPairing">
-        <i><Smartphone :size="18"/></i>
-        <div><strong>手机 Local Hub</strong><span>{{ localHubDescription }}</span></div>
-        <b :class="{ warning: !localHub.status.value?.configured || !localHubBootstrapReady }">{{ localHubBadge }}</b>
-      </button>
-      <article>
-        <i><Cloud :size="18"/></i>
-        <div><strong>实时同步</strong><span>{{ syncDescription }}</span></div>
-        <b :class="{ warning: data.syncState.value === 'error' }">{{ data.syncState.value === 'online' ? '正常' : '检查' }}</b>
-      </article>
-      <article>
-        <i><Sparkles :size="18"/></i>
-        <div><strong>AI 接入</strong><span>{{ aiState?.model || '在电脑端配置使用的模型' }}</span></div>
-        <b :class="{ warning: !aiState?.hasApiKey }">{{ aiState?.hasApiKey ? '就绪' : '未配置' }}</b>
-      </article>
     </section>
     <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
-    <div v-if="localHub.status.value?.configured && localHubBootstrapReady" class="hub-action-row">
-      <button
-        class="hub-sync-button"
-        type="button"
-        :disabled="localHubSyncing || localHubSwitching"
-        @click="synchronizeLocalHub"
-      >
-        <RefreshCw :size="17" :class="{ spin: localHubSyncing }" />
-        {{ localHubSyncing
-          ? (localHub.status.value?.role === 'active' ? '正在同步到电脑…' : '正在同步到手机…')
-          : (localHub.status.value?.role === 'active' ? '同步到电脑 Hub' : '同步到手机 Hub') }}
-      </button>
-      <button
-        v-if="localHub.status.value?.role === 'standby'"
-        class="hub-switch-button"
-        type="button"
-        :disabled="localHubSwitching || localHubSyncing"
-        @click="switchToLocalHub"
-      >
-        <Smartphone :size="17" />{{ localHubSwitching ? '正在校验并切换…' : '切换到手机 Hub' }}
-      </button>
-      <button
-        v-else-if="localHub.status.value?.role === 'active'"
-        class="hub-switch-button"
-        type="button"
-        :disabled="localHubSwitching || localHubSyncing"
-        @click="switchToDesktopHub"
-      >
-        <Server :size="17" />{{ localHubSwitching ? '正在校验并切换…' : '切换到电脑 Hub' }}
-      </button>
-    </div>
     <p v-if="localHubSwitchError" class="connection-error">{{ localHubSwitchError }}</p>
     <p v-if="localHubSyncError" class="connection-error">{{ localHubSyncError }}</p>
 
@@ -734,6 +773,15 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </label>
     </section>
     <p v-if="moduleError" class="module-error">{{ moduleError }}</p>
+
+    <div class="section-heading compact-heading"><div><span>SETTINGS</span><h2>更多设置</h2></div><Settings2 :size="18" /></div>
+    <section class="settings-list">
+      <article>
+        <i><Sparkles :size="18"/></i>
+        <div><strong>AI 接入</strong><span>{{ aiState?.model || '跟随当前 Hub 的模型配置' }}</span></div>
+        <b :class="{ warning: !aiState?.hasApiKey }">{{ aiState?.hasApiKey ? '就绪' : '未配置' }}</b>
+      </article>
+    </section>
 
     <button class="interface-settings-entry" type="button" @click="interfaceOpen = true">
       <i><Settings2 :size="18" /></i>
@@ -756,6 +804,40 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
     <p class="settings-note">退出只会清除这台手机上的登录凭证，不会删除电脑端保存的任何数据。</p>
 
     <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="hubManagementOpen" class="sheet-backdrop" @click.self="hubManagementOpen = false">
+          <section class="hub-management-sheet" role="dialog" aria-modal="true" aria-label="连接管理">
+            <div class="sheet-handle" />
+            <header>
+              <div><span>HUB MANAGEMENT</span><h2>连接管理</h2></div>
+              <button type="button" aria-label="关闭连接管理" @click="hubManagementOpen = false"><X :size="18" /></button>
+            </header>
+            <p class="connection-intro">这里只放低频的连接配置。日常查看和切换 Hub，直接使用上方“当前 Hub”卡片。</p>
+            <div class="settings-list hub-management-list">
+              <button class="hub-connection-row" type="button" @click="openDesktopHubSettings">
+                <i><Server :size="18"/></i>
+                <div><strong>电脑 Hub</strong><span>{{ session.serverUrl.value }}</span></div>
+                <b>{{ isLocalHubActive ? '同步端' : '当前' }}</b>
+              </button>
+              <button class="hub-connection-row" type="button" @click="openPhoneHubSettings">
+                <i><Smartphone :size="18"/></i>
+                <div><strong>手机 Hub</strong><span>{{ localHubDescription }}</span></div>
+                <b :class="{ warning: !localHub.status.value?.configured || !localHubBootstrapReady }">{{ localHubBadge }}</b>
+              </button>
+            </div>
+            <button
+              v-if="localHub.status.value?.role === 'standby' && localHubBootstrapReady"
+              class="hub-force-entry"
+              type="button"
+              :disabled="localHubSwitching || localHubSyncing"
+              @click="hubManagementOpen = false; openForcedTakeover()"
+            >
+              <AlertTriangle :size="14" />电脑 Hub 无法连接？进入强制接管
+            </button>
+          </section>
+        </div>
+      </Transition>
+
       <Transition name="fade">
         <div v-if="connectionOpen" class="sheet-backdrop" @click.self="closeConnectionSettings">
         <form class="connection-sheet" role="dialog" aria-modal="true" aria-label="重新连接 Hub" @submit.prevent="applyHubConnection">
@@ -813,6 +895,29 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
               <Link2 :size="17" />{{ localHubPairingBusy ? '正在建立手机副本…' : '配对并复制到手机' }}
             </button>
           </form>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
+        <div v-if="forcedTakeoverOpen" class="sheet-backdrop" @click.self="!localHubSwitching && (forcedTakeoverOpen = false)">
+          <section class="takeover-sheet" role="dialog" aria-modal="true" aria-label="强制接管手机 Hub">
+            <div class="sheet-handle" />
+            <header>
+              <div><span>FORCED TAKEOVER</span><h2>由手机临时接管</h2></div>
+              <button type="button" aria-label="关闭" :disabled="localHubSwitching" @click="forcedTakeoverOpen = false"><X :size="18" /></button>
+            </header>
+            <div class="takeover-warning">
+              <i><AlertTriangle :size="22" /></i>
+              <div><strong>仅在电脑 Hub 确实无法恢复时使用</strong><p>手机会提升 Hub 代次并立即成为唯一写入端。电脑重新上线后，旧代未同步写入会被隔离，不会自动覆盖手机数据。</p></div>
+            </div>
+            <label class="takeover-confirm">
+              <input v-model="forcedTakeoverConfirmed" type="checkbox" />
+              <span>我确认电脑 Hub 当前离线，并理解可能需要手动处理分歧记录</span>
+            </label>
+            <button class="takeover-submit" type="button" :disabled="localHubSwitching || !forcedTakeoverConfirmed" @click="confirmForcedTakeover">
+              <Smartphone :size="17" />{{ localHubSwitching ? '正在保存证据并接管…' : '确认由手机 Hub 接管' }}
+            </button>
+          </section>
         </div>
       </Transition>
 
@@ -962,14 +1067,17 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .profile-identity{position:relative;z-index:1;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:16px;margin-top:16px}.avatar-frame{position:relative;display:block;padding:4px;border:1px solid rgba(var(--pink-rgb),.2);border-radius:30px;color:inherit;background:rgba(255,255,255,.46);box-shadow:inset 0 1px rgba(255,255,255,.82),0 11px 25px rgba(93,78,116,.12)}.avatar-frame:disabled{opacity:.65}.avatar-frame :deep(.avatar-large){width:82px;height:82px;border-radius:26px;box-shadow:none}.avatar-input{display:none}.profile-copy{min-width:0}.profile-copy>span{color:#9e789a;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.profile-copy h1{overflow:hidden;margin:5px 0 0;color:#454152;font-size: calc(27px * var(--font-scale, 1));letter-spacing:-.055em;text-overflow:ellipsis;white-space:nowrap}.profile-copy p{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;margin:7px 0 0;color:#898393;font-size: calc(9px * var(--font-scale, 1));line-height:1.6}
 .profile-meta{position:relative;z-index:1;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding:0 4px 0 10px;border-radius:14px;background:rgba(112,104,135,.045)}.profile-meta>span{min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;color:#8e8797;font-size: calc(8px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.profile-meta>button{height:31px;flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 10px;border:1px solid rgba(255,255,255,.75);border-radius:11px;color:#806c82;background:linear-gradient(125deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.14));font-size: calc(8px * var(--font-scale, 1));font-weight:700}
 .section-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:25px 4px 11px}.section-heading>div{display:grid;gap:3px}.section-heading span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.section-heading h2{margin:0;color:#514d5d;font-size: calc(16px * var(--font-scale, 1))}.section-heading>svg{color:#7ca48f}
-.settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}
-.hub-action-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:17px}.hub-action-row button{min-width:0;height:46px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(8px * var(--font-scale,1));font-weight:700}.hub-sync-button{border:1px solid rgba(var(--blue-rgb),.18);color:#67829d;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(255,255,255,.66))}.hub-switch-button{border:1px solid rgba(var(--pink-rgb),.15);color:#876f88;background:linear-gradient(135deg,rgba(var(--pink-rgb),.09),rgba(255,255,255,.66))}.hub-action-row button:disabled{opacity:.52}
-.module-heading{margin-top:22px}.module-control-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.075);backdrop-filter:blur(18px)}.module-control-list label{position:relative;min-height:68px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:13px;padding:12px 14px;border-bottom:1px solid rgba(106,98,129,.07);transition:opacity .18s ease}.module-control-list label:last-child{border-bottom:0}.module-control-list label.disabled{opacity:.62}.module-control-list label>span{min-width:0;display:grid;gap:4px}.module-control-list strong{color:#4f4a5b;font-size:calc(10px * var(--font-scale,1))}.module-control-list small{overflow:hidden;color:#9993a3;font-size:calc(7px * var(--font-scale,1));line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.module-control-list input{position:absolute;opacity:0;pointer-events:none}.module-control-list label>i{position:relative;width:39px;height:23px;border-radius:999px;background:rgba(133,127,151,.18);box-shadow:inset 0 0 0 1px rgba(108,101,130,.08);transition:background .2s ease}.module-control-list label>i b{position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(75,67,95,.2);transition:transform .22s cubic-bezier(.2,.9,.25,1.15)}.module-control-list input:checked+i{background:linear-gradient(135deg,#cb8dac,#7fa8d0)}.module-control-list input:checked+i b{transform:translateX(16px)}.module-control-list label.core>i{opacity:.55}.module-error{margin:9px 12px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));text-align:center}
+.current-hub-card{position:relative;overflow:hidden;padding:16px;border:1px solid rgba(255,255,255,.88);border-radius:27px 27px 27px 10px;background:radial-gradient(circle at 100% 0,rgba(var(--blue-rgb),.17),transparent 36%),linear-gradient(145deg,rgba(255,255,255,.82),rgba(244,248,253,.62));box-shadow:0 20px 52px rgba(71,75,105,.12);backdrop-filter:blur(22px)}.current-hub-card.mobile{background:radial-gradient(circle at 0 100%,rgba(var(--pink-rgb),.17),transparent 38%),linear-gradient(145deg,rgba(255,255,255,.83),rgba(252,246,250,.64))}.current-hub-head{display:flex;align-items:center;justify-content:space-between}.current-hub-head>span{display:flex;align-items:center;gap:6px;color:#7e7889;font-size:calc(8px * var(--font-scale,1));font-weight:800}.current-hub-head>span i{width:7px;height:7px;border-radius:50%;background:#5cb88f;box-shadow:0 0 0 5px rgba(92,184,143,.11)}.current-hub-head>b{padding:5px 9px;border-radius:999px;color:#fff;background:#659c84;font-size:calc(7px * var(--font-scale,1))}.current-hub-head>b.warning{background:#bd7890}.current-hub-main{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:15px}.current-hub-icon{width:51px;height:51px;display:grid;place-items:center;border-radius:18px;color:#678cab;background:rgba(255,255,255,.74);box-shadow:0 11px 28px rgba(69,79,105,.11)}.mobile .current-hub-icon{color:#a27395}.current-hub-main h3{margin:0;color:#454151;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.035em}.current-hub-main p{margin:5px 0 0;color:#8e8796;font-size:calc(8px * var(--font-scale,1));line-height:1.55}.hub-route{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-top:17px;padding:11px;border:1px solid rgba(109,103,132,.07);border-radius:18px;background:rgba(255,255,255,.5)}.hub-route>div{min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:2px 7px;color:#aaa4b0}.hub-route>div>span{overflow:hidden;color:#746e7d;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.hub-route>div>b{grid-column:2;color:#aaa4b0;font-size:calc(6px * var(--font-scale,1));font-weight:600}.hub-route>div.active{color:#668e7b}.hub-route>div.active>b{color:#63947c}.hub-route>i{display:flex;align-items:center;color:#a9a3b0}.hub-route>i span{width:10px;height:1px;background:rgba(126,119,143,.25)}.hub-sync-state{display:flex;align-items:center;gap:6px;margin:12px 2px 0;color:#8d8795;font-size:calc(7px * var(--font-scale,1))}.hub-sync-state svg{color:#7797b5}.hub-action-row{display:grid;grid-template-columns:1.35fr .85fr;gap:9px;margin-top:15px}.hub-action-row button{min-width:0;height:46px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(8px * var(--font-scale,1));font-weight:800}.hub-sync-button{border:1px solid rgba(var(--blue-rgb),.18);color:#67829d;background:rgba(255,255,255,.62)}.hub-switch-button{border:0;color:#fff;background:linear-gradient(115deg,#bc88a8,#838fb8 56%,#709bc0);box-shadow:0 9px 20px rgba(114,116,154,.17)}.hub-action-row button:disabled{opacity:.52}.hub-management-entry{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;margin-top:10px;padding:9px 3px 0;border:0;border-top:1px solid rgba(112,105,133,.08);color:#736d7c;background:transparent;text-align:left}.hub-management-entry>span{font-size:calc(8px * var(--font-scale,1));font-weight:700}.hub-management-entry>small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));}.hub-management-entry>svg{color:#aaa3b0}
+.settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child,.settings-list>button:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}.compact-heading+.settings-list{border-radius:19px 19px 19px 8px;box-shadow:0 12px 32px rgba(75,70,103,.065)}
+.hub-force-entry{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px;padding:7px;border:0;color:#a67b83;background:transparent;font-size:calc(7px * var(--font-scale,1));font-weight:700}.hub-force-entry:disabled{opacity:.45}
+.module-heading{margin-top:22px}.compact-heading{margin-top:20px}.module-control-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.075);backdrop-filter:blur(18px)}.module-control-list label{position:relative;min-height:68px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:13px;padding:12px 14px;border-bottom:1px solid rgba(106,98,129,.07);transition:opacity .18s ease}.module-control-list label:last-child{border-bottom:0}.module-control-list label.disabled{opacity:.62}.module-control-list label>span{min-width:0;display:grid;gap:4px}.module-control-list strong{color:#4f4a5b;font-size:calc(10px * var(--font-scale,1))}.module-control-list small{overflow:hidden;color:#9993a3;font-size:calc(7px * var(--font-scale,1));line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.module-control-list input{position:absolute;opacity:0;pointer-events:none}.module-control-list label>i{position:relative;width:39px;height:23px;border-radius:999px;background:rgba(133,127,151,.18);box-shadow:inset 0 0 0 1px rgba(108,101,130,.08);transition:background .2s ease}.module-control-list label>i b{position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(75,67,95,.2);transition:transform .22s cubic-bezier(.2,.9,.25,1.15)}.module-control-list input:checked+i{background:linear-gradient(135deg,#cb8dac,#7fa8d0)}.module-control-list input:checked+i b{transform:translateX(16px)}.module-control-list label.core>i{opacity:.55}.module-error{margin:9px 12px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));text-align:center}
 .interface-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 19px 8px;color:#70697d;background:linear-gradient(140deg,rgba(255,255,255,.67),rgba(246,248,252,.5));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.interface-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.13),rgba(var(--blue-rgb),.12))}.interface-settings-entry>span{min-width:0;display:grid;gap:4px}.interface-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.interface-settings-entry small{color:#9a94a3;font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>b{padding:4px 7px;border-radius:999px;color:#7187a2;background:rgba(var(--blue-rgb),.1);font-size:calc(7px * var(--font-scale, 1))}.interface-settings-entry>svg{color:#aaa3b0}
 .archive-settings-entry{width:100%;min-height:64px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:11px;margin-top:9px;padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:19px 19px 8px 19px;color:#70697d;background:linear-gradient(140deg,rgba(247,250,255,.72),rgba(255,247,252,.56));box-shadow:0 12px 32px rgba(75,70,103,.07);text-align:left;backdrop-filter:blur(16px)}.archive-settings-entry>i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#718fac;background:linear-gradient(145deg,rgba(var(--blue-rgb),.16),rgba(var(--pink-rgb),.1))}.archive-settings-entry>span{min-width:0;display:grid;gap:4px}.archive-settings-entry strong{font-size:calc(10px * var(--font-scale, 1))}.archive-settings-entry small{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#9a94a3;font-size:calc(7px * var(--font-scale, 1));line-height:1.4}.archive-settings-entry>b{padding:4px 7px;border-radius:999px;color:#89768d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));white-space:nowrap}.archive-settings-entry>svg{color:#aaa3b0}
 .refresh-button,.logout-button{width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:15px;font-size: calc(9px * var(--font-scale, 1));font-weight:700}.refresh-button{margin-top:17px;border:1px solid rgba(255,255,255,.82);color:#687897;background:rgba(255,255,255,.64)}.logout-button{margin-top:8px;border:0;color:#ad6175;background:rgba(217,118,143,.085)}.refresh-button:disabled{opacity:.55}.settings-note{margin:11px 22px 0;color:#a19baa;font-size: calc(7px * var(--font-scale, 1));line-height:1.6;text-align:center}
 .sheet-backdrop{position:fixed;z-index:50;inset:0;display:flex;align-items:flex-end;background:rgba(42,39,59,.23);backdrop-filter:blur(6px)}.profile-editor{width:100%;max-height:88dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:rgba(251,250,253,.97);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.profile-editor header{display:flex;align-items:center;justify-content:space-between}.profile-editor header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.profile-editor h2{margin:3px 0 0;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.profile-editor header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.editor-fields{display:grid;gap:12px;margin-top:18px}.editor-fields label{display:grid;gap:6px}.editor-fields label>span{color:#70697d;font-size: calc(9px * var(--font-scale, 1));font-weight:700}.editor-fields input,.editor-fields textarea{width:100%;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size: calc(11px * var(--font-scale, 1))}.editor-fields input{height:44px;padding:0 12px}.editor-fields textarea{min-height:84px;padding:11px 12px;line-height:1.55;resize:none}.editor-fields input:focus,.editor-fields textarea:focus{border-color:rgba(var(--pink-rgb),.42);box-shadow:0 0 0 4px rgba(var(--pink-rgb),.07)}.editor-error{margin:11px 0 0;color:#aa5970;font-size: calc(8px * var(--font-scale, 1));text-align:center}.save-profile{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:16px;border:0;border-radius:15px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size: calc(10px * var(--font-scale, 1));font-weight:700}.save-profile:disabled{opacity:.55}
 .connection-sheet{width:100%;max-height:88dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 95% 5%,rgba(var(--blue-rgb),.15),transparent 31%),radial-gradient(circle at 2% 85%,rgba(var(--pink-rgb),.12),transparent 34%),rgba(251,250,253,.98);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.connection-sheet header{display:flex;align-items:center;justify-content:space-between}.connection-sheet header span{color:#8198b1;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.connection-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.connection-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.connection-intro{margin:14px 2px 0;color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.65}.connection-tabs{display:grid;grid-template-columns:1fr 1fr;margin-top:15px;padding:4px;border-radius:14px;background:rgba(112,104,136,.07)}.connection-tabs button{height:38px;border:0;border-radius:11px;color:#918a9a;background:transparent;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.connection-tabs button.active{color:#5f5a6d;background:rgba(255,255,255,.92);box-shadow:0 7px 18px rgba(86,79,112,.1)}.connection-field{display:grid;gap:7px;margin-top:15px}.connection-field>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.connection-field>div{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:15px;background:rgba(255,255,255,.75)}.connection-field>div:focus-within{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.connection-field svg{flex:0 0 auto;color:#8b9db2}.connection-field input{min-width:0;flex:1;padding:0;border:0;outline:0;background:transparent;font-size:calc(10px * var(--font-scale, 1))}.connection-field textarea{width:100%;min-height:92px;padding:11px 12px;border:1px solid rgba(112,104,137,.13);border-radius:15px;outline:0;background:rgba(255,255,255,.75);font-size:calc(9px * var(--font-scale, 1));line-height:1.5;resize:none}.connection-field small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.scan-hub-button{width:100%;min-height:59px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.16);border-radius:16px;color:#7187a2;background:linear-gradient(125deg,rgba(var(--pink-rgb),.075),rgba(var(--blue-rgb),.1));text-align:left}.scan-hub-button>span{display:grid;gap:3px}.scan-hub-button strong{font-size:calc(9px * var(--font-scale, 1))}.scan-hub-button small{color:#9891a1;font-size:calc(7px * var(--font-scale, 1))}.connection-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.apply-connection{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;border:0;border-radius:15px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(10px * var(--font-scale, 1));font-weight:700}.apply-connection:disabled,.scan-hub-button:disabled,.connection-sheet header button:disabled{opacity:.55}
+.hub-management-sheet{width:100%;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 94% 4%,rgba(var(--blue-rgb),.15),transparent 33%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.hub-management-sheet header{display:flex;align-items:center;justify-content:space-between}.hub-management-sheet header span{color:#8198b1;font-size:calc(7px * var(--font-scale,1));font-weight:800;letter-spacing:.16em}.hub-management-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.hub-management-sheet header button{width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.hub-management-list{margin-top:15px;background:rgba(255,255,255,.66);box-shadow:0 13px 35px rgba(75,70,103,.08)}
+.takeover-sheet{width:100%;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 4%,rgba(210,132,117,.16),transparent 34%),rgba(252,249,249,.985);box-shadow:0 -22px 70px rgba(82,57,61,.24)}.takeover-sheet header{display:flex;align-items:center;justify-content:space-between}.takeover-sheet header span{color:#b27676;font-size:calc(7px * var(--font-scale,1));font-weight:800;letter-spacing:.16em}.takeover-sheet h2{margin:3px 0 0;color:#55494c;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.takeover-sheet header button{width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:13px;color:#817578;background:rgba(122,93,99,.07)}.takeover-warning{display:grid;grid-template-columns:auto 1fr;gap:12px;margin-top:17px;padding:15px;border:1px solid rgba(183,105,91,.16);border-radius:20px 20px 8px 20px;background:rgba(255,244,241,.72)}.takeover-warning>i{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;color:#b56e60;background:rgba(255,255,255,.72)}.takeover-warning strong{color:#695457;font-size:calc(10px * var(--font-scale,1))}.takeover-warning p{margin:6px 0 0;color:#9b7f82;font-size:calc(8px * var(--font-scale,1));line-height:1.6}.takeover-confirm{display:grid;grid-template-columns:auto 1fr;align-items:start;gap:9px;margin-top:15px;padding:12px;border-radius:14px;background:rgba(116,92,98,.055);color:#77666a;font-size:calc(8px * var(--font-scale,1));line-height:1.55}.takeover-confirm input{width:17px;height:17px;margin-top:1px;accent-color:#b86f6b}.takeover-submit{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;border:0;border-radius:15px;color:#fff;background:linear-gradient(120deg,#bd706a,#a97982 56%,#8c899f);font-size:calc(10px * var(--font-scale,1));font-weight:800}.takeover-submit:disabled,.takeover-sheet header button:disabled{opacity:.48}
 .interface-settings-sheet{width:100%;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.13),transparent 31%),radial-gradient(circle at 4% 80%,rgba(var(--pink-rgb),.12),transparent 35%),rgba(251,250,253,.98);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.interface-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.interface-settings-sheet header span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.interface-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.interface-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.font-size-card{margin-top:18px;padding:16px;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.65);box-shadow:0 15px 38px rgba(75,70,103,.09);backdrop-filter:blur(18px)}.font-setting-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px}.font-setting-head>i{width:39px;height:39px;display:grid;place-items:center;border-radius:14px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.14))}.font-setting-head>div{display:grid;gap:4px}.font-setting-head strong{color:#575160;font-size:calc(11px * var(--font-scale, 1))}.font-setting-head span{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.font-setting-head>b{padding:5px 8px;border-radius:999px;color:#fff;background:linear-gradient(120deg,#c986ad,#849ac6);font-size:calc(8px * var(--font-scale, 1))}.font-preview{display:grid;gap:5px;margin-top:15px;padding:14px;border:1px solid rgba(116,108,137,.07);border-radius:16px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.055),rgba(var(--blue-rgb),.065))}.font-preview>span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.12em}.font-preview>strong{color:#56505f;font-size:calc(13px * var(--font-scale, 1))}.font-preview>small{color:#918a99;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control{height:47px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:8px;color:#9891a1;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control input{width:100%;accent-color:#9b87b5}.font-scale-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}.font-scale-footer small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1))}.font-scale-footer button{padding:6px 8px;border:0;border-radius:9px;color:#87718d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));font-weight:700}.font-scale-error{margin:10px 0 0;color:#aa5970;font-size:calc(8px * var(--font-scale, 1));text-align:center}
 .archive-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.16),transparent 31%),radial-gradient(circle at 4% 86%,rgba(var(--pink-rgb),.13),transparent 35%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}.archive-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.archive-settings-sheet header span{color:#7e98b3;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.archive-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.archive-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.archive-hero{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:16px;padding:15px;border:1px solid rgba(255,255,255,.8);border-radius:21px 21px 21px 8px;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(var(--pink-rgb),.075));box-shadow:0 13px 35px rgba(75,70,103,.08)}.archive-hero>i{width:45px;height:45px;display:grid;place-items:center;border-radius:15px;color:#718eac;background:rgba(255,255,255,.64)}.archive-hero>div{display:grid;gap:5px}.archive-hero strong{color:#56505f;font-size:calc(11px * var(--font-scale, 1))}.archive-hero span{color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.55}.archive-password{display:grid;gap:7px;margin-top:15px}.archive-password>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.archive-password input{height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale, 1))}.archive-password input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.archive-password small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.archive-export-button{width:100%;min-height:57px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.14);border-radius:16px;color:#7187a2;background:rgba(var(--blue-rgb),.075);text-align:left}.archive-export-button>span{display:grid;gap:3px}.archive-export-button strong{font-size:calc(9px * var(--font-scale, 1))}.archive-export-button small{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.archive-restore-card{margin-top:12px;padding:15px;border:1px solid rgba(var(--pink-rgb),.13);border-radius:20px 20px 8px 20px;background:rgba(255,249,252,.72)}.archive-restore-card>div{display:grid;gap:4px}.archive-restore-card strong{color:#655661;font-size:calc(10px * var(--font-scale, 1))}.archive-restore-card span,.archive-restore-card>p{color:#9d8790;font-size:calc(7px * var(--font-scale, 1));line-height:1.55}.archive-file-input{display:none}.archive-file-button{width:100%;min-height:43px;display:flex;align-items:center;justify-content:center;gap:7px;overflow:hidden;margin-top:11px;padding:0 12px;border:1px dashed rgba(123,146,178,.3);border-radius:13px;color:#71829a;background:rgba(255,255,255,.58);font-size:calc(8px * var(--font-scale, 1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.archive-restore-card>p{margin:10px 1px 0}.archive-restore-button{width:100%;height:46px;margin-top:11px;border:0;border-radius:14px;color:#fff;background:linear-gradient(115deg,#c77d9f,#8a8fb9 58%,#729ec4);font-size:calc(9px * var(--font-scale, 1));font-weight:800}.archive-export-button:disabled,.archive-file-button:disabled,.archive-restore-button:disabled,.archive-settings-sheet header button:disabled{opacity:.5}.archive-notice{display:flex;align-items:flex-start;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale, 1));line-height:1.5}.archive-notice svg{flex:0 0 auto;margin-top:1px}.archive-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}
 .crop-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:rgba(40,37,56,.34);backdrop-filter:blur(9px)}.avatar-cropper{width:min(100%,390px);padding:18px;border:1px solid rgba(255,255,255,.78);border-radius:28px;background:linear-gradient(145deg,rgba(255,252,254,.98),rgba(243,247,252,.98));box-shadow:0 28px 80px rgba(50,45,69,.3)}.avatar-cropper header{display:flex;align-items:center;justify-content:space-between}.avatar-cropper header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.avatar-cropper h2{margin:3px 0 0;color:#4d4859;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.avatar-cropper header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.crop-stage{position:relative;width:min(74vw,292px);overflow:hidden;aspect-ratio:1;margin:18px auto 0;border-radius:28px;background:#dedbe5;box-shadow:inset 0 0 0 1px rgba(77,70,98,.1),0 17px 35px rgba(75,68,97,.17)}.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}.crop-stage canvas:active{cursor:grabbing}.crop-guide{position:absolute;inset:10px;border:1px solid rgba(255,255,255,.76);border-radius:21px;box-shadow:0 0 0 1px rgba(68,61,86,.08);pointer-events:none}.avatar-cropper>p{margin:12px 0 0;color:#918a9b;font-size: calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.crop-zoom{height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:8px;padding:0 5px;color:#8a8295}.crop-zoom input{width:100%;accent-color:#a785b3}.crop-error{color:#aa5970!important}.crop-actions{display:grid;grid-template-columns:1fr 1.45fr;gap:9px;margin-top:12px}.crop-actions button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;color:#797283;background:rgba(105,97,131,.08);font-size: calc(9px * var(--font-scale, 1));font-weight:700}.crop-actions button:last-child{color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.crop-actions button:disabled,.avatar-cropper header button:disabled{opacity:.55}

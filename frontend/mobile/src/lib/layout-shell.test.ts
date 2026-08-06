@@ -103,6 +103,10 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("interfaceSettings.applyFontScale");
     expect(settingsSource).toContain('class="settings-list"');
     expect(settingsSource).toContain('class="hub-connection-row"');
+    expect(settingsSource).toContain('class="current-hub-card"');
+    expect(settingsSource).toContain("当前连接");
+    expect(settingsSource).toContain("连接管理");
+    expect(settingsSource).toContain("currentHubTitle");
     expect(settingsSource).toContain('<Teleport to="body">');
     expect(settingsSource).toContain("重新连接 Hub");
     expect(settingsSource).toContain("session.reconnect(connectionUrl.value)");

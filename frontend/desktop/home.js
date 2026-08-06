@@ -17,6 +17,8 @@ const state = {
   connectionStatus: "idle",
   hubStatus: null,
   hubStatusError: false,
+  hubRecovery: null,
+  hubRecoveryRequesting: false,
   auth: null,
   sending: false,
   conversationLoading: false,
@@ -103,6 +105,24 @@ const elements = {
   hubPill: document.querySelector("#hubPill"),
   hubLabel: document.querySelector("#hubLabel"),
   hubStateLabel: document.querySelector("#hubStateLabel"),
+  hubRecoveryMask: document.querySelector("#hubRecoveryMask"),
+  hubRecoveryLoading: document.querySelector("#hubRecoveryLoading"),
+  hubRecoveryContent: document.querySelector("#hubRecoveryContent"),
+  hubRecoveryCount: document.querySelector("#hubRecoveryCount"),
+  hubRecoveryEpoch: document.querySelector("#hubRecoveryEpoch"),
+  hubRecoveryTakeoverId: document.querySelector("#hubRecoveryTakeoverId"),
+  hubRecoveryState: document.querySelector("#hubRecoveryState"),
+  hubRecoveryStateDetail: document.querySelector("#hubRecoveryStateDetail"),
+  hubRecoveryChoices: document.querySelector("#hubRecoveryChoices"),
+  hubRecoveryProgress: document.querySelector("#hubRecoveryProgress"),
+  hubRecoveryProgressTitle: document.querySelector("#hubRecoveryProgressTitle"),
+  hubRecoveryProgressDetail: document.querySelector("#hubRecoveryProgressDetail"),
+  retryHubRecoveryBtn: document.querySelector("#retryHubRecoveryBtn"),
+  keepMobileHubBtn: document.querySelector("#keepMobileHubBtn"),
+  keepDesktopHubBtn: document.querySelector("#keepDesktopHubBtn"),
+  hubRecoveryOperations: document.querySelector("#hubRecoveryOperations"),
+  hubRecoveryNotice: document.querySelector("#hubRecoveryNotice"),
+  exportHubRecoveryBtn: document.querySelector("#exportHubRecoveryBtn"),
   welcome: document.querySelector("#welcome"),
   messageList: document.querySelector("#messageList"),
   conversation: document.querySelector("#conversation"),
@@ -725,6 +745,8 @@ function renderHubStatus() {
     elements.hubLabel.textContent = "Hub";
     elements.hubStateLabel.textContent = "状态未知";
     elements.hubPill.title = "暂时无法读取当前 Hub 状态";
+    elements.hubPill.setAttribute("aria-disabled", "true");
+    elements.hubPill.tabIndex = -1;
     return;
   }
 
@@ -733,17 +755,38 @@ function renderHubStatus() {
   const platform = String(activeNode?.platform || "").toLowerCase();
   const mobile = ["android", "ios"].includes(platform) ||
     String(status.activeNodeId || "").startsWith("android-");
+  const divergent = status.state === "divergent";
+  const recoveringDivergence = status.state === "recovering_divergence";
+  const forced = status.state === "forced_active";
   const switching = status.state !== "stable";
-  elements.hubPill.className = `hub-pill ${mobile ? "mobile" : "desktop"}${switching ? " switching" : ""}`;
-  elements.hubLabel.textContent = switching
-    ? "Hub 切换中"
+  const archivedEvidence = status.forcedTakeover?.status === "reconciled" &&
+    Number(status.forcedTakeover?.divergentOperationCount) > 0;
+  const recoveryActionable = divergent || recoveringDivergence || archivedEvidence;
+  elements.hubPill.className = `hub-pill ${mobile ? "mobile" : "desktop"}${switching ? " switching" : ""}${recoveryActionable ? " actionable" : ""}`;
+  elements.hubLabel.textContent = recoveringDivergence
+    ? "Hub 分歧恢复中"
+    : divergent
+    ? "Hub 分歧待处理"
+    : forced
+      ? "手机 Hub 接管中"
+      : switching
+        ? "Hub 切换中"
     : mobile
       ? "手机 Hub"
       : "电脑 Hub";
-  elements.hubStateLabel.textContent = switching ? "同步校验" : "当前";
-  elements.hubPill.title = switching
-    ? `正在安全切换 Hub · ${status.state}`
+  elements.hubStateLabel.textContent = recoveringDivergence ? "等待确认" : divergent ? "已隔离" : archivedEvidence ? "证据已归档" : switching ? "同步校验" : "当前";
+  elements.hubPill.title = recoveringDivergence
+    ? "双 Hub 正在传输并校验权威快照，点击查看进度"
+    : divergent
+    ? `检测到 ${Number(status.forcedTakeover?.divergentOperationCount) || 0} 条旧代未确认写入，未自动覆盖`
+    : archivedEvidence
+      ? `查看 ${Number(status.forcedTakeover.divergentOperationCount)} 条已归档的 Hub 分歧证据`
+    : switching
+      ? `正在安全切换 Hub · ${status.state}`
     : `当前活动 Hub：${activeNode?.name || elements.hubLabel.textContent} · 代次 ${Number(status.epoch) || 1}`;
+  elements.hubPill.setAttribute("aria-disabled", String(!recoveryActionable));
+  elements.hubPill.setAttribute("aria-label", recoveryActionable ? "打开 Hub 分叉恢复中心" : elements.hubPill.title);
+  elements.hubPill.tabIndex = recoveryActionable ? 0 : -1;
 }
 
 async function refreshHubStatus() {
@@ -754,6 +797,249 @@ async function refreshHubStatus() {
     state.hubStatusError = true;
   }
   renderHubStatus();
+}
+
+const hubRecoveryEntityLabels = {
+  ai_configs: "AI 配置",
+  ai_image_configs: "图像 AI 配置",
+  todos: "待办",
+  user_profiles: "用户资料",
+  user_preferences: "用户偏好",
+  wallet_accounts: "钱包账户",
+  wallet_transactions: "钱包流水",
+  conversations: "对话",
+  messages: "聊天消息",
+  memories: "长期记忆",
+  memory_evidence: "记忆证据",
+  memory_settings: "记忆设置",
+  prompt_settings: "提示词设置",
+  prompt_setting_versions: "提示词版本",
+  module_settings: "模块设置",
+  assistant_profiles: "助手资料",
+  assistant_personality_events: "人格成长",
+  shared_memories: "共同记忆",
+  assistant_journals: "手记",
+  xuan_mood_events: "心情事件",
+  xuan_mood_state: "心情状态",
+  xuan_mood_displays: "心情展示",
+  album_moments: "纪念册",
+  album_moment_sources: "纪念册来源",
+  assistant_dreams: "梦境",
+  assistant_dream_sources: "梦境来源",
+  media_assets: "媒体文件"
+};
+const hubRecoveryTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit"
+});
+const hubRecoveryActiveStatuses = new Set([
+  "preparing_desktop_snapshot",
+  "awaiting_mobile_snapshot",
+  "awaiting_peer_ack"
+]);
+const hubRecoveryStatusCopy = {
+  preparing_desktop_snapshot: ["准备电脑快照", "正在冻结写入并收集电脑 Hub 的完整数据。"],
+  awaiting_mobile_snapshot: ["等待手机快照", "请保持手机端 AetherX 在线，正在加密上传手机 Hub 数据。"],
+  awaiting_peer_ack: ["等待双端确认", "快照和哈希链已经通过校验，正在等待手机 Hub 应用并确认。"],
+  completed: ["恢复完成", "双 Hub 已统一到同一代次，正常路由已经恢复。"],
+  failed: ["恢复失败", "本次恢复没有提交，可检查错误后重新选择权威分支。"],
+  cancelled: ["已取消", "恢复未提交，可以重新选择权威分支。"]
+};
+let hubRecoveryPollTimer = null;
+
+function showHubRecoveryNotice(message, error = false) {
+  elements.hubRecoveryNotice.textContent = message;
+  elements.hubRecoveryNotice.className = `hub-recovery-notice${error ? " error" : ""}`;
+}
+
+function hideHubRecoveryNotice() {
+  elements.hubRecoveryNotice.className = "hub-recovery-notice hidden";
+  elements.hubRecoveryNotice.textContent = "";
+}
+
+function setHubRecoveryRequesting(requesting) {
+  state.hubRecoveryRequesting = requesting;
+  elements.keepMobileHubBtn.disabled = requesting;
+  elements.keepDesktopHubBtn.disabled = requesting;
+  elements.retryHubRecoveryBtn.disabled = requesting;
+}
+
+function stopHubRecoveryPolling() {
+  window.clearTimeout(hubRecoveryPollTimer);
+  hubRecoveryPollTimer = null;
+}
+
+function scheduleHubRecoveryPoll() {
+  stopHubRecoveryPolling();
+  if (elements.hubRecoveryMask.classList.contains("hidden")) return;
+  hubRecoveryPollTimer = window.setTimeout(() => {
+    void refreshHubRecovery();
+  }, 1_200);
+}
+
+function renderHubRecoveryOperation(operation) {
+  const details = document.createElement("details");
+  details.className = "hub-recovery-operation";
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.className = "hub-recovery-operation-title";
+  const name = document.createElement("strong");
+  name.textContent = `${hubRecoveryEntityLabels[operation.entityType] || operation.entityType} · ${operation.operation === "delete" ? "删除" : "写入"}`;
+  const identity = document.createElement("span");
+  identity.textContent = `${operation.entityId} · ${operation.originNodeId} #${operation.originSequence}`;
+  title.append(name, identity);
+  const meta = document.createElement("span");
+  meta.className = "hub-recovery-operation-meta";
+  const status = document.createElement("b");
+  status.textContent = operation.divergenceStatus === "quarantined" ? "已隔离" : operation.divergenceStatus;
+  const time = document.createElement("time");
+  time.textContent = hubRecoveryTimeFormatter.format(new Date(operation.createdAt));
+  meta.append(status, time);
+  summary.append(title, meta);
+  const raw = document.createElement("pre");
+  raw.textContent = JSON.stringify(operation, null, 2);
+  details.append(summary, raw);
+  return details;
+}
+
+function renderHubRecovery(data) {
+  state.hubRecovery = data;
+  elements.hubRecoveryCount.textContent = String(Number(data.divergentOperationCount) || 0);
+  elements.hubRecoveryEpoch.textContent = `${Number(data.takeover?.previousEpoch) || 0} → ${Number(data.takeover?.epoch) || Number(data.epoch) || 0}`;
+  elements.hubRecoveryTakeoverId.textContent = data.takeover?.id || "未知接管记录";
+  const recovery = data.recovery;
+  const [statusTitle, statusDetail] = recovery
+    ? hubRecoveryStatusCopy[recovery.status] || ["恢复处理中", recovery.status]
+    : ["待选择", "双 Hub 写入已冻结"];
+  const authorityName = recovery
+    ? recovery.authorityNodeId === data.localNodeId ? "电脑 Hub" : "手机 Hub"
+    : "";
+  const failed = recovery?.status === "failed";
+  const completed = recovery?.status === "completed";
+  const active = hubRecoveryActiveStatuses.has(recovery?.status);
+  elements.hubRecoveryState.textContent = statusTitle;
+  elements.hubRecoveryStateDetail.textContent = authorityName
+    ? `${authorityName}为权威分支`
+    : statusDetail;
+  elements.hubRecoveryChoices.classList.toggle("hidden", Boolean(recovery && !failed && recovery.status !== "cancelled"));
+  elements.keepMobileHubBtn.textContent = failed ? "重试并保留手机分支" : "保留手机分支";
+  elements.keepDesktopHubBtn.textContent = failed ? "重试并保留电脑分支" : "保留电脑分支";
+  elements.hubRecoveryProgress.className = `hub-recovery-progress${recovery ? "" : " hidden"}${completed ? " completed" : ""}${failed ? " failed" : ""}`;
+  elements.hubRecoveryProgressTitle.textContent = authorityName
+    ? `${statusTitle} · 保留${authorityName}`
+    : statusTitle;
+  elements.hubRecoveryProgressDetail.textContent = recovery?.errorMessage || statusDetail;
+  elements.retryHubRecoveryBtn.classList.toggle("hidden", !active);
+  elements.hubRecoveryOperations.replaceChildren(
+    ...(Array.isArray(data.operations) ? data.operations : []).map(renderHubRecoveryOperation)
+  );
+  if (!data.operations?.length) {
+    const empty = document.createElement("p");
+    empty.className = "hub-recovery-notice";
+    empty.textContent = "没有读取到隔离 Operation。";
+    elements.hubRecoveryOperations.append(empty);
+  }
+  elements.hubRecoveryLoading.classList.add("hidden");
+  elements.hubRecoveryContent.classList.remove("hidden");
+  if (active) scheduleHubRecoveryPoll();
+  else stopHubRecoveryPolling();
+}
+
+async function openHubRecovery() {
+  const canOpen = ["divergent", "recovering_divergence"].includes(state.hubStatus?.state) ||
+    state.hubStatus?.forcedTakeover?.status === "reconciled";
+  if (!canOpen) return;
+  elements.hubRecoveryMask.classList.remove("hidden");
+  elements.hubPill.setAttribute("aria-expanded", "true");
+  elements.hubRecoveryLoading.classList.remove("hidden");
+  elements.hubRecoveryContent.classList.add("hidden");
+  hideHubRecoveryNotice();
+  await refreshHubRecovery({ showLoading: true });
+}
+
+async function refreshHubRecovery(options = {}) {
+  if (options.showLoading) {
+    elements.hubRecoveryLoading.classList.remove("hidden");
+    elements.hubRecoveryContent.classList.add("hidden");
+  }
+  try {
+    const data = await window.desktop.getHubDivergence();
+    renderHubRecovery(data);
+    if (data.recovery?.status === "completed") await refreshHubStatus();
+  } catch (error) {
+    elements.hubRecoveryLoading.classList.add("hidden");
+    elements.hubRecoveryContent.classList.remove("hidden");
+    if (options.showLoading) elements.hubRecoveryOperations.replaceChildren();
+    showHubRecoveryNotice(error.message || "无法读取 Hub 分叉恢复状态。", true);
+    scheduleHubRecoveryPoll();
+  }
+}
+
+function closeHubRecovery() {
+  if (state.hubRecoveryRequesting) return;
+  stopHubRecoveryPolling();
+  elements.hubRecoveryMask.classList.add("hidden");
+  elements.hubPill.setAttribute("aria-expanded", "false");
+}
+
+async function startHubRecovery(authority) {
+  if (state.hubRecoveryRequesting) return;
+  const keepingMobile = authority === "mobile";
+  const confirmed = window.confirm(
+    keepingMobile
+      ? "保留手机 Hub 会用手机的完整快照覆盖电脑 Hub 当前业务数据。电脑隔离分支仍会保存在签名证据包中。确定继续吗？"
+      : "保留电脑 Hub 会用电脑的完整快照覆盖手机 Hub 当前业务数据。手机分支仍会保存在签名证据包中。确定继续吗？"
+  );
+  if (!confirmed) return;
+  setHubRecoveryRequesting(true);
+  hideHubRecoveryNotice();
+  showHubRecoveryNotice(`正在发起恢复，将以${keepingMobile ? "手机" : "电脑"} Hub 作为唯一权威分支……`);
+  try {
+    const recovery = await window.desktop.recoverHubDivergence(authority);
+    renderHubRecovery({ ...state.hubRecovery, recovery });
+    scheduleHubRecoveryPoll();
+  } catch (error) {
+    showHubRecoveryNotice(error.message || "无法发起双 Hub 分歧恢复。", true);
+    await refreshHubRecovery().catch(() => undefined);
+  } finally {
+    setHubRecoveryRequesting(false);
+  }
+}
+
+async function retryHubRecoveryCommand() {
+  const data = state.hubRecovery;
+  const recovery = data?.recovery;
+  if (!recovery || !hubRecoveryActiveStatuses.has(recovery.status) || state.hubRecoveryRequesting) return;
+  const authority = recovery.authorityNodeId === data.localNodeId ? "desktop" : "mobile";
+  setHubRecoveryRequesting(true);
+  showHubRecoveryNotice("正在重新通知手机端继续同一恢复会话……");
+  try {
+    const refreshed = await window.desktop.recoverHubDivergence(authority);
+    renderHubRecovery({ ...data, recovery: refreshed });
+    scheduleHubRecoveryPoll();
+  } catch (error) {
+    showHubRecoveryNotice(error.message || "重新发送恢复指令失败。", true);
+    await refreshHubRecovery().catch(() => undefined);
+  } finally {
+    setHubRecoveryRequesting(false);
+  }
+}
+
+async function exportHubRecoveryEvidence() {
+  elements.exportHubRecoveryBtn.disabled = true;
+  hideHubRecoveryNotice();
+  try {
+    const result = await window.desktop.exportHubDivergenceEvidence();
+    if (result.canceled) return;
+    showHubRecoveryNotice(`已导出 ${result.operationCount} 条隔离写入，证据哈希 ${result.evidenceHash.slice(0, 12)}…`);
+  } catch (error) {
+    showHubRecoveryNotice(error.message || "分叉证据导出失败。", true);
+  } finally {
+    elements.exportHubRecoveryBtn.disabled = false;
+  }
 }
 
 function syncFontScaleControls(value = window.AetherInterfaceSettings.readFontScale()) {
@@ -2078,6 +2364,7 @@ walletModuleBtn.addEventListener("click", () => {
 document.querySelector("#interfaceSettingsBtn").addEventListener("click", openInterfaceSettings);
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
+elements.hubPill.addEventListener("click", openHubRecovery);
 elements.accountBtn.addEventListener("click", () => {
   const opening = elements.accountMenu.classList.contains("hidden");
   elements.accountMenu.classList.toggle("hidden", !opening);
@@ -2152,6 +2439,8 @@ document.addEventListener("keydown", (event) => {
     openMessageSearch();
   } else if (event.key === "Escape" && state.messageSearch.open) {
     closeMessageSearch();
+  } else if (event.key === "Escape" && !elements.hubRecoveryMask.classList.contains("hidden")) {
+    closeHubRecovery();
   }
 });
 document.querySelectorAll(".suggestion").forEach((button) => {
@@ -2167,6 +2456,15 @@ elements.settingsMask.addEventListener("click", (event) => {
 elements.interfaceSettingsMask.addEventListener("click", (event) => {
   if (event.target === elements.interfaceSettingsMask) closeInterfaceSettings();
 });
+elements.hubRecoveryMask.addEventListener("click", (event) => {
+  if (event.target === elements.hubRecoveryMask) closeHubRecovery();
+});
+document.querySelector("#closeHubRecoveryBtn").addEventListener("click", closeHubRecovery);
+document.querySelector("#doneHubRecoveryBtn").addEventListener("click", closeHubRecovery);
+elements.keepMobileHubBtn.addEventListener("click", () => void startHubRecovery("mobile"));
+elements.keepDesktopHubBtn.addEventListener("click", () => void startHubRecovery("desktop"));
+elements.retryHubRecoveryBtn.addEventListener("click", () => void retryHubRecoveryCommand());
+elements.exportHubRecoveryBtn.addEventListener("click", exportHubRecoveryEvidence);
 document.querySelector("#closeInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
 document.querySelector("#doneInterfaceSettingsBtn").addEventListener("click", closeInterfaceSettings);
 elements.exportArchiveBtn.addEventListener("click", exportArchive);
@@ -2359,6 +2657,13 @@ const disposeHubClusterChanged = window.desktop.onHubClusterChanged((status) => 
   state.hubStatus = status;
   state.hubStatusError = false;
   renderHubStatus();
+  if (
+    !elements.hubRecoveryMask.classList.contains("hidden") &&
+    (["divergent", "recovering_divergence"].includes(status.state) ||
+      status.forcedTakeover?.status === "reconciled")
+  ) {
+    void refreshHubRecovery();
+  }
 });
 const hubStatusTimer = window.setInterval(() => void refreshHubStatus(), 12_000);
 
@@ -2368,6 +2673,7 @@ window.addEventListener("beforeunload", () => {
   disposeRemoteSync?.();
   disposeHubRouting?.();
   disposeHubClusterChanged?.();
+  stopHubRecoveryPolling();
   clearTimeout(remoteSyncTimer);
   window.clearInterval(hubStatusTimer);
   titlebarClock.stop();
