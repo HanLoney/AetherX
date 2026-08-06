@@ -107,7 +107,8 @@ function restoreMessage(message) {
     id: message.id,
     role: message.role,
     content: message.content,
-    ...message.payload
+    ...message.payload,
+    createdAt: message.createdAt
   };
 }
 
