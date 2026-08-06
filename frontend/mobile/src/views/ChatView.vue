@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { ArrowLeft, SendHorizontal, Smile } from "@lucide/vue";
+import { ArrowDown, ArrowLeft, Search, SendHorizontal, Smile, X } from "@lucide/vue";
 import AppShell from "../components/AppShell.vue";
 import ChatActivity from "../components/ChatActivity.vue";
 import EmptyState from "../components/EmptyState.vue";
@@ -29,6 +29,10 @@ const composerInput = ref<HTMLTextAreaElement | null>(null);
 const sending = ref(false);
 const error = ref("");
 const messageList = ref<HTMLElement | null>(null);
+const searchInput = ref<HTMLInputElement | null>(null);
+const searchOpen = ref(false);
+const searchQuery = ref("");
+const showLatestButton = ref(false);
 let conversationRefreshPending = false;
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
 const messageTimestampFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -50,6 +54,71 @@ const assistantName = computed(() => String(data.assistant.value.name || "小玄
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
 const userAvatar = computed(() => String(data.profile.value.avatarDataUrl || ""));
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  if (!query) return [];
+  return displayMessages.value.flatMap((message, index) => {
+    if (message.role !== "user" && message.role !== "assistant") return [];
+    const content = String(message.content || "").replace(/\s+/g, " ").trim();
+    const matchIndex = content.toLocaleLowerCase().indexOf(query);
+    if (matchIndex < 0) return [];
+    const start = Math.max(0, matchIndex - 28);
+    const end = Math.min(content.length, matchIndex + query.length + 46);
+    return [{
+      message,
+      index,
+      before: `${start > 0 ? "…" : ""}${content.slice(start, matchIndex)}`,
+      match: content.slice(matchIndex, matchIndex + query.length),
+      after: `${content.slice(matchIndex + query.length, end)}${end < content.length ? "…" : ""}`
+    }];
+  });
+});
+const searchDateFormatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" });
+
+function searchResultDate(value?: number) {
+  if (value === undefined) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : searchDateFormatter.format(date);
+}
+
+async function openSearch() {
+  emojiOpen.value = false;
+  searchOpen.value = true;
+  await nextTick();
+  searchInput.value?.focus();
+}
+
+function closeSearch() {
+  searchOpen.value = false;
+  searchQuery.value = "";
+}
+
+async function jumpToSearchResult(index: number) {
+  closeSearch();
+  await nextTick();
+  const row = messageList.value?.querySelector<HTMLElement>(`[data-message-index="${index}"]`);
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("search-jump");
+  window.setTimeout(() => row.classList.remove("search-jump"), 1800);
+  window.setTimeout(updateLatestButton, 350);
+}
+
+function updateLatestButton() {
+  const list = messageList.value;
+  if (!list || searchOpen.value || !displayMessages.value.length) {
+    showLatestButton.value = false;
+    return;
+  }
+  showLatestButton.value = list.scrollHeight - list.scrollTop - list.clientHeight >= 96;
+}
+
+function scrollToLatest() {
+  const list = messageList.value;
+  if (!list) return;
+  showLatestButton.value = false;
+  list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+}
 
 function handleEmojiClick(event: Event) {
   const emojiEvent = event as CustomEvent<{ unicode: string }>;
@@ -111,6 +180,11 @@ function closeEmojiOnOutsidePointer(event: PointerEvent) {
 }
 
 function handleNativeBack(event: Event) {
+  if (searchOpen.value) {
+    closeSearch();
+    event.preventDefault();
+    return;
+  }
   if (emojiOpen.value) {
     emojiOpen.value = false;
     event.preventDefault();
@@ -234,6 +308,7 @@ function resolveAllApprovals(approved: boolean) {
 
 async function scrollToBottom() {
   await nextTick();
+  showLatestButton.value = false;
   messageList.value?.scrollTo({ top: messageList.value.scrollHeight, behavior: "smooth" });
 }
 </script>
@@ -243,17 +318,59 @@ async function scrollToBottom() {
     <div class="liquid-orb liquid-orb-pink" aria-hidden="true" />
     <div class="liquid-orb liquid-orb-blue" aria-hidden="true" />
 
-    <nav class="chat-floating-controls" aria-label="聊天页面操作">
+    <nav v-if="!searchOpen" class="chat-floating-controls" aria-label="聊天页面操作">
       <button class="liquid-control" type="button" aria-label="返回主页" @click="router.push('/home')">
         <ArrowLeft :size="20" />
       </button>
+      <button class="liquid-control" type="button" aria-label="搜索聊天记录" @click="openSearch">
+        <Search :size="19" />
+      </button>
     </nav>
 
-    <section ref="messageList" class="message-list">
+    <section v-if="searchOpen" class="chat-search-view" aria-label="搜索聊天记录">
+      <header class="chat-search-head">
+        <label class="chat-search-field">
+          <Search :size="20" />
+          <input ref="searchInput" v-model="searchQuery" type="text" inputmode="search" autocomplete="off" placeholder="搜索聊天记录" />
+          <button v-if="searchQuery" type="button" aria-label="清空搜索" @click="searchQuery = ''"><X :size="17" /></button>
+        </label>
+        <button class="chat-search-cancel" type="button" @click="closeSearch">取消</button>
+      </header>
+      <nav class="chat-search-tabs" aria-label="搜索范围"><button class="active" type="button">全部</button></nav>
+      <div class="chat-search-summary">
+        <strong>聊天记录</strong>
+        <span>{{ searchQuery.trim() ? `${searchResults.length} 条结果` : "输入关键词开始搜索" }}</span>
+      </div>
+      <div class="chat-search-results">
+        <button
+          v-for="result in searchResults"
+          :key="result.message.id || result.index"
+          class="chat-search-result"
+          type="button"
+          @click="jumpToSearchResult(result.index)"
+        >
+          <ProfileAvatar
+            :name="result.message.role === 'assistant' ? assistantName : userName"
+            :src="result.message.role === 'assistant' ? assistantAvatar : userAvatar"
+            size="small"
+          />
+          <span class="chat-search-result-content">
+            <strong>{{ result.message.role === "assistant" ? assistantName : userName }}</strong>
+            <span class="chat-search-snippet">{{ result.before }}<mark>{{ result.match }}</mark>{{ result.after }}</span>
+          </span>
+          <time>{{ searchResultDate(result.message.createdAt) }}</time>
+        </button>
+        <div v-if="!searchResults.length" class="chat-search-empty">
+          {{ searchQuery.trim() ? "换个关键词试试" : `可以搜索你和 ${assistantName} 说过的话` }}
+        </div>
+      </div>
+    </section>
+
+    <section v-show="!searchOpen" ref="messageList" class="message-list" @scroll.passive="updateLatestButton">
       <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="你们会一直在这一段对话里延续共同的上下文。" />
       <template v-for="(message, index) in displayMessages" :key="message.id || index">
         <ChatActivity v-if="message.role === 'tool' || message.role === 'memory'" :message="message" @decide="decideTool(message, $event)" />
-        <article v-else-if="message.role === 'assistant' || message.role === 'user'" class="message-row" :class="message.role">
+        <article v-else-if="message.role === 'assistant' || message.role === 'user'" class="message-row" :class="message.role" :data-message-index="index">
           <ProfileAvatar v-if="message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
           <div class="message-bubble">
             <MarkdownMessage v-if="message.role === 'assistant'" :content="message.content || ''" />
@@ -273,10 +390,18 @@ async function scrollToBottom() {
       </article>
     </section>
 
+    <Transition name="latest-button">
+      <button v-if="!searchOpen && showLatestButton" class="scroll-to-latest" type="button" aria-label="回到最新消息" @click="scrollToLatest">
+        <ArrowDown :size="16" />
+        <span>最新</span>
+      </button>
+    </Transition>
+
     <template #bottom-dock>
-      <div class="dock-scrim" aria-hidden="true" />
-      <p v-if="error" class="chat-error">{{ error }}</p>
-      <div class="composer-stack" :class="{ 'emoji-open': emojiOpen }">
+      <template v-if="!searchOpen">
+        <div class="dock-scrim" aria-hidden="true" />
+        <p v-if="error" class="chat-error">{{ error }}</p>
+        <div class="composer-stack" :class="{ 'emoji-open': emojiOpen }">
         <form class="chat-composer" @submit.prevent="send">
           <button
             ref="emojiButton"
@@ -300,7 +425,8 @@ async function scrollToBottom() {
             />
           </section>
         </Transition>
-      </div>
+        </div>
+      </template>
     </template>
 
   </AppShell>
@@ -314,6 +440,28 @@ async function scrollToBottom() {
 .liquid-control { position:relative; width:44px; height:44px; display:grid; place-items:center; overflow:hidden; pointer-events:auto; border:1px solid rgba(255,255,255,.72); border-radius:50%; color:#6f687c; background:linear-gradient(145deg,rgba(255,255,255,.64),rgba(255,255,255,.28)); box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(116,105,139,.08),0 10px 30px rgba(69,64,91,.12); backdrop-filter:blur(26px) saturate(180%); -webkit-backdrop-filter:blur(26px) saturate(180%); }
 .liquid-control::before { content:""; position:absolute; inset:1px 6px 52% 6px; border-radius:99px; background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,0)); pointer-events:none; }
 .liquid-control svg { position:relative; z-index:1; }
+.chat-search-view { height:100%; min-height:0; display:flex; flex-direction:column; padding:calc(max(12px,env(safe-area-inset-top)) + 2px) 0 12px; }
+.chat-search-head { display:flex; align-items:center; gap:10px; padding:0 2px; }
+.chat-search-field { height:48px; min-width:0; flex:1; display:flex; align-items:center; gap:9px; padding:0 10px 0 14px; border:1px solid rgba(255,255,255,.82); border-radius:16px; color:#9a95a0; background:rgba(255,255,255,.84); box-shadow:0 10px 28px rgba(65,60,88,.09); backdrop-filter:blur(24px); }
+.chat-search-field input { min-width:0; flex:1; border:0; outline:0; color:#4f4a58; background:transparent; font-size:calc(15px * var(--font-scale, 1)); }
+.chat-search-field button { width:25px; height:25px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; color:#fff; background:#aaa8ad; }
+.chat-search-cancel { flex:0 0 auto; padding:10px 2px; border:0; color:#6483aa; background:transparent; font-size:calc(14px * var(--font-scale, 1)); }
+.chat-search-tabs { height:54px; display:flex; align-items:flex-end; margin-top:2px; border-bottom:1px solid rgba(108,102,120,.09); }
+.chat-search-tabs button { position:relative; height:100%; padding:0 20px; border:0; color:#68636e; background:transparent; font-size:calc(14px * var(--font-scale, 1)); }
+.chat-search-tabs button.active::after { content:""; position:absolute; left:13px; right:13px; bottom:-1px; height:3px; border-radius:3px; background:#4d4a51; }
+.chat-search-summary { display:flex; align-items:center; justify-content:space-between; padding:17px 8px 8px; }
+.chat-search-summary strong { color:#625d69; font-size:calc(13px * var(--font-scale, 1)); }
+.chat-search-summary span { color:#aaa5ae; font-size:calc(10px * var(--font-scale, 1)); }
+.chat-search-results { min-height:0; flex:1; overflow-y:auto; scrollbar-width:none; }
+.chat-search-results::-webkit-scrollbar { display:none; }
+.chat-search-result { width:100%; display:grid; grid-template-columns:46px minmax(0,1fr) auto; align-items:start; gap:11px; padding:15px 8px; border:0; border-bottom:1px solid rgba(108,102,120,.08); border-radius:0; background:transparent; text-align:left; }
+.chat-search-result :deep(.avatar-small) { width:46px; height:46px; border-radius:13px; }
+.chat-search-result-content { min-width:0; display:grid; gap:5px; padding-top:1px; }
+.chat-search-result-content strong { color:#6b6571; font-size:calc(14px * var(--font-scale, 1)); font-weight:500; }
+.chat-search-snippet { overflow:hidden; color:#4c4851; font-size:calc(14px * var(--font-scale, 1)); line-height:1.45; text-overflow:ellipsis; white-space:nowrap; }
+.chat-search-snippet mark { padding:0; color:#42b875; background:transparent; }
+.chat-search-result time { padding-top:2px; color:#b0abb3; font-size:calc(12px * var(--font-scale, 1)); white-space:nowrap; }
+.chat-search-empty { min-height:230px; display:grid; place-items:center; color:#aaa5ae; font-size:calc(12px * var(--font-scale, 1)); }
 .message-list { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding:calc(max(12px,env(safe-area-inset-top)) + 58px) 2px calc(var(--bottom-dock-height) + 34px); scrollbar-width: none; }
 .message-list::-webkit-scrollbar { display: none; }
 .message-row { display:flex; align-items:flex-end; gap:7px; margin:0 0 14px; }
@@ -325,6 +473,12 @@ async function scrollToBottom() {
 .user .message-bubble { padding:12px 14px; border-color:rgba(255,255,255,.36); border-radius:22px 22px 7px 22px; color:#fff; background:linear-gradient(135deg,rgba(204,126,171,.84),rgba(125,139,190,.82) 58%,rgba(91,159,211,.78)); box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 12px 30px rgba(115,96,151,.2); }
 .message-timestamp { position:absolute; right:11px; bottom:6px; color:rgba(78,73,94,.52); font-size:calc(8px * var(--font-scale, 1)); font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap; }
 .user .message-timestamp { right:8px; bottom:5px; color:rgba(255,255,255,.72); font-size:calc(8px * var(--font-scale, 1)); }
+.message-row.search-jump .message-bubble { animation:message-search-jump 1.8s ease; }
+@keyframes message-search-jump { 0%,100%{box-shadow:inherit} 18%,68%{box-shadow:0 0 0 3px rgba(66,184,117,.25),0 12px 30px rgba(73,69,96,.12)} }
+.scroll-to-latest { position:fixed; z-index:37; right:16px; bottom:calc(var(--bottom-dock-height) + max(18px,env(safe-area-inset-bottom)) + 18px); height:36px; display:flex; align-items:center; gap:4px; padding:0 12px 0 10px; border:1px solid rgba(255,255,255,.82); border-radius:20px; color:#6d6877; background:rgba(255,255,255,.9); box-shadow:0 10px 30px rgba(65,60,88,.15); backdrop-filter:blur(22px) saturate(160%); -webkit-backdrop-filter:blur(22px) saturate(160%); }
+.scroll-to-latest span { font-size:calc(11px * var(--font-scale, 1)); font-weight:600; }
+.latest-button-enter-active,.latest-button-leave-active { transition:opacity .16s ease,transform .2s ease; }
+.latest-button-enter-from,.latest-button-leave-to { opacity:0; transform:translateY(8px) scale(.96); }
 .typing { display:flex; gap:5px; padding:17px 18px; }.typing i{width:5px;height:5px;border-radius:50%;background:#aaa3b5;animation:pulse 1.2s infinite}.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}@keyframes pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
 .dock-scrim { position:absolute; z-index:-1; inset:-42px -14px -14px; pointer-events:none; background:linear-gradient(180deg,rgba(248,248,252,0),rgba(248,248,252,.68) 44%,rgba(248,248,252,.92) 78%); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
 .composer-stack { --emoji-tray-height:min(268px,calc(100dvh - 176px)); position:relative; width:100%; border:1px solid rgba(255,255,255,.82); border-radius:29px; background:linear-gradient(145deg,rgba(255,255,255,.92),rgba(244,246,252,.86)); box-shadow:inset 0 1px 0 rgba(255,255,255,.98),0 18px 46px rgba(65,60,88,.16); transition:transform .3s cubic-bezier(.2,.78,.2,1),border-radius .2s ease; will-change:transform; }

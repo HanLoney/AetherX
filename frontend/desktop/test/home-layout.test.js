@@ -28,6 +28,29 @@ test("single conversation mode exposes no conversation selector", () => {
   assert.match(css, /\.provider-card\s*\{[^}]*flex:\s*0 0 auto;/s);
 });
 
+test("desktop searches the primary conversation in a dedicated result view", () => {
+  assert.match(html, /id="messageSearchBtn"/);
+  assert.match(html, /id="messageSearchView"/);
+  assert.match(html, /id="messageSearchResults"/);
+  assert.match(javascript, /function messageSearchMatches\(\)/);
+  assert.match(javascript, /\["user", "assistant"\]\.includes\(message\.role\)/);
+  assert.match(javascript, /row\.dataset\.messageIndex = String\(index\)/);
+  assert.match(javascript, /function jumpToSearchedMessage\(index\)/);
+  assert.match(javascript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
+  assert.match(css, /\.conversation\.search-open > \.message-list/);
+  assert.match(css, /\.message-search-snippet mark/);
+  assert.match(html, /type="text" inputmode="search"/);
+  assert.match(css, /\.message-search-result\s*\{[^}]*border:\s*0;[^}]*border-bottom:/s);
+  assert.match(css, /\.message-search-tabs button\s*\{[^}]*border:\s*0;/s);
+  assert.match(html, /id="scrollToLatestBtn"/);
+  assert.match(javascript, /function updateScrollToLatestButton\(\)/);
+  assert.match(javascript, /elements\.conversation\.addEventListener\("scroll", updateScrollToLatestButton/);
+  assert.match(javascript, /function scrollConversationToLatest\(\)/);
+  assert.match(css, /\.scroll-to-latest\s*\{/);
+  assert.match(html, /<section class="composer-wrap">\s*<button id="scrollToLatestBtn"/);
+  assert.match(css, /\.scroll-to-latest\s*\{[^}]*top:\s*-34px;[^}]*right:\s*8px;/s);
+});
+
 test("desktop keeps one primary conversation and appends proactive reminders to it", () => {
   assert.doesNotMatch(html, /id="clearChatBtn"/);
   assert.doesNotMatch(javascript, /newConversationBtn|startNewConversation/);
