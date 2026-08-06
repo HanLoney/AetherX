@@ -42,6 +42,16 @@ export interface LocalHubStatus {
     recordCount: number;
     verifiedAt: number;
   };
+  forcedTakeover: null | {
+    id: string;
+    previousActiveNodeId: string;
+    activeNodeId: string;
+    previousEpoch: number;
+    epoch: number;
+    status: "pending_reconciliation" | "reconciled";
+    createdAt: number;
+    reconciledAt: number | null;
+  };
 }
 
 interface LocalHubPlugin {
@@ -117,6 +127,16 @@ interface LocalHubPlugin {
   finalizeBootstrap(): Promise<{ completed: boolean; receipt: Record<string, unknown>; completedAt: number }>;
   switchToLocal(): Promise<{ completed: boolean; transitionId?: string; activeNodeId: string; epoch: number; state?: string }>;
   switchToPeer(): Promise<{ completed: boolean; activeNodeId: string; epoch: number; state?: string }>;
+  forceTakeover(): Promise<{ completed: boolean; takeoverId: string; activeNodeId: string; epoch: number; state: "forced_active" }>;
+  recoverDivergence(input: {
+    recoveryId: string;
+    authorityNodeId: string;
+  }): Promise<{
+    completed: boolean;
+    recovery: Record<string, unknown>;
+    acknowledgement: Record<string, unknown>;
+    completedAt: number;
+  }>;
   media(input: { mediaId: string }): Promise<{ mediaId: string; mimeType: string; path: string; uri: string }>;
   providerCredentials(): Promise<{ baseUrl: string; model: string; apiKey: string }>;
   imageProviderCredentials(): Promise<{ baseUrl: string; model: string; apiKey: string }>;
@@ -192,7 +212,7 @@ async function flushActiveReplication() {
     if (
       !current?.configured ||
       current.role !== "active" ||
-      current.state !== "stable" ||
+      !["stable", "forced_active"].includes(current.state) ||
       current.bootstrap?.status !== "completed"
     ) return;
     try {
@@ -304,6 +324,17 @@ export function useLocalHub() {
     },
     switchToPeer: async () => {
       const result = await LocalHub.switchToPeer();
+      await refreshLocalHub();
+      return result;
+    },
+    forceTakeover: async () => {
+      const result = await LocalHub.forceTakeover();
+      await refreshLocalHub();
+      scheduleActiveReplication(0);
+      return result;
+    },
+    recoverDivergence: async (input: { recoveryId: string; authorityNodeId: string }) => {
+      const result = await LocalHub.recoverDivergence(input);
       await refreshLocalHub();
       return result;
     },

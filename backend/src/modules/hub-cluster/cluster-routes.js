@@ -8,7 +8,8 @@ function registerClusterRoutes(
   switchStateMachineService = null,
   switchRecoveryService = null,
   clientSessionHandoffService = null,
-  syncEventBroker = null
+  syncEventBroker = null,
+  divergenceRecoveryService = null
 ) {
   router.add("GET", "/api/v1/cluster/status", ({ userId }) => ({
     data: service.status(userId)
@@ -151,6 +152,31 @@ function registerClusterRoutes(
       "/api/v1/cluster/session-handoff",
       async ({ userId }) => ({
         data: await clientSessionHandoffService.handoff(userId)
+      }),
+      { allowDuringClusterTransition: true }
+    );
+  }
+  if (divergenceRecoveryService) {
+    router.add(
+      "GET",
+      "/api/v1/cluster/divergence",
+      ({ userId, query }) => ({
+        data: divergenceRecoveryService.status(userId, query)
+      })
+    );
+    router.add(
+      "GET",
+      "/api/v1/cluster/divergence/evidence",
+      ({ userId }) => ({
+        data: divergenceRecoveryService.exportEvidence(userId)
+      })
+    );
+    router.add(
+      "POST",
+      "/api/v1/cluster/divergence/recover",
+      async ({ userId, body }) => ({
+        status: 202,
+        data: await divergenceRecoveryService.initiate(userId, body)
       }),
       { allowDuringClusterTransition: true }
     );

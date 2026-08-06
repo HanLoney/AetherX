@@ -360,13 +360,57 @@ function registerIpcHandlers() {
   ipcMain.handle("hub:status", async () => {
     if (!currentUser || !api.token) return null;
     try {
-      const status = await api.getClusterStatus();
+      let status = await api.getClusterStatus();
+      if (api.baseUrl !== localHubServerUrl) {
+        try {
+          const localStatus = await authenticatedLocalHubApi().getClusterStatus();
+          if (
+            localStatus?.spaceId === status.spaceId &&
+            Number(localStatus.forcedTakeover?.divergentOperationCount) > 0
+          ) {
+            status = { ...status, forcedTakeover: localStatus.forcedTakeover };
+          }
+        } catch {}
+      }
       applyClusterStatus(status);
       return status;
     } catch (error) {
       if (latestClusterStatus) return latestClusterStatus;
       throw error;
     }
+  });
+  ipcMain.handle("hub:divergence", () =>
+    authenticatedLocalHubApi().getHubDivergence(500, 0)
+  );
+  ipcMain.handle("hub:divergence:recover", (_event, authority) =>
+    authenticatedLocalHubApi().recoverHubDivergence(authority)
+  );
+  ipcMain.handle("hub:divergence:export", async (event) => {
+    const evidence = await authenticatedLocalHubApi().exportHubDivergenceEvidence();
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const takeoverId = String(evidence?.takeover?.id || "evidence")
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .slice(0, 80);
+    const selected = await dialog.showSaveDialog(win, {
+      title: "导出 Hub 分叉证据",
+      defaultPath: path.join(
+        app.getPath("downloads"),
+        `AetherX-Hub-分叉证据-${takeoverId}.json`
+      ),
+      filters: [{ name: "JSON 证据包", extensions: ["json"] }]
+    });
+    if (selected.canceled || !selected.filePath) return { canceled: true };
+    await fs.promises.writeFile(
+      selected.filePath,
+      `${JSON.stringify(evidence, null, 2)}\n`,
+      "utf8"
+    );
+    return {
+      canceled: false,
+      filePath: selected.filePath,
+      evidenceHash: evidence.evidenceHash,
+      operationCount: evidence.divergentOperations.length
+    };
   });
   ipcMain.handle("auth:logout", async (event) => {
     try {
@@ -807,6 +851,13 @@ function openPage(sender, file) {
   setImmediate(() => {
     if (!win.isDestroyed()) win.loadFile(file);
   });
+}
+
+function authenticatedLocalHubApi() {
+  const token = authenticationToken ||
+    (api.baseUrl === localHubServerUrl ? api.token : "");
+  if (!token) throw new Error("请先在桌面端登录 AetherX。");
+  return new XuanApiClient({ baseUrl: localHubServerUrl, token });
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {

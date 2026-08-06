@@ -1198,6 +1198,94 @@ const MIGRATIONS = [
       ADD COLUMN local_hub_pending_media INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE mobile_client_health
       ADD COLUMN local_hub_updated_at INTEGER;
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS hub_forced_takeovers (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      previous_active_node_id TEXT NOT NULL,
+      active_node_id TEXT NOT NULL,
+      previous_epoch INTEGER NOT NULL,
+      epoch INTEGER NOT NULL,
+      proof_json TEXT NOT NULL,
+      proof_hash TEXT NOT NULL,
+      control_signature TEXT NOT NULL,
+      integrity_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      detected_at INTEGER NOT NULL,
+      reconciled_at INTEGER,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_forced_takeovers_space_epoch
+      ON hub_forced_takeovers(space_id, epoch DESC);
+
+    CREATE TABLE IF NOT EXISTS hub_divergent_operations (
+      space_id TEXT NOT NULL,
+      takeover_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      origin_node_id TEXT NOT NULL,
+      origin_sequence INTEGER NOT NULL,
+      epoch INTEGER NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      operation_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      quarantined_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, takeover_id, operation_id),
+      FOREIGN KEY(takeover_id) REFERENCES hub_forced_takeovers(id) ON DELETE CASCADE,
+      FOREIGN KEY(operation_id) REFERENCES replication_operations(operation_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_divergent_operations_status
+      ON hub_divergent_operations(space_id, takeover_id, status);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS hub_divergence_recoveries (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      takeover_id TEXT NOT NULL,
+      authority_node_id TEXT NOT NULL,
+      target_node_id TEXT NOT NULL,
+      source_epoch INTEGER NOT NULL,
+      target_epoch INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      encrypted_snapshot_json TEXT,
+      payload_hash TEXT NOT NULL DEFAULT '',
+      snapshot_hash TEXT NOT NULL DEFAULT '',
+      control_json TEXT,
+      control_signature TEXT NOT NULL DEFAULT '',
+      error_code TEXT NOT NULL DEFAULT '',
+      error_message TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      FOREIGN KEY(space_id) REFERENCES aetherx_spaces(id) ON DELETE CASCADE,
+      FOREIGN KEY(takeover_id) REFERENCES hub_forced_takeovers(id) ON DELETE CASCADE,
+      FOREIGN KEY(space_id, authority_node_id) REFERENCES hub_nodes(space_id, id),
+      FOREIGN KEY(space_id, target_node_id) REFERENCES hub_nodes(space_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hub_divergence_recoveries_space_time
+      ON hub_divergence_recoveries(space_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS hub_divergence_recovery_chunks (
+      recovery_id TEXT NOT NULL,
+      byte_offset INTEGER NOT NULL,
+      chunk_data BLOB NOT NULL,
+      chunk_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY(recovery_id, byte_offset),
+      FOREIGN KEY(recovery_id) REFERENCES hub_divergence_recoveries(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS hub_divergent_operation_archive (
+      space_id TEXT NOT NULL,
+      takeover_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      operation_json TEXT NOT NULL,
+      resolution TEXT NOT NULL,
+      archived_at INTEGER NOT NULL,
+      PRIMARY KEY(space_id, takeover_id, operation_id),
+      FOREIGN KEY(takeover_id) REFERENCES hub_forced_takeovers(id) ON DELETE CASCADE
+    );
   `
 ];
 

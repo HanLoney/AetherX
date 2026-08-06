@@ -13,6 +13,7 @@ class ClusterService {
     this.publicIdentity = String(options.publicIdentity || "");
     this.mobileHealthProvider = options.mobileHealthProvider || (() => []);
     this.replicationHealthProvider = options.replicationHealthProvider || (() => null);
+    this.forcedTakeoverProvider = options.forcedTakeoverProvider || (() => null);
   }
 
   ensureSpace(userId) {
@@ -99,6 +100,7 @@ class ClusterService {
       transitionStartedAt: context.transition_started_at,
       stateHash: context.state_hash,
       controlSignature: context.control_signature,
+      forcedTakeover: this.forcedTakeoverProvider(context.space_id),
       localRole: context.local_node_id === context.active_node_id ? "active" : "standby",
       replication: {
         configured: nodes.length > 1,

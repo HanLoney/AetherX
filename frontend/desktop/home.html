@@ -83,7 +83,7 @@
               <button id="messageSearchBtn" class="message-search-button" type="button" title="搜索聊天记录" aria-label="搜索聊天记录" aria-expanded="false">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.3"></circle><path d="m12.8 12.8 3.7 3.7"></path></svg>
               </button>
-              <span id="hubPill" class="hub-pill loading" title="正在读取当前 Hub">
+              <button id="hubPill" class="hub-pill loading" type="button" title="正在读取当前 Hub" aria-label="当前 Hub 状态">
                 <svg viewBox="0 0 20 20" aria-hidden="true">
                   <rect x="3.5" y="4" width="13" height="4.5" rx="1.7"></rect>
                   <rect x="3.5" y="11.5" width="13" height="4.5" rx="1.7"></rect>
@@ -91,7 +91,7 @@
                 </svg>
                 <strong id="hubLabel">Hub</strong>
                 <small id="hubStateLabel">读取中</small>
-              </span>
+              </button>
               <span id="statusPill" class="status-pill idle">
                 <i></i><span id="statusLabel">尚未配置</span>
               </span>
@@ -298,6 +298,79 @@
             </div>
             <div id="deviceList" class="device-list" aria-live="polite"></div>
           </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="hubRecoveryMask" class="modal-mask hidden">
+      <section class="hub-recovery-panel" role="dialog" aria-modal="true" aria-labelledby="hubRecoveryTitle">
+        <header class="hub-recovery-head">
+          <div>
+            <p>DIVERGENCE RECOVERY</p>
+            <h2 id="hubRecoveryTitle">Hub 分叉恢复中心</h2>
+            <span>选择一边作为唯一权威分支，完整快照会经过加密传输、哈希链校验和双端确认后统一双 Hub。</span>
+          </div>
+          <button id="closeHubRecoveryBtn" class="close-button" type="button" aria-label="关闭分叉恢复中心">×</button>
+        </header>
+
+        <div id="hubRecoveryLoading" class="hub-recovery-loading">
+          <span></span>
+          <strong>正在读取隔离证据</strong>
+        </div>
+
+        <div id="hubRecoveryContent" class="hidden">
+          <section class="hub-recovery-overview">
+            <article>
+              <small>隔离写入</small>
+              <strong id="hubRecoveryCount">0</strong>
+              <span>条 Operation</span>
+            </article>
+            <article>
+              <small>接管代次</small>
+              <strong id="hubRecoveryEpoch">--</strong>
+              <span id="hubRecoveryTakeoverId">尚未读取</span>
+            </article>
+            <article>
+              <small>恢复状态</small>
+              <strong id="hubRecoveryState">待选择</strong>
+              <span id="hubRecoveryStateDetail">双 Hub 写入已冻结</span>
+            </article>
+          </section>
+
+          <div class="hub-recovery-warning">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 19h18.4L12 3Z"></path><path d="M12 9v4M12 16.5h.01"></path></svg>
+            <div><strong>被舍弃的分支不会静默消失</strong><span>恢复前的隔离 Operation 会归档到签名证据包。恢复期间禁止新写入，只有快照、媒体、Operation 哈希链和双方确认全部通过后才会恢复路由。</span></div>
+          </div>
+
+          <section id="hubRecoveryChoices" class="hub-recovery-choices" aria-label="选择权威 Hub">
+            <article class="mobile">
+              <span class="hub-recovery-choice-mark" aria-hidden="true">M</span>
+              <div><small>MOBILE AUTHORITY</small><strong>保留手机 Hub</strong><p>用手机 Hub 的完整现状覆盖电脑 Hub，适合强制接管后继续在手机上产生了有效数据的情况。</p></div>
+              <button id="keepMobileHubBtn" type="button">保留手机分支</button>
+            </article>
+            <article class="desktop">
+              <span class="hub-recovery-choice-mark" aria-hidden="true">D</span>
+              <div><small>DESKTOP AUTHORITY</small><strong>保留电脑 Hub</strong><p>用电脑 Hub 的完整现状覆盖手机 Hub，适合电脑上的离线写入才是最终有效版本的情况。</p></div>
+              <button id="keepDesktopHubBtn" type="button">保留电脑分支</button>
+            </article>
+          </section>
+
+          <div id="hubRecoveryProgress" class="hub-recovery-progress hidden" role="status">
+            <span aria-hidden="true"></span>
+            <div><strong id="hubRecoveryProgressTitle">正在准备恢复</strong><p id="hubRecoveryProgressDetail">请保持手机端 AetherX 在线。</p></div>
+            <button id="retryHubRecoveryBtn" class="hidden" type="button">重新发送恢复指令</button>
+          </div>
+
+          <div class="hub-recovery-list-head">
+            <div><small>QUARANTINED OPERATIONS</small><h3>电脑端隔离写入</h3></div>
+            <span>点击每项可查看原始载荷与哈希链</span>
+          </div>
+          <div id="hubRecoveryOperations" class="hub-recovery-operations"></div>
+          <p id="hubRecoveryNotice" class="hub-recovery-notice hidden" role="status"></p>
+          <footer class="hub-recovery-actions">
+            <button id="exportHubRecoveryBtn" class="hub-recovery-export" type="button">导出签名证据包</button>
+            <button id="doneHubRecoveryBtn" class="hub-recovery-done" type="button">关闭</button>
+          </footer>
         </div>
       </section>
     </div>

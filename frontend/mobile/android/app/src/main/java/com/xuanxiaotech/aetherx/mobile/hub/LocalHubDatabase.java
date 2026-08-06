@@ -25,9 +25,19 @@ import javax.crypto.spec.SecretKeySpec;
 
 public final class LocalHubDatabase extends SQLiteOpenHelper {
     public static final int PROTOCOL_VERSION = 1;
-    public static final int NODE_SCHEMA_VERSION = 40;
+    public static final int NODE_SCHEMA_VERSION = 42;
     private static final String DATABASE_NAME = "aetherx-mobile-hub.db";
-    private static final int DATABASE_VERSION = 3;
+    private static final int DATABASE_VERSION = 4;
+    private static final String[] RECOVERY_TABLES = new String[]{
+        "todos", "ai_configs", "conversations", "messages", "user_profiles",
+        "user_preferences", "memories", "follow_ups", "memory_settings",
+        "assistant_profiles", "assistant_personality_events", "shared_memories",
+        "prompt_settings", "prompt_setting_versions", "memory_evidence",
+        "assistant_journals", "xuan_mood_events", "xuan_mood_state",
+        "xuan_mood_displays", "album_moments", "album_moment_sources",
+        "assistant_dreams", "assistant_dream_sources", "ai_image_configs",
+        "module_settings", "wallet_accounts", "wallet_transactions", "media_assets"
+    };
 
     public LocalHubDatabase(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -76,6 +86,7 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             "id INTEGER PRIMARY KEY CHECK(id=1), snapshot_id TEXT NOT NULL, records_root TEXT NOT NULL," +
             "record_count INTEGER NOT NULL, verified_at INTEGER NOT NULL)");
         createBootstrapTables(db);
+        createForcedTakeoverTables(db);
     }
 
     @Override
@@ -88,6 +99,7 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE hub_cluster_state ADD COLUMN state_hash TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE hub_cluster_state ADD COLUMN control_signature TEXT NOT NULL DEFAULT ''");
         }
+        if (oldVersion < 4) createForcedTakeoverTables(db);
     }
 
     private static void createBootstrapTables(SQLiteDatabase db) {
@@ -103,6 +115,14 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             "file_name TEXT NOT NULL, byte_size INTEGER NOT NULL, content_hash TEXT NOT NULL," +
             "received_bytes INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL," +
             "local_path TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)");
+    }
+
+    private static void createForcedTakeoverTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS hub_forced_takeovers (" +
+            "takeover_id TEXT PRIMARY KEY, space_id TEXT NOT NULL, previous_active_node_id TEXT NOT NULL," +
+            "active_node_id TEXT NOT NULL, previous_epoch INTEGER NOT NULL, epoch INTEGER NOT NULL," +
+            "proof_json TEXT NOT NULL, authentication_tag TEXT NOT NULL, integrity_json TEXT NOT NULL," +
+            "status TEXT NOT NULL, created_at INTEGER NOT NULL, reconciled_at INTEGER)");
     }
 
     public synchronized String getOrCreateNodeId() {
@@ -178,6 +198,24 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
                 result.put("integrity", integrity);
             } else {
                 result.put("integrity", JSONObject.NULL);
+            }
+        }
+        try (Cursor cursor = db.rawQuery(
+            "SELECT takeover_id,previous_active_node_id,active_node_id,previous_epoch,epoch,status," +
+                "created_at,reconciled_at FROM hub_forced_takeovers ORDER BY created_at DESC LIMIT 1",
+            null)) {
+            if (cursor.moveToFirst()) {
+                result.put("forcedTakeover", new JSONObject()
+                    .put("id", cursor.getString(0))
+                    .put("previousActiveNodeId", cursor.getString(1))
+                    .put("activeNodeId", cursor.getString(2))
+                    .put("previousEpoch", cursor.getLong(3))
+                    .put("epoch", cursor.getLong(4))
+                    .put("status", cursor.getString(5))
+                    .put("createdAt", cursor.getLong(6))
+                    .put("reconciledAt", cursor.isNull(7) ? JSONObject.NULL : cursor.getLong(7)));
+            } else {
+                result.put("forcedTakeover", JSONObject.NULL);
             }
         }
         return result;
@@ -333,6 +371,10 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         }
     }
 
+    private static boolean isServingState(String state) {
+        return "stable".equals(state) || "forced_active".equals(state);
+    }
+
 
     public synchronized JSONObject importSnapshot(JSONObject input, byte[] syncKey) throws JSONException {
         String snapshotId = required(input, "snapshotId");
@@ -386,7 +428,14 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             if (operations == null) operations = new JSONArray();
             for (int index = 0; index < operations.length(); index += 1) {
                 JSONObject operation = operations.getJSONObject(index);
-                validateOperation(db, operation, syncKey, spaceId, manifest.optLong("epoch", -1));
+                validateOperation(
+                    db,
+                    operation,
+                    syncKey,
+                    spaceId,
+                    manifest.optLong("epoch", -1),
+                    true
+                );
                 writeOperation(db, operation);
                 writeWatermark(
                     db,
@@ -452,6 +501,9 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             db.insertOrThrow("hub_snapshots", null, snapshot);
             putMeta(db, "snapshot_space_id", spaceId);
             putMeta(db, "last_snapshot_id", snapshotId);
+            if (input.has("recoverySnapshotHash")) {
+                putMeta(db, "recovery_snapshot_hash", input.optString("recoverySnapshotHash", ""));
+            }
             db.setTransactionSuccessful();
             return new JSONObject()
                 .put("imported", true)
@@ -466,10 +518,237 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         }
     }
 
+    public synchronized JSONObject beginDivergenceRecovery(JSONObject recovery) throws JSONException {
+        SQLiteDatabase db = getWritableDatabase();
+        JSONObject cluster = clusterState(db);
+        String recoveryId = required(recovery, "id");
+        String authorityNodeId = required(recovery, "authorityNodeId");
+        String targetNodeId = required(recovery, "targetNodeId");
+        if (
+            !cluster.getString("spaceId").equals(recovery.optString("spaceId", cluster.getString("spaceId"))) ||
+            !cluster.getString("localNodeId").equals(authorityNodeId) &&
+                !cluster.getString("localNodeId").equals(targetNodeId)
+        ) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_CONTEXT_MISMATCH");
+        }
+        long now = System.currentTimeMillis();
+        ContentValues values = new ContentValues();
+        values.put("state", "recovering_divergence");
+        values.put("transition_id", recoveryId);
+        values.put("transition_target_node_id", targetNodeId);
+        values.put("transition_started_at", now);
+        values.put("updated_at", now);
+        db.update("hub_cluster_state", values, "space_id=?", new String[]{cluster.getString("spaceId")});
+        putMeta(db, "recovery_id", recoveryId);
+        putMeta(db, "recovery_authority_node_id", authorityNodeId);
+        return status(true, 0);
+    }
+
+    public synchronized JSONObject exportRecoverySnapshot(
+        JSONObject recovery,
+        JSONObject credentials
+    ) throws JSONException {
+        SQLiteDatabase db = getReadableDatabase();
+        JSONObject cluster = clusterState(db);
+        String localNodeId = cluster.getString("localNodeId");
+        if (!localNodeId.equals(recovery.optString("authorityNodeId"))) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_AUTHORITY_INVALID");
+        }
+        JSONObject tables = new JSONObject();
+        JSONArray tableManifest = new JSONArray();
+        for (String table : RECOVERY_TABLES) {
+            JSONArray rows = recoveryRows(db, table);
+            tables.put(table, rows);
+            tableManifest.put(tableManifest(table, rows));
+        }
+        JSONObject account = new JSONObject();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT payload_json FROM hub_documents WHERE entity_type='$account' AND deleted=0 LIMIT 1",
+            null)) {
+            if (cursor.moveToFirst()) account = new JSONObject(cursor.getString(0));
+        }
+        tableManifest.put(tableManifest("$account", new JSONArray().put(account)));
+        tableManifest.put(tableManifest("$credentials", new JSONArray().put(credentials)));
+        List<JSONObject> sortedManifests = new ArrayList<>();
+        for (int index = 0; index < tableManifest.length(); index += 1) {
+            sortedManifests.add(tableManifest.getJSONObject(index));
+        }
+        Collections.sort(sortedManifests, (left, right) ->
+            left.optString("name").compareTo(right.optString("name")));
+        JSONArray sortedTableManifest = new JSONArray();
+        List<String> recordLeaves = new ArrayList<>();
+        for (JSONObject item : sortedManifests) {
+            sortedTableManifest.put(item);
+            recordLeaves.add(sha256(canonical(item)));
+        }
+        JSONArray media = recoveryMedia(db);
+        List<String> blobLeaves = new ArrayList<>();
+        long totalMediaBytes = 0;
+        for (int index = 0; index < media.length(); index += 1) {
+            JSONObject item = media.getJSONObject(index);
+            totalMediaBytes += item.getLong("byteSize");
+            blobLeaves.add(sha256(canonical(new JSONObject()
+                .put("id", item.getString("id"))
+                .put("mimeType", item.getString("mimeType"))
+                .put("byteSize", item.getLong("byteSize"))
+                .put("contentHash", item.getString("contentHash")))));
+        }
+        Collections.sort(blobLeaves);
+        JSONObject boundary = new JSONObject()
+            .put("syncCursor", 0)
+            .put("operations", operationHeads(db, cluster.getString("spaceId")));
+        long createdAt = System.currentTimeMillis();
+        JSONObject manifestBase = new JSONObject()
+            .put("formatVersion", 1)
+            .put("protocolVersion", PROTOCOL_VERSION)
+            .put("schemaVersion", NODE_SCHEMA_VERSION)
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("sourceNodeId", localNodeId)
+            .put("epoch", recovery.getLong("sourceEpoch"))
+            .put("boundary", boundary)
+            .put("recordsRoot", merkleRoot(recordLeaves))
+            .put("blobsRoot", merkleRoot(blobLeaves))
+            .put("tables", sortedTableManifest)
+            .put("blobs", new JSONObject()
+                .put("count", media.length())
+                .put("totalBytes", totalMediaBytes))
+            .put("createdAt", createdAt);
+        JSONObject manifest = new JSONObject(canonical(manifestBase))
+            .put("manifestHash", sha256(canonical(manifestBase)));
+        JSONObject replication = new JSONObject()
+            .put("operations", allOperations(db))
+            .put("entityVersions", allEntityVersions(db));
+        return new JSONObject()
+            .put("format", "AetherX Hub Divergence Recovery Snapshot")
+            .put("formatVersion", 1)
+            .put("snapshotId", recovery.getString("id"))
+            .put("recoveryId", recovery.getString("id"))
+            .put("takeoverId", recovery.getString("takeoverId"))
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("sourceNodeId", localNodeId)
+            .put("sourceEpoch", recovery.getLong("sourceEpoch"))
+            .put("targetEpoch", recovery.getLong("targetEpoch"))
+            .put("tables", tables)
+            .put("account", account)
+            .put("credentials", credentials)
+            .put("media", media)
+            .put("manifest", manifest)
+            .put("replication", replication)
+            .put("createdAt", createdAt);
+    }
+
+    public synchronized JSONObject applyDivergenceRecovery(
+        JSONObject signedControl,
+        byte[] syncKey
+    ) throws JSONException {
+        JSONObject control = signedControl == null ? null : signedControl.optJSONObject("control");
+        if (control == null ||
+            !hmacSha256(syncKey, canonical(control)).equals(
+                signedControl.optString("authenticationTag", ""))) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_CONTROL_INVALID");
+        }
+        SQLiteDatabase db = getWritableDatabase();
+        JSONObject cluster = clusterState(db);
+        String recoveryId = control.optString("recoveryId", "");
+        String snapshotHash = control.optString("snapshotHash", "");
+        if (
+            !"apply_divergence_recovery".equals(control.optString("action")) ||
+            !cluster.getString("spaceId").equals(control.optString("spaceId")) ||
+            !recoveryId.equals(meta(db, "recovery_id")) ||
+            !snapshotHash.equals(meta(db, "recovery_snapshot_hash")) ||
+            control.optLong("epoch", -1) <= cluster.getLong("epoch")
+        ) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_CONTEXT_MISMATCH");
+        }
+        long now = System.currentTimeMillis();
+        JSONObject ack = new JSONObject()
+            .put("version", 1)
+            .put("action", "divergence_recovery_applied")
+            .put("recoveryId", recoveryId)
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("nodeId", cluster.getString("localNodeId"))
+            .put("authorityNodeId", control.getString("authorityNodeId"))
+            .put("epoch", control.getLong("epoch"))
+            .put("snapshotHash", snapshotHash)
+            .put("appliedAt", now);
+        JSONObject signedAck = new JSONObject()
+            .put("ack", ack)
+            .put("authenticationTag", hmacSha256(syncKey, canonical(ack)));
+        db.beginTransaction();
+        try {
+            ContentValues values = new ContentValues();
+            values.put("epoch", control.getLong("epoch"));
+            values.put("active_node_id", control.getString("activeNodeId"));
+            values.put("state", "stable");
+            values.put("role", cluster.getString("localNodeId").equals(control.getString("activeNodeId"))
+                ? "active" : "standby");
+            values.put("transition_id", "");
+            values.put("transition_target_node_id", "");
+            values.putNull("transition_started_at");
+            values.put("state_hash", sha256(canonical(new JSONObject()
+                .put("spaceId", cluster.getString("spaceId"))
+                .put("epoch", control.getLong("epoch"))
+                .put("activeNodeId", control.getString("activeNodeId"))
+                .put("transitionId", "")
+                .put("transitionTargetNodeId", "")
+                .put("transitionStartedAt", JSONObject.NULL)
+                .put("state", "stable"))));
+            values.put("control_signature", signedControl.getString("authenticationTag"));
+            values.put("updated_at", now);
+            db.update("hub_cluster_state", values, "space_id=?", new String[]{cluster.getString("spaceId")});
+            reconcileNodeRoles(db, control.getString("activeNodeId"), now);
+            db.delete("hub_idempotency", null, null);
+            ContentValues audit = new ContentValues();
+            audit.put("status", "reconciled");
+            audit.put("reconciled_at", now);
+            db.update("hub_forced_takeovers", audit, "takeover_id=?",
+                new String[]{control.optString("takeoverId", "")});
+            putMeta(db, "recovery_ack_json", canonical(signedAck));
+            putMeta(db, "recovery_id", "");
+            putMeta(db, "recovery_authority_node_id", "");
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return signedAck;
+    }
+
+    public synchronized JSONObject divergenceRecoveryAcknowledgement(String recoveryId)
+        throws JSONException {
+        String value = meta(getReadableDatabase(), "recovery_ack_json");
+        if (value.isEmpty()) return null;
+        JSONObject signedAck = new JSONObject(value);
+        JSONObject ack = signedAck.optJSONObject("ack");
+        return ack != null && recoveryId.equals(ack.optString("recoveryId"))
+            ? signedAck
+            : null;
+    }
+
+    public synchronized void clearDivergenceRecoveryAcknowledgement() {
+        putMeta("recovery_ack_json", "");
+    }
+
+    public synchronized void rememberRecoverySnapshot(String recoveryId, String snapshotHash) {
+        putMeta("recovery_id", recoveryId);
+        putMeta("recovery_snapshot_hash", snapshotHash);
+    }
+
+    public synchronized void markRecoverySnapshotCompleted() {
+        SQLiteDatabase db = getWritableDatabase();
+        if (scalarLong(db, "SELECT COUNT(*) FROM hub_media_blobs WHERE status<>'verified'") != 0) {
+            throw new IllegalStateException("DIVERGENCE_RECOVERY_MEDIA_INCOMPLETE");
+        }
+        ContentValues values = new ContentValues();
+        values.put("status", "completed");
+        values.put("updated_at", System.currentTimeMillis());
+        db.update("hub_snapshots", values, "snapshot_id=?",
+            new String[]{meta(db, "last_snapshot_id")});
+    }
+
     public synchronized JSONObject mutateDocument(JSONObject input, byte[] syncKey) throws JSONException {
         SQLiteDatabase db = getWritableDatabase();
         JSONObject cluster = clusterState(db);
-        if (!"active".equals(cluster.optString("role")) || !"stable".equals(cluster.optString("state"))) {
+        if (!"active".equals(cluster.optString("role")) || !isServingState(cluster.optString("state"))) {
             throw new IllegalStateException("HUB_NOT_ACTIVE");
         }
         String requestId = required(input, "requestId");
@@ -539,7 +818,7 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
     public synchronized JSONObject mutateDocuments(JSONObject input, byte[] syncKey) throws JSONException {
         SQLiteDatabase db = getWritableDatabase();
         JSONObject cluster = clusterState(db);
-        if (!"active".equals(cluster.optString("role")) || !"stable".equals(cluster.optString("state"))) {
+        if (!"active".equals(cluster.optString("role")) || !isServingState(cluster.optString("state"))) {
             throw new IllegalStateException("HUB_NOT_ACTIVE");
         }
         String requestId = required(input, "requestId");
@@ -635,7 +914,14 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
                 String spaceId = required(operation, "spaceId");
                 String originNodeId = required(operation, "originNodeId");
                 long sequence = positive(operation.optLong("originSequence", 0), "originSequence");
-                validateOperation(db, operation, syncKey, spaceId, clusterState(db).getLong("epoch"));
+                validateOperation(
+                    db,
+                    operation,
+                    syncKey,
+                    spaceId,
+                    clusterState(db).getLong("epoch"),
+                    false
+                );
                 JSONObject payload = operation.optJSONObject("payload");
                 if (payload == null) payload = new JSONObject();
                 String entityType = required(operation, "entityType");
@@ -732,6 +1018,138 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
 
     public synchronized void requireBootstrapCompleted() {
         requireBootstrapCompleted(getReadableDatabase());
+    }
+
+    public synchronized JSONObject forceTakeover(byte[] syncKey) throws JSONException {
+        JSONObject verified = verifyIntegrity();
+        SQLiteDatabase db = getWritableDatabase();
+        JSONObject cluster = clusterState(db);
+        if (!"standby".equals(cluster.optString("role")) ||
+            !"stable".equals(cluster.optString("state")) ||
+            cluster.optString("localNodeId").equals(cluster.optString("activeNodeId"))) {
+            throw new IllegalStateException("FORCED_TAKEOVER_NOT_ALLOWED");
+        }
+        if (pendingSwitchExchange() != null) {
+            throw new IllegalStateException("SWITCH_STATE_CONFLICT");
+        }
+        String snapshotId = "";
+        try (Cursor cursor = db.rawQuery(
+            "SELECT snapshot_id FROM hub_integrity WHERE id=1", null)) {
+            if (cursor.moveToFirst()) snapshotId = cursor.getString(0);
+        }
+        if (snapshotId.isEmpty()) throw new IllegalStateException("LOCAL_HUB_BOOTSTRAP_INCOMPLETE");
+        long now = System.currentTimeMillis();
+        long previousEpoch = cluster.getLong("epoch");
+        long epoch = previousEpoch + 1;
+        String takeoverId = UUID.randomUUID().toString();
+        JSONObject integrity = new JSONObject()
+            .put("snapshotId", snapshotId)
+            .put("recordsRoot", verified.getString("recordsRoot"))
+            .put("recordCount", verified.getLong("recordCount"))
+            .put("verifiedAt", verified.getLong("verifiedAt"));
+        JSONObject proof = new JSONObject()
+            .put("version", 1)
+            .put("action", "forced_takeover")
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("previousEpoch", previousEpoch)
+            .put("epoch", epoch)
+            .put("previousActiveNodeId", cluster.getString("activeNodeId"))
+            .put("activeNodeId", cluster.getString("localNodeId"))
+            .put("takeoverId", takeoverId)
+            .put("integrity", integrity)
+            .put("operationHeads", operationHeads(db, cluster.getString("spaceId")))
+            .put("issuedAt", now);
+        String authenticationTag = hmacCanonical(syncKey, proof);
+        JSONObject signed = new JSONObject()
+            .put("proof", proof)
+            .put("authenticationTag", authenticationTag);
+        JSONObject persisted = new JSONObject()
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("epoch", epoch)
+            .put("activeNodeId", cluster.getString("localNodeId"))
+            .put("transitionId", takeoverId)
+            .put("transitionTargetNodeId", "")
+            .put("transitionStartedAt", now)
+            .put("state", "forced_active");
+
+        db.beginTransaction();
+        try {
+            ContentValues audit = new ContentValues();
+            audit.put("takeover_id", takeoverId);
+            audit.put("space_id", cluster.getString("spaceId"));
+            audit.put("previous_active_node_id", cluster.getString("activeNodeId"));
+            audit.put("active_node_id", cluster.getString("localNodeId"));
+            audit.put("previous_epoch", previousEpoch);
+            audit.put("epoch", epoch);
+            audit.put("proof_json", canonical(proof));
+            audit.put("authentication_tag", authenticationTag);
+            audit.put("integrity_json", canonical(integrity));
+            audit.put("status", "pending_reconciliation");
+            audit.put("created_at", now);
+            audit.putNull("reconciled_at");
+            db.insertOrThrow("hub_forced_takeovers", null, audit);
+
+            ContentValues values = new ContentValues();
+            values.put("active_node_id", cluster.getString("localNodeId"));
+            values.put("epoch", epoch);
+            values.put("state", "forced_active");
+            values.put("role", "active");
+            values.put("transition_id", takeoverId);
+            values.put("transition_target_node_id", "");
+            values.put("transition_started_at", now);
+            values.put("state_hash", sha256(canonical(persisted)));
+            values.put("control_signature", authenticationTag);
+            values.put("updated_at", now);
+            db.update("hub_cluster_state", values, "space_id=?",
+                new String[]{cluster.getString("spaceId")});
+            reconcileNodeRoles(db, cluster.getString("localNodeId"), now);
+            db.delete("hub_meta", "key=?", new String[]{"pending_switch_exchange"});
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return new JSONObject()
+            .put("completed", true)
+            .put("activeNodeId", cluster.getString("localNodeId"))
+            .put("epoch", epoch)
+            .put("state", "forced_active")
+            .put("takeoverId", takeoverId)
+            .put("forcedTakeover", signed);
+    }
+
+    public synchronized void settleForcedTakeover() throws JSONException {
+        SQLiteDatabase db = getWritableDatabase();
+        JSONObject cluster = clusterState(db);
+        if (!"forced_active".equals(cluster.optString("state"))) return;
+        long now = System.currentTimeMillis();
+        JSONObject persisted = new JSONObject()
+            .put("spaceId", cluster.getString("spaceId"))
+            .put("epoch", cluster.getLong("epoch"))
+            .put("activeNodeId", cluster.getString("activeNodeId"))
+            .put("transitionId", "")
+            .put("transitionTargetNodeId", "")
+            .put("transitionStartedAt", JSONObject.NULL)
+            .put("state", "stable");
+        db.beginTransaction();
+        try {
+            ContentValues values = new ContentValues();
+            values.put("state", "stable");
+            values.put("transition_id", "");
+            values.put("transition_target_node_id", "");
+            values.putNull("transition_started_at");
+            values.put("state_hash", sha256(canonical(persisted)));
+            values.put("updated_at", now);
+            db.update("hub_cluster_state", values, "space_id=?",
+                new String[]{cluster.getString("spaceId")});
+            ContentValues audit = new ContentValues();
+            audit.put("status", "reconciled");
+            audit.put("reconciled_at", now);
+            db.update("hub_forced_takeovers", audit, "takeover_id=?",
+                new String[]{cluster.optString("transitionId", "")});
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
     }
 
     public synchronized JSONObject createSwitchPreflightProof(boolean providerCredentialsReadable)
@@ -908,11 +1326,24 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
                 operationHash = cursor.getString(1);
             }
         }
-        return cluster
+        JSONObject result = cluster
             .put("peerNodeId", peerNodeId)
             .put("endpoints", endpoints)
             .put("after", after)
             .put("operationHash", operationHash);
+        if ("forced_active".equals(cluster.optString("state"))) {
+            try (Cursor cursor = db.rawQuery(
+                "SELECT proof_json,authentication_tag FROM hub_forced_takeovers " +
+                    "WHERE takeover_id=? LIMIT 1",
+                new String[]{cluster.optString("transitionId", "")})) {
+                if (cursor.moveToFirst()) {
+                    result.put("forcedTakeover", new JSONObject()
+                        .put("proof", new JSONObject(cursor.getString(0)))
+                        .put("authenticationTag", cursor.getString(1)));
+                }
+            }
+        }
+        return result;
     }
 
     public synchronized JSONArray listOperationsAfter(String originNodeId, long after, int limit)
@@ -948,6 +1379,99 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             }
         }
         return result;
+    }
+
+    private JSONArray recoveryRows(SQLiteDatabase db, String table) throws JSONException {
+        JSONArray rows = new JSONArray();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT payload_json FROM hub_documents " +
+                "WHERE entity_type=? AND deleted=0 ORDER BY entity_id",
+            new String[]{table})) {
+            while (cursor.moveToNext()) rows.put(new JSONObject(cursor.getString(0)));
+        }
+        return rows;
+    }
+
+    private static JSONObject tableManifest(String name, JSONArray rows) throws JSONException {
+        List<String> leaves = new ArrayList<>();
+        for (int index = 0; index < rows.length(); index += 1) {
+            leaves.add(sha256(canonical(rows.get(index))));
+        }
+        Collections.sort(leaves);
+        return new JSONObject()
+            .put("name", name)
+            .put("rowCount", rows.length())
+            .put("root", merkleRoot(leaves));
+    }
+
+    private JSONArray recoveryMedia(SQLiteDatabase db) throws JSONException {
+        JSONArray media = new JSONArray();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT media_id,mime_type,file_name,byte_size,content_hash " +
+                "FROM hub_media_blobs WHERE status='verified' ORDER BY media_id",
+            null)) {
+            while (cursor.moveToNext()) {
+                JSONObject payload = currentDocumentPayload(db, "media_assets", cursor.getString(0));
+                media.put(new JSONObject()
+                    .put("id", cursor.getString(0))
+                    .put("mimeType", cursor.getString(1))
+                    .put("fileName", cursor.getString(2))
+                    .put("byteSize", cursor.getLong(3))
+                    .put("contentHash", cursor.getString(4))
+                    .put("createdAt", payload.optLong("created_at", 0)));
+            }
+        }
+        return media;
+    }
+
+    private JSONArray allOperations(SQLiteDatabase db) throws JSONException {
+        JSONArray result = new JSONArray();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT operation_id,space_id,origin_node_id,origin_sequence,epoch,entity_type," +
+                "entity_id,operation,entity_version,payload_json,payload_hash," +
+                "previous_operation_hash,operation_hash,authentication_tag,created_at " +
+                "FROM hub_operations ORDER BY origin_node_id,origin_sequence",
+            null)) {
+            while (cursor.moveToNext()) result.put(operationFromCursor(cursor));
+        }
+        return result;
+    }
+
+    private JSONArray allEntityVersions(SQLiteDatabase db) throws JSONException {
+        JSONArray result = new JSONArray();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT entity_type,entity_id,version,updated_at " +
+                "FROM hub_entity_versions ORDER BY entity_type,entity_id",
+            null)) {
+            while (cursor.moveToNext()) result.put(new JSONObject()
+                .put("entityType", cursor.getString(0))
+                .put("entityId", cursor.getString(1))
+                .put("version", cursor.getLong(2))
+                .put("updatedAt", cursor.getLong(3)));
+        }
+        return result;
+    }
+
+    private static JSONObject operationFromCursor(Cursor cursor) throws JSONException {
+        long entityVersion = cursor.getLong(8);
+        return new JSONObject()
+            .put("protocolVersion", PROTOCOL_VERSION)
+            .put("operationId", cursor.getString(0))
+            .put("spaceId", cursor.getString(1))
+            .put("originNodeId", cursor.getString(2))
+            .put("originSequence", cursor.getLong(3))
+            .put("epoch", cursor.getLong(4))
+            .put("entityType", cursor.getString(5))
+            .put("entityId", cursor.getString(6))
+            .put("operation", cursor.getString(7))
+            .put("entityVersion", entityVersion)
+            .put("previousEntityVersion", entityVersion <= 1 ? JSONObject.NULL : entityVersion - 1)
+            .put("payload", new JSONObject(cursor.getString(9)))
+            .put("payloadHash", cursor.getString(10))
+            .put("previousOperationHash", cursor.getString(11))
+            .put("operationHash", cursor.getString(12))
+            .put("authenticationTag", cursor.getString(13))
+            .put("createdAt", cursor.getLong(14));
     }
 
     public synchronized JSONObject operationHead(String originNodeId) throws JSONException {
@@ -1473,11 +1997,17 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         JSONObject operation,
         byte[] syncKey,
         String expectedSpaceId,
-        long expectedEpoch
+        long expectedEpoch,
+        boolean allowOlderEpoch
     ) throws JSONException {
         String spaceId = required(operation, "spaceId");
         String originNodeId = required(operation, "originNodeId");
-        if (!expectedSpaceId.equals(spaceId) || operation.optLong("epoch", -1) != expectedEpoch) {
+        long operationEpoch = operation.optLong("epoch", -1);
+        if (
+            !expectedSpaceId.equals(spaceId) ||
+            operationEpoch < 1 ||
+            (allowOlderEpoch ? operationEpoch > expectedEpoch : operationEpoch != expectedEpoch)
+        ) {
             throw new IllegalStateException("HUB_OPERATION_SCOPE_INVALID");
         }
         long sequence = positive(operation.optLong("originSequence", 0), "originSequence");
@@ -1673,6 +2203,12 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
 
     private String meta(String key) {
         try (Cursor cursor = getReadableDatabase().rawQuery("SELECT value FROM hub_meta WHERE key=?", new String[]{key})) {
+            return cursor.moveToFirst() ? cursor.getString(0) : null;
+        }
+    }
+
+    private String meta(SQLiteDatabase db, String key) {
+        try (Cursor cursor = db.rawQuery("SELECT value FROM hub_meta WHERE key=?", new String[]{key})) {
             return cursor.moveToFirst() ? cursor.getString(0) : null;
         }
     }

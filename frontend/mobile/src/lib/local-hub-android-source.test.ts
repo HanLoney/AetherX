@@ -50,6 +50,37 @@ const androidManifestSource = readFileSync(
 );
 
 describe("Android Local Hub replication envelope", () => {
+  it("keeps Android on schema 42 and exposes the complete divergence recovery bridge", () => {
+    const pluginSource = readFileSync(
+      new URL(
+        "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/LocalHubPlugin.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    const serviceSource = readFileSync(
+      new URL(
+        "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubService.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+
+    expect(databaseSource).toContain("public static final int NODE_SCHEMA_VERSION = 42");
+    expect(databaseSource).toContain("public synchronized JSONObject exportRecoverySnapshot");
+    expect(databaseSource).toContain("public synchronized JSONObject applyDivergenceRecovery");
+    expect(databaseSource).toContain("public synchronized JSONObject divergenceRecoveryAcknowledgement");
+    expect(databaseSource).toContain('putMeta(db, "recovery_ack_json", canonical(signedAck))');
+    expect(peerSyncSource).toContain("public JSONObject recoverDivergence");
+    expect(peerSyncSource).toContain("database.divergenceRecoveryAcknowledgement(recoveryId)");
+    expect(peerSyncSource).toContain("private JSONObject acknowledgeRecovery");
+    expect(peerSyncSource).toContain('Cipher.getInstance("AES/GCM/NoPadding")');
+    expect(peerSyncSource).toContain('"/snapshot/complete"');
+    expect(peerSyncSource).toContain('"/ack"');
+    expect(serviceSource).toContain("public synchronized JSONObject recoverDivergence");
+    expect(pluginSource).toContain("public void recoverDivergence(PluginCall call)");
+  });
+
   it("includes the protocol version when sending locally created operations to the peer Hub", () => {
     const serializer = databaseSource.match(
       /public synchronized JSONArray listOperationsAfter[\s\S]*?return result;/

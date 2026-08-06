@@ -166,6 +166,22 @@ class XuanApiClient {
     return this.request("GET", "/api/v1/cluster/status", undefined, signal);
   }
 
+  getHubDivergence(limit = 200, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset)
+    });
+    return this.request("GET", `/api/v1/cluster/divergence?${query}`);
+  }
+
+  exportHubDivergenceEvidence() {
+    return this.request("GET", "/api/v1/cluster/divergence/evidence");
+  }
+
+  recoverHubDivergence(authority) {
+    return this.request("POST", "/api/v1/cluster/divergence/recover", { authority });
+  }
+
   listMobileHubs() {
     return this.request("GET", "/api/v1/cluster/mobile-hubs");
   }

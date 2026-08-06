@@ -843,6 +843,8 @@ Android Local Hub 与 Windows 启动器已经接入同一状态机：
 
 ## 16. 强制接管与分叉恢复
 
+> 实现状态：Android 手机 Hub 已支持显式风险确认后的强制接管。接管证明由 Space Key HMAC 签名，包含完整性快照与 Operation 链头；旧电脑 Hub 收到更高 `epoch` 后会立即自我隔离。若检测到旧代未确认 Operation，集群进入 `divergent` 且停止自动覆盖。桌面恢复中心已支持选择手机或电脑作为完整权威分支，并通过加密快照、媒体校验、Operation 链复验、签名恢复控制和双端确认闭环到新的统一 `epoch`。隔离分支会归档到签名证据，逐实体比较、复制为新实体和逐项合并尚未开放。
+
 ### 16.1 允许强制接管的场景
 
 - 当前 Hub 关机或损坏；
@@ -889,7 +891,32 @@ Android Local Hub 与 Windows 启动器已经接入同一状态机：
 - 同一配置被两侧赋不同值；
 - 两边都运行了会产生内容的后台任务。
 
-禁止通用 Last-Write-Wins。恢复中心至少提供：保留当前、采用旧分支、复制为新实体、导出证据、逐项比较。
+禁止通用 Last-Write-Wins。当前已经提供完整分支级的“保留手机 Hub”与“保留电脑 Hub”、证据导出和恢复进度；逐实体复制、比较和合并属于后续能力，不能伪装成已经安全解决。
+
+### 16.4 两阶段恢复闭环
+
+恢复开始前，桌面端要求用户明确选择唯一权威 Hub，并说明另一分支的隔离 Operation 会保留在签名证据中。恢复会话持久化到 `hub_divergence_recoveries`，失败后不会把集群标记为已解决，可以重新发起。
+
+第一阶段传输并验证权威快照：
+
+- 集群保持 `divergent` 或 `recovering_divergence`，普通业务写入继续冻结；
+- 电脑权威时，由 Node Archive Service 收集结构化记录、Provider 凭据、媒体清单、全部 Operation 和 Entity Version；
+- 手机权威时，由 Android Local Hub 导出同等恢复包并通过 Peer HMAC 路由连续分块上传；
+- 整个恢复包使用 Space Key AES-256-GCM 加密，分块校验 SHA-256，总包校验规范化摘要；
+- 接收端复验 Space、接管 ID、来源节点、源/目标 `epoch`、Manifest、逐表根、媒体根、Operation HMAC、连续序列、链头和实体版本；
+- 原始媒体通过 Peer 分块传输，逐块和整文件摘要都通过后才允许进入正式媒体目录。
+
+第二阶段应用并统一集群：
+
+- 目标 Hub 原子替换业务记录、Provider 凭据、Operation 和 Entity Version；
+- 应用由 Space Key HMAC 签名的 `apply_divergence_recovery` 控制，把双方切到目标 `epoch`；
+- 手机 Hub 返回包含恢复 ID、节点、权威节点、`epoch` 和快照摘要的 HMAC 确认；
+- 电脑 Hub 验证确认后，归档被舍弃分支 Operation，标记强制接管记录已协调，并将集群恢复为 `stable`；
+- 恢复证据继续可导出，证据包包含接管证明、完整性摘要、恢复状态和归档 Operation。
+
+### 16.5 当前产品边界
+
+当前恢复是完整分支级选择，不提供通用字段级 Last-Write-Wins。若用户需要同时保留两边部分内容，应先导出签名证据，再选择一个完整权威分支；逐实体比较、复制为新实体和领域化合并需要单独实现钱包链、消息顺序、记忆删除/修改等规则。
 
 ## 17. Agent 与后台任务
 
@@ -1564,6 +1591,8 @@ frontend/mobile/src/lib/hub-client/
 - 第 37 版数据库迁移已加入逐 Peer 的常驻复制健康、连续失败、下次尝试时间和 Operation 延迟记录；
 - 第 38 版数据库迁移已加入 Bootstrap 后原图增量复制的持久化暂存、已接收偏移和校验状态；
 - 第 39 版数据库迁移已为 Cluster State 加入切换目标节点和切换开始时间，用于持久化恢复计划切换阶段；
+- 第 41 版数据库迁移已加入强制接管记录与分歧 Operation 隔离表；
+- 第 42 版数据库迁移已加入分歧恢复会话、加密快照分块和被舍弃 Operation 归档表；
 - `ClusterService` 可以为现有账号惰性建立单节点 epoch 1 状态；
 - `GET /api/v1/cluster/status` 已提供当前 Space、节点、角色和协议状态；
 - Operation Codec 已实现确定性规范化、SHA-256、连续哈希和 HMAC 认证标签；
@@ -1644,7 +1673,7 @@ frontend/mobile/src/lib/hub-client/
 尚未启用：
 
 - 媒体前台优先级调度、删除墓碑和孤立文件清理；
-- 节点身份私钥签名控制日志，以及强制接管与分叉恢复；
+- 节点身份私钥签名控制日志，以及分歧内容的逐实体比较、复制和领域化合并；
 - Android Local Hub 活动且电脑完全离线时的原生完整存档导出与恢复。
 
 当前关键业务写入已经覆盖提示词设置、模块开关、全局工具授权和 Provider 配置；只读预检与可中止的计划切换已经能够真正修改 epoch 和活动节点。未完成切换已能在启动后继续 Commit 或安全 Abort，目标不可达时保持只读并退避重试；桌面端与移动端 Hub Router 已能通过会话交接切到活动节点并用相同 request_id 重试写入。
@@ -1655,4 +1684,4 @@ Bootstrap 已在 Android 侧计算与 Node 一致的 records root、blobs root �
 
 Android 已能作为切换发起方，通过签名的 `mobile-switch/start` 与 `mobile-switch/advance` 控制消息参与 `preparing_switch → draining → final_sync → integrity_check → committing_switch → stable`，并在完整性证明通过后成为活动 Hub。手机生成的原图支持向备用电脑 Hub 调用 `/api/v1/peer/media/status` 和 `/api/v1/peer/media/chunks` 反向上传，覆盖断点查询、续传、偏移校验、分块篡改、整文件摘要和元数据冲突保护。
 
-仍需明确的产品边界：强制接管和分叉恢复尚未开放；媒体删除墓碑与孤立文件清理尚未实现；完整存档仍由 Node Archive Service 提供，Android Local Hub 活动且电脑完全离线时暂时不能直接生成或恢复兼容 `.aetherx` 存档。除这些管理与灾难恢复边界外，已迁移模块可在电脑关闭后由手机 Hub 独立运行，并在重新连通后通过 Operation 与校验媒体回同步。
+仍需明确的产品边界：强制接管和完整分支级分叉恢复已经开放，逐实体比较、复制与领域化合并尚未实现；媒体删除墓碑与孤立文件清理尚未实现；完整存档仍由 Node Archive Service 提供，Android Local Hub 活动且电脑完全离线时暂时不能直接生成或恢复兼容 `.aetherx` 存档。除这些管理与灾难恢复边界外，已迁移模块可在电脑关闭后由手机 Hub 独立运行，并在重新连通后通过 Operation 与校验媒体回同步。

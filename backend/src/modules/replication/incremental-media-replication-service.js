@@ -450,7 +450,13 @@ class IncrementalMediaReplicationService {
 }
 
 function allowsMediaReplication(state) {
-  return ["stable", "draining", "final_sync"].includes(state);
+  return [
+    "stable",
+    "draining",
+    "final_sync",
+    "divergent",
+    "recovering_divergence"
+  ].includes(state);
 }
 
 function validateManifestResponse(value, context, sourceNodeId) {

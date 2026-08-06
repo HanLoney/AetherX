@@ -156,6 +156,12 @@ const { registerSyncRoutes } = require("./modules/sync/sync-routes");
 const {
   ClusterRepository
 } = require("./modules/hub-cluster/cluster-repository");
+const {
+  ForcedTakeoverRepository
+} = require("./modules/hub-cluster/forced-takeover-repository");
+const {
+  DivergenceRecoveryService
+} = require("./modules/hub-cluster/divergence-recovery-service");
 const { ClusterService } = require("./modules/hub-cluster/cluster-service");
 const {
   HubEndpointRepository
@@ -301,10 +307,12 @@ function createApp(config) {
     }
   });
   const replicationHealthRepository = new ReplicationHealthRepository(database);
+  const forcedTakeoverRepository = new ForcedTakeoverRepository(database);
   const clusterService = new ClusterService(clusterRepository, {
     mobileHealthProvider: (userId) => deviceService.listMobileHealth(userId),
     replicationHealthProvider: (spaceId, nodeId) =>
-      replicationHealthRepository.find(spaceId, nodeId)
+      replicationHealthRepository.find(spaceId, nodeId),
+    forcedTakeoverProvider: (spaceId) => forcedTakeoverRepository.status(spaceId)
   });
   const mobileHubSyncNotifier = new MobileHubSyncNotifier({
     clusterService,
@@ -326,7 +334,11 @@ function createApp(config) {
     repository: replicationRepository,
     clusterService,
     clusterRepository,
-    healthRepository: replicationHealthRepository
+    spaceKeyService,
+    takeoverRepository: forcedTakeoverRepository,
+    healthRepository: replicationHealthRepository,
+    onClusterChanged: (userId, change) =>
+      syncEventBroker.publish(userId, "cluster-change", change)
   });
   const peerAuthenticationService = new PeerAuthenticationService({
     repository: new PeerCredentialRepository(database),
@@ -560,6 +572,16 @@ function createApp(config) {
     clusterRepository,
     dataDir: config.dataDir
   });
+  const divergenceRecoveryService = new DivergenceRecoveryService({
+    database,
+    clusterService,
+    clusterRepository,
+    repository: forcedTakeoverRepository,
+    replicationRepository,
+    archiveService,
+    spaceKeyService,
+    syncEventBroker
+  });
   const replicationScheduler = new ReplicationScheduler({
     repository: replicationHealthRepository,
     clusterService,
@@ -616,7 +638,8 @@ function createApp(config) {
     switchStateMachineService,
     switchRecoveryService,
     clientSessionHandoffService,
-    syncEventBroker
+    syncEventBroker,
+    divergenceRecoveryService
   );
   registerHubPairingRoutes(
     router,
@@ -632,7 +655,8 @@ function createApp(config) {
     mediaReplicationService,
     clusterService,
     switchStateMachineService,
-    clientSessionHandoffService
+    clientSessionHandoffService,
+    divergenceRecoveryService
   });
   registerReplicationSchedulerRoutes(router, replicationScheduler);
   registerModuleSettingsRoutes(router, moduleManager);
@@ -689,6 +713,7 @@ function createApp(config) {
     switchPreflightService,
     switchStateMachineService,
     switchRecoveryService,
+    divergenceRecoveryService,
     clientSessionHandoffService,
     replicationUnitOfWork,
     spaceKeyService,

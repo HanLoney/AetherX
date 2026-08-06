@@ -9,9 +9,99 @@ function registerPeerRoutes(
     mediaReplicationService,
     clusterService,
     switchStateMachineService,
-    clientSessionHandoffService
+    clientSessionHandoffService,
+    divergenceRecoveryService
   }
 ) {
+  if (divergenceRecoveryService) {
+    router.add(
+      "GET",
+      "/api/v1/peer/divergence-recoveries/:id",
+      ({ userId, auth, params }) => ({
+        data: divergenceRecoveryService.peerStatus(userId, auth.peerNodeId, params.id)
+      }),
+      { peer: true, parseBody: false, allowDuringClusterTransition: true }
+    );
+    router.add(
+      "POST",
+      "/api/v1/peer/divergence-recoveries/:id/snapshot/chunks",
+      ({ userId, auth, params, body }) => ({
+        data: divergenceRecoveryService.receiveSnapshotChunk(
+          userId,
+          auth.peerNodeId,
+          params.id,
+          body
+        )
+      }),
+      { peer: true, allowDuringClusterTransition: true }
+    );
+    router.add(
+      "POST",
+      "/api/v1/peer/divergence-recoveries/:id/snapshot/complete",
+      async ({ userId, auth, params, body }) => ({
+        data: await divergenceRecoveryService.completeSnapshotUpload(
+          userId,
+          auth.peerNodeId,
+          params.id,
+          body
+        )
+      }),
+      { peer: true, allowDuringClusterTransition: true }
+    );
+    router.add(
+      "GET",
+      "/api/v1/peer/divergence-recoveries/:id/snapshot/chunks",
+      ({ userId, auth, params, query }) => ({
+        data: divergenceRecoveryService.getSnapshotChunk(
+          userId,
+          auth.peerNodeId,
+          params.id,
+          query
+        )
+      }),
+      { peer: true, parseBody: false, allowDuringClusterTransition: true }
+    );
+    router.add(
+      "GET",
+      "/api/v1/peer/divergence-recoveries/:id/media/:mediaId",
+      ({ userId, auth, params, query, response }) => {
+        const chunk = divergenceRecoveryService.getMediaChunk(
+          userId,
+          auth.peerNodeId,
+          params.id,
+          params.mediaId,
+          query
+        );
+        response.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": chunk.bytes.length,
+          "Cache-Control": "no-store",
+          "Accept-Ranges": "bytes",
+          "X-AetherX-Blob-Hash": chunk.contentHash,
+          "X-AetherX-Chunk-Hash": chunk.chunkHash,
+          "X-AetherX-Blob-Offset": String(chunk.offset),
+          "X-AetherX-Blob-Size": String(chunk.byteSize)
+        });
+        response.end(chunk.bytes);
+        return { handled: true };
+      },
+      { peer: true, parseBody: false, allowDuringClusterTransition: true }
+    );
+    router.add(
+      "POST",
+      "/api/v1/peer/divergence-recoveries/:id/ack",
+      ({ userId, auth, params, body }) => ({
+        data: divergenceRecoveryService.acknowledge(
+          userId,
+          auth.peerNodeId,
+          params.id,
+          body
+        )
+      }),
+      { peer: true, allowDuringClusterTransition: true }
+    );
+  }
+
   router.add(
     "GET",
     "/api/v1/peer/media/manifest",

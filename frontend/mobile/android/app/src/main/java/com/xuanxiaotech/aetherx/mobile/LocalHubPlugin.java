@@ -172,6 +172,19 @@ public class LocalHubPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void forceTakeover(PluginCall call) {
+        replicationExecutor.execute(() -> runAction(call, () -> service().forceTakeover()));
+    }
+
+    @PluginMethod
+    public void recoverDivergence(PluginCall call) {
+        replicationExecutor.execute(() -> runAction(
+            call,
+            () -> service().recoverDivergence(call.getData())
+        ));
+    }
+
+    @PluginMethod
     public void media(PluginCall call) {
         String mediaId = call.getString("mediaId", "").trim();
         if (mediaId.isEmpty()) {
@@ -291,6 +304,11 @@ public class LocalHubPlugin extends Plugin {
         if ("LOCAL_HUB_IMAGE_KEY_UNAVAILABLE".equals(code)) return "手机 Hub 没有可用的图像 Provider 凭证。";
         if ("LOCAL_HUB_MEDIA_INVALID".equals(code)) return "手机 Hub 无法保存这张图片。";
         if ("LOCAL_HUB_PROVIDER_CREDENTIAL_INVALID".equals(code)) return "手机 Hub 无法解开同步来的 Provider 凭证。";
+        if ("FORCED_TAKEOVER_NOT_ALLOWED".equals(code)) return "只有已完成同步的备用手机 Hub 才能强制接管。";
+        if ("LOCAL_HUB_DIVERGENCE_DETECTED".equals(code)) return "电脑 Hub 存在旧代未确认写入，已停止自动覆盖并等待恢复处理。";
+        if ("LOCAL_HUB_DIVERGENCE_RECOVERY_FAILED".equals(code)) return "手机 Hub 分歧恢复未能完成，双端仍保持冻结。";
+        if (code != null && code.startsWith("DIVERGENCE_RECOVERY_")) return "手机 Hub 拒绝了无效的分歧恢复控制。";
+        if ("LOCAL_HUB_FORCE_TAKEOVER_FAILED".equals(code)) return "手机 Hub 强制接管失败，原有 Hub 状态未被修改。";
         return "Android Local Hub 状态异常：" + String.valueOf(code);
     }
 

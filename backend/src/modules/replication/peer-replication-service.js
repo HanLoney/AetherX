@@ -1,5 +1,7 @@
 const { HttpError } = require("../../lib/http-error");
 const { CLUSTER_PROTOCOL_VERSION } = require("../hub-cluster/cluster-service");
+const { verifyForcedTakeover, proofHash } = require("../hub-cluster/forced-takeover-codec");
+const { canonicalStringify, sha256Canonical } = require("./operation-codec");
 
 const MAX_OPERATION_BATCH = 200;
 const CAPABILITIES = [
@@ -14,18 +16,24 @@ class PeerReplicationService {
     repository,
     clusterService,
     clusterRepository,
+    spaceKeyService = null,
+    takeoverRepository = null,
     healthRepository = null,
+    onClusterChanged = () => {},
     now = () => Date.now()
   }) {
     this.repository = repository;
     this.clusterService = clusterService;
     this.clusterRepository = clusterRepository;
+    this.spaceKeyService = spaceKeyService;
+    this.takeoverRepository = takeoverRepository;
     this.healthRepository = healthRepository;
+    this.onClusterChanged = onClusterChanged;
     this.now = now;
   }
 
   hello(userId, peerHello) {
-    const context = this.clusterService.ensureSpace(userId);
+    let context = this.clusterService.ensureSpace(userId);
     const peer = requirePeer(this.clusterRepository, context, peerHello?.nodeId);
     if (peerHello?.spaceId !== context.space_id) {
       throw conflict("PEER_SPACE_MISMATCH", "对端不属于同一个数据空间。");
@@ -36,7 +44,10 @@ class PeerReplicationService {
     if (Number(peerHello?.schemaVersion) !== Number(context.schema_version)) {
       throw conflict("PEER_SCHEMA_INCOMPATIBLE", "对端数据库版本暂不兼容。");
     }
-    if (Number(peerHello?.epoch) !== Number(context.epoch)) {
+    if (Number(peerHello?.epoch) > Number(context.epoch)) {
+      context = this.acceptForcedTakeover(context, peer, peerHello);
+      this.publishClusterChanged(userId, "forced_takeover");
+    } else if (Number(peerHello?.epoch) !== Number(context.epoch)) {
       throw conflict("PEER_EPOCH_MISMATCH", "对端 Hub 代次与本地不一致。");
     }
     if (peerHello?.activeNodeId !== context.active_node_id) {
@@ -62,7 +73,7 @@ class PeerReplicationService {
         .listOperationHeads(context.space_id)
         .map((head) => [head.originNodeId, head.contiguousSequence])
     );
-    return {
+    const result = {
       protocolVersion: CLUSTER_PROTOCOL_VERSION,
       schemaVersion: Number(context.schema_version),
       spaceId: context.space_id,
@@ -76,6 +87,9 @@ class PeerReplicationService {
       pendingBlobCount: 0,
       capabilities: [...CAPABILITIES]
     };
+    const takeover = this.takeoverRepository?.status(context.space_id) || null;
+    if (takeover) result.forcedTakeover = takeover;
+    return result;
   }
 
   pull(userId, input) {
@@ -118,7 +132,7 @@ class PeerReplicationService {
   }
 
   confirmSync(userId, peerNodeId, input) {
-    const context = this.clusterService.ensureSpace(userId);
+    let context = this.clusterService.ensureSpace(userId);
     const peer = requirePeer(this.clusterRepository, context, peerNodeId);
     const originNodeId = String(input?.originNodeId || "").trim();
     if (![context.local_node_id, peer.id].includes(originNodeId)) {
@@ -158,12 +172,148 @@ class PeerReplicationService {
       remoteSequence: originSequence,
       updatedAt: confirmedAt
     });
+    if (context.state === "forced_active" && context.active_node_id === peer.id) {
+      context = this.settleForcedTakeover(context);
+      this.publishClusterChanged(userId, "forced_takeover_reconciled");
+    }
     return {
       ...health,
       originNodeId,
       operationHash: expectedHash,
-      caughtUp: true
+      caughtUp: true,
+      clusterState: context.state
     };
+  }
+
+  acceptForcedTakeover(context, peer, peerHello) {
+    if (!this.spaceKeyService || !this.takeoverRepository) {
+      throw conflict("PEER_EPOCH_MISMATCH", "本机尚未启用强制接管协议。");
+    }
+    const syncKey = this.spaceKeyService.ensure(context.space_id).key;
+    const proof = verifyForcedTakeover(peerHello?.forcedTakeover, syncKey, this.now());
+    if (
+      proof.spaceId !== context.space_id ||
+      proof.previousEpoch !== Number(context.epoch) ||
+      proof.epoch !== Number(peerHello.epoch) ||
+      proof.previousActiveNodeId !== context.active_node_id ||
+      proof.activeNodeId !== peer.id ||
+      peerHello.activeNodeId !== peer.id ||
+      context.active_node_id !== context.local_node_id
+    ) {
+      throw conflict("FORCED_TAKEOVER_CONTEXT_MISMATCH", "强制接管证明与本机集群状态不匹配。");
+    }
+    const knownLocalHead = proof.operationHeads[context.local_node_id] || {
+      sequence: 0,
+      operationHash: ""
+    };
+    const localHead = this.repository.latestOperation(
+      context.space_id,
+      context.local_node_id
+    );
+    if (knownLocalHead.sequence > Number(localHead?.originSequence || 0)) {
+      throw conflict("FORCED_TAKEOVER_HEAD_INVALID", "强制接管证明包含本机不存在的 Operation 链头。");
+    }
+    if (knownLocalHead.sequence > 0) {
+      const knownOperation = this.repository.findOperation(
+        context.space_id,
+        context.local_node_id,
+        knownLocalHead.sequence
+      );
+      if (!knownOperation || knownOperation.operationHash !== knownLocalHead.operationHash) {
+        throw conflict("FORCED_TAKEOVER_HEAD_INVALID", "强制接管证明中的 Operation 链头与本机不匹配。");
+      }
+    }
+    const acceptedAt = this.now();
+    return this.clusterRepository.transaction(() => {
+      this.takeoverRepository.save({
+        id: proof.takeoverId,
+        spaceId: context.space_id,
+        previousActiveNodeId: proof.previousActiveNodeId,
+        activeNodeId: proof.activeNodeId,
+        previousEpoch: proof.previousEpoch,
+        epoch: proof.epoch,
+        proofJson: canonicalStringify(proof),
+        proofHash: proofHash(proof),
+        controlSignature: String(peerHello.forcedTakeover.authenticationTag || ""),
+        integrityJson: canonicalStringify(proof.integrity),
+        status: "accepted",
+        detectedAt: acceptedAt
+      });
+      const divergentOperationCount = this.takeoverRepository.quarantineLocalOperations({
+        takeoverId: proof.takeoverId,
+        spaceId: context.space_id,
+        originNodeId: context.local_node_id,
+        afterSequence: knownLocalHead.sequence,
+        maximumEpoch: Number(context.epoch),
+        quarantinedAt: acceptedAt
+      });
+      const state = divergentOperationCount > 0 ? "divergent" : "forced_active";
+      const nextState = {
+        spaceId: context.space_id,
+        epoch: proof.epoch,
+        activeNodeId: peer.id,
+        transitionId: proof.takeoverId,
+        transitionTargetNodeId: "",
+        transitionStartedAt: acceptedAt,
+        state
+      };
+      const updated = this.clusterRepository.updateClusterState({
+        ...nextState,
+        stateHash: sha256Canonical(nextState),
+        controlSignature: String(peerHello.forcedTakeover.authenticationTag || ""),
+        updatedAt: acceptedAt
+      });
+      this.clusterRepository.updateNodeStatus(
+        context.space_id,
+        context.local_node_id,
+        divergentOperationCount > 0 ? "quarantined" : "standby",
+        acceptedAt
+      );
+      this.clusterRepository.updateNodeStatus(context.space_id, peer.id, "active", acceptedAt);
+      return updated;
+    });
+  }
+
+  settleForcedTakeover(context) {
+    const settledAt = this.now();
+    return this.clusterRepository.transaction(() => {
+      const nextState = {
+        spaceId: context.space_id,
+        epoch: Number(context.epoch),
+        activeNodeId: context.active_node_id,
+        transitionId: "",
+        transitionTargetNodeId: "",
+        transitionStartedAt: null,
+        state: "stable"
+      };
+      const updated = this.clusterRepository.updateClusterState({
+        ...nextState,
+        stateHash: sha256Canonical(nextState),
+        controlSignature: context.control_signature,
+        updatedAt: settledAt
+      });
+      this.takeoverRepository.markReconciled(
+        context.space_id,
+        context.transition_id,
+        settledAt
+      );
+      return updated;
+    });
+  }
+
+  publishClusterChanged(userId, action) {
+    try {
+      const cluster = this.clusterService.status(userId);
+      this.onClusterChanged(userId, {
+        action,
+        state: cluster.state,
+        activeNodeId: cluster.activeNodeId,
+        epoch: cluster.epoch,
+        cluster
+      });
+    } catch (error) {
+      console.warn("Unable to publish forced Hub takeover.", error?.message || error);
+    }
   }
 
   saveAcknowledgement(context, peerNodeId, acknowledgement) {
