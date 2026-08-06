@@ -31,6 +31,21 @@ const error = ref("");
 const messageList = ref<HTMLElement | null>(null);
 let conversationRefreshPending = false;
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
+const messageTimestampFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+});
+
+function messageTimestamp(value?: number) {
+  if (value === undefined) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    label: messageTimestampFormatter.format(date),
+    iso: date.toISOString()
+  };
+}
 const assistantName = computed(() => String(data.assistant.value.name || "小玄"));
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
@@ -242,7 +257,12 @@ async function scrollToBottom() {
           <ProfileAvatar v-if="message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
           <div class="message-bubble">
             <MarkdownMessage v-if="message.role === 'assistant'" :content="message.content || ''" />
-            <template v-else>{{ message.content }}</template>
+            <span v-else class="message-content">{{ message.content }}</span>
+            <time
+              v-if="messageTimestamp(message.createdAt)"
+              class="message-timestamp"
+              :datetime="messageTimestamp(message.createdAt)?.iso"
+            >{{ messageTimestamp(message.createdAt)?.label }}</time>
           </div>
           <ProfileAvatar v-if="message.role === 'user'" :name="userName" :src="userAvatar" size="small" />
         </article>
@@ -299,10 +319,12 @@ async function scrollToBottom() {
 .message-row { display:flex; align-items:flex-end; gap:7px; margin:0 0 14px; }
 .message-row.user { justify-content: flex-end; }
 .message-row :deep(.avatar-small) { width:30px; height:30px; border-radius:50%; border-color:rgba(255,255,255,.82); box-shadow:0 7px 20px rgba(91,78,116,.16); }
-.message-bubble { position:relative; max-width:min(82%,510px); overflow:hidden; padding:12px 14px; border:1px solid rgba(255,255,255,.7); border-radius:22px 22px 22px 7px; color:#4e495e; background:linear-gradient(145deg,rgba(255,255,255,.58),rgba(255,255,255,.28)); box-shadow:inset 0 1px 0 rgba(255,255,255,.86),inset 0 -1px 0 rgba(107,96,129,.06),0 12px 32px rgba(73,69,96,.09); backdrop-filter:blur(26px) saturate(165%); -webkit-backdrop-filter:blur(26px) saturate(165%); font-size: calc(13px * var(--font-scale, 1)); line-height:1.72; white-space:pre-wrap; overflow-wrap:anywhere; }
+.message-bubble { position:relative; max-width:min(82%,510px); overflow:hidden; padding:12px 14px 20px; border:1px solid rgba(255,255,255,.7); border-radius:22px 22px 22px 7px; color:#4e495e; background:linear-gradient(145deg,rgba(255,255,255,.58),rgba(255,255,255,.28)); box-shadow:inset 0 1px 0 rgba(255,255,255,.86),inset 0 -1px 0 rgba(107,96,129,.06),0 12px 32px rgba(73,69,96,.09); backdrop-filter:blur(26px) saturate(165%); -webkit-backdrop-filter:blur(26px) saturate(165%); font-size: calc(13px * var(--font-scale, 1)); line-height:1.72; white-space:pre-wrap; overflow-wrap:anywhere; }
 .message-bubble::before { content:""; position:absolute; z-index:-1; left:8%; right:18%; top:0; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent); }
 .assistant .message-bubble { white-space: normal; }
-.user .message-bubble { border-color:rgba(255,255,255,.36); border-radius:22px 22px 7px 22px; color:#fff; background:linear-gradient(135deg,rgba(204,126,171,.84),rgba(125,139,190,.82) 58%,rgba(91,159,211,.78)); box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 12px 30px rgba(115,96,151,.2); }
+.user .message-bubble { padding:12px 14px; border-color:rgba(255,255,255,.36); border-radius:22px 22px 7px 22px; color:#fff; background:linear-gradient(135deg,rgba(204,126,171,.84),rgba(125,139,190,.82) 58%,rgba(91,159,211,.78)); box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 12px 30px rgba(115,96,151,.2); }
+.message-timestamp { position:absolute; right:11px; bottom:6px; color:rgba(78,73,94,.52); font-size:calc(8px * var(--font-scale, 1)); font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap; }
+.user .message-timestamp { right:8px; bottom:5px; color:rgba(255,255,255,.72); font-size:calc(8px * var(--font-scale, 1)); }
 .typing { display:flex; gap:5px; padding:17px 18px; }.typing i{width:5px;height:5px;border-radius:50%;background:#aaa3b5;animation:pulse 1.2s infinite}.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}@keyframes pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
 .dock-scrim { position:absolute; z-index:-1; inset:-42px -14px -14px; pointer-events:none; background:linear-gradient(180deg,rgba(248,248,252,0),rgba(248,248,252,.68) 44%,rgba(248,248,252,.92) 78%); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
 .composer-stack { --emoji-tray-height:min(268px,calc(100dvh - 176px)); position:relative; width:100%; border:1px solid rgba(255,255,255,.82); border-radius:29px; background:linear-gradient(145deg,rgba(255,255,255,.92),rgba(244,246,252,.86)); box-shadow:inset 0 1px 0 rgba(255,255,255,.98),0 18px 46px rgba(65,60,88,.16); transition:transform .3s cubic-bezier(.2,.78,.2,1),border-radius .2s ease; will-change:transform; }

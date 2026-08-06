@@ -76,6 +76,30 @@ test("conversation repository merges legacy conversations into one primary conve
   });
 });
 
+test("conversation service restores the persisted message creation time", () => {
+  withDatabase((database) => {
+    const userId = "message-timestamp-user";
+    createUser(database, userId);
+    const repository = new ConversationRepository(database);
+    const conversation = repository.create(userId, "Timestamp conversation");
+    repository.upsertMessages(conversation.id, [
+      {
+        id: "timestamp-message",
+        stream: "display",
+        position: 0,
+        role: "assistant",
+        content: "Timestamped reply",
+        payload: { createdAt: 999 },
+        createdAt: 123
+      }
+    ]);
+
+    const restored = new ConversationService(repository).get(userId, conversation.id);
+
+    assert.equal(restored.displayMessages[0].createdAt, 123);
+  });
+});
+
 function message(id, stream, position, createdAt) {
   return { id, stream, position, role: "assistant", content: id, payload: {}, createdAt };
 }

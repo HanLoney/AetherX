@@ -223,6 +223,7 @@ describe.sequential("Android Local Hub Agent", () => {
     const result = await client.conversation("conversation-b");
 
     expect(result.displayMessages.map((message) => message.id)).toEqual(["message-a", "message-b"]);
+    expect(result.displayMessages.map((message) => message.createdAt)).toEqual([1, 2]);
     expect(result.modelMessages.map((message) => message.id)).toEqual(["message-model"]);
     expect(hub.rows("conversations").map((row) => row.id)).toEqual(["conversation-b"]);
     expect(hub.rows("messages").map((row) => [row.id, row.conversation_id, row.position])).toEqual([

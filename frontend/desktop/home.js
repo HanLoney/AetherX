@@ -828,7 +828,24 @@ function createMessage(role, content, error = false) {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
     content,
-    error
+    error,
+    createdAt: Date.now()
+  };
+}
+
+const messageTimestampFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+});
+
+function getMessageTimestamp(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    label: messageTimestampFormatter.format(date),
+    iso: date.toISOString()
   };
 }
 
@@ -1600,7 +1617,18 @@ function renderMessages() {
     if (message.role === "assistant" && !message.error) {
       window.XuanMarkdown.render(bubble, message.content);
     } else {
-      bubble.textContent = message.content;
+      const content = document.createElement("span");
+      content.className = "message-content";
+      content.textContent = message.content;
+      bubble.append(content);
+    }
+    const timestamp = getMessageTimestamp(message.createdAt);
+    if (timestamp) {
+      const time = document.createElement("time");
+      time.className = "message-timestamp";
+      time.dateTime = timestamp.iso;
+      time.textContent = timestamp.label;
+      bubble.append(time);
     }
     row.append(bubble);
     if (message.role === "user") row.append(createChatAvatar("user"));

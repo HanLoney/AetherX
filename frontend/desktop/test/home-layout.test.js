@@ -38,6 +38,24 @@ test("desktop keeps one primary conversation and appends proactive reminders to 
   assert.doesNotMatch(javascript, /createConversation\("主动提醒"\)/);
 });
 
+test("desktop message bubbles display their persisted creation timestamp", () => {
+  assert.match(javascript, /createdAt: Date\.now\(\)/);
+  assert.match(javascript, /messageTimestampFormatter/);
+  assert.match(javascript, /time\.className = "message-timestamp"/);
+  assert.match(javascript, /getMessageTimestamp\(message\.createdAt\)/);
+  assert.match(javascript, /hour: "2-digit"/);
+  assert.doesNotMatch(
+    javascript,
+    /const messageTimestampFormatter = new Intl\.DateTimeFormat\("zh-CN", \{[^}]*year:/
+  );
+  assert.match(css, /\.message-timestamp\s*\{/);
+  assert.match(css, /\.message-timestamp\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.user \.message-timestamp/);
+  assert.match(css, /\.user \.message-bubble\s*\{[^}]*padding:\s*12px 14px;/s);
+  assert.match(css, /\.user \.message-timestamp\s*\{[^}]*right:\s*8px;[^}]*bottom:\s*5px;/s);
+  assert.doesNotMatch(css, /\.user \.message-content::after/);
+});
+
 test("functional navigation uses one consistent SVG icon system", () => {
   assert.match(html, /<svg viewBox="0 0 24 24">/);
   assert.match(javascript, /function navIcon\(paths\)/);
