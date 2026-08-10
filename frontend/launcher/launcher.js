@@ -155,7 +155,16 @@ function renderRuntimeMonitor(status) {
     "[data-monitor-hub-health]",
     hub.portConflict ? "4318 被占用" : hub.healthy ? `正常${hub.latencyMs == null ? "" : ` · ${hub.latencyMs} ms`}` : "不可访问"
   );
-  setMonitorText(hubNode, "[data-monitor-hub-control]", hub.controllable ? "启动器已接管" : hub.running ? "外部运行" : "未连接");
+  const hubControlLabel = hub.ownedByDesktop
+    ? "桌面端已接管"
+    : hub.ownedByLauncher
+      ? "启动器托管"
+      : hub.controllable
+        ? "可安全控制"
+        : hub.running
+          ? "外部运行"
+          : "未连接";
+  setMonitorText(hubNode, "[data-monitor-hub-control]", hubControlLabel);
   const hubOwner = hub.portOwner?.pid
     ? `${hub.portOwner.processName || "其他程序"} · PID ${hub.portOwner.pid}`
     : hub.running

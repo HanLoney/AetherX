@@ -42,6 +42,8 @@ async function runHubHost(options) {
         pid: process.pid,
         healthy: true,
         port,
+        dataDir,
+        host: "launcher",
         mobileClients: hub.mobileHealth()
       };
     }

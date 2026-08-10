@@ -15,6 +15,20 @@ export interface HubPairingCode {
     certificateFingerprint?: string;
   }>;
   expiresAt: number;
+  resolverServerUrl?: string;
+}
+
+export interface HubPairingReference {
+  version: 2;
+  serverUrls: string[];
+  sessionId: string;
+  secret: string;
+  expiresAt: number;
+}
+
+interface ResolvedHubPairingReference {
+  pairing: Record<string, unknown>;
+  serverUrl: string;
 }
 
 interface LocalHubBridge {
@@ -75,6 +89,107 @@ export function parseHubPairingCode(value: string): HubPairingCode {
     throw new Error("手机 Hub 配对码已过期或与当前版本不兼容。 ");
   }
   return result;
+}
+
+export function parseHubPairingReference(value: string): HubPairingReference | null {
+  const raw = String(value || "").trim();
+  let input: Record<string, unknown>;
+  try {
+    if (/^aetherx:\/\/hub-pair\?/i.test(raw)) {
+      const url = new URL(raw);
+      if (url.searchParams.get("v") !== "2") return null;
+      input = {
+        version: 2,
+        serverUrls: url.searchParams.getAll("s"),
+        sessionId: url.searchParams.get("i"),
+        secret: url.searchParams.get("k"),
+        expiresAt: url.searchParams.get("e")
+      };
+    } else if (raw.startsWith("{")) {
+      input = JSON.parse(raw) as Record<string, unknown>;
+      if (Number(input.version) !== 2) return null;
+    } else {
+      return null;
+    }
+    const serverUrls = normalizeReferenceUrls(input.serverUrls, input.serverUrl);
+    const reference = {
+      version: 2 as const,
+      serverUrls,
+      sessionId: required(input.sessionId, "sessionId"),
+      secret: required(input.secret, "secret"),
+      expiresAt: Number(input.expiresAt)
+    };
+    if (
+      reference.secret.length < 32 ||
+      reference.expiresAt <= Date.now()
+    ) {
+      throw invalidHubPairingCode();
+    }
+    return reference;
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === HUB_PAIRING_CODE_ERROR) throw cause;
+    throw invalidHubPairingCode();
+  }
+}
+
+export async function resolveHubPairingCode(
+  value: string,
+  resolver: (reference: HubPairingReference) => Promise<Record<string, unknown> | ResolvedHubPairingReference>
+    = resolveHubPairingReference
+) {
+  const reference = parseHubPairingReference(value);
+  if (!reference) return parseHubPairingCode(value);
+  const resolved = await resolver(reference);
+  const wrapped = "pairing" in resolved && "serverUrl" in resolved;
+  const pairing = parseHubPairingCode(JSON.stringify(wrapped ? resolved.pairing : resolved));
+  if (wrapped) pairing.resolverServerUrl = new URL(String(resolved.serverUrl)).origin;
+  if (pairing.sessionId !== reference.sessionId || pairing.secret !== reference.secret) {
+    throw new Error("电脑端返回的 Hub 配对资料与短码不一致。 ");
+  }
+  return pairing;
+}
+
+async function resolveHubPairingReference(reference: HubPairingReference) {
+  const controllers = reference.serverUrls.map(() => new AbortController());
+  const timers = controllers.map((controller) => globalThis.setTimeout(() => controller.abort(), 6_000));
+  return new Promise<ResolvedHubPairingReference>((resolve, reject) => {
+    let failures = 0;
+    let settled = false;
+    reference.serverUrls.forEach((serverUrl, index) => {
+      const api = new AetherApi({ baseUrl: serverUrl });
+      void api.resolveHubPairingSession(reference.sessionId, reference.secret, controllers[index].signal)
+        .then((pairing) => {
+          if (settled) return;
+          settled = true;
+          controllers.forEach((controller, controllerIndex) => {
+            globalThis.clearTimeout(timers[controllerIndex]);
+            if (controllerIndex !== index) controller.abort();
+          });
+          resolve({ pairing, serverUrl });
+        })
+        .catch(() => {
+          globalThis.clearTimeout(timers[index]);
+          failures += 1;
+          if (!settled && failures === reference.serverUrls.length) {
+            settled = true;
+            reject(new Error("无法自动连接电脑 AetherX。已尝试 USB、局域网和 Anywhere，请确认电脑端仍在运行。"));
+          }
+        });
+    });
+  });
+}
+
+function normalizeReferenceUrls(values: unknown, fallback: unknown) {
+  const candidates = Array.isArray(values) ? [...values] : [];
+  if (!candidates.length && fallback) candidates.push(fallback);
+  const serverUrls: string[] = [];
+  candidates.forEach((value) => {
+    const server = new URL(required(value, "serverUrl"));
+    if (!["http:", "https:"].includes(server.protocol)) throw invalidHubPairingCode();
+    if (!serverUrls.includes(server.origin)) serverUrls.push(server.origin);
+  });
+  if (!serverUrls.length) throw invalidHubPairingCode();
+  return serverUrls.slice(0, 5);
 }
 
 function decodeHubPairingValue(value: unknown, depth = 0): unknown {
@@ -140,7 +255,8 @@ export async function pairAndroidLocalHub(
   localHub: LocalHubBridge,
   onState?: (state: string) => void
 ) {
-  const pairing = parseHubPairingCode(code);
+  onState?.("正在自动检测 USB、局域网与 Anywhere…");
+  const pairing = await resolveHubPairingCode(code);
   onState?.("正在创建手机 Hub 身份…");
   const localStatus = localHub.status.value || await localHub.refresh();
   if (!localStatus?.nodeId) throw new Error("Android Local Hub 还没有准备好。 ");
@@ -201,9 +317,14 @@ export async function pairAndroidLocalHub(
   if (packageValue.localNodeId !== localStatus.nodeId || packageValue.spaceId !== pairing.spaceId) {
     throw new Error("电脑端返回的 Hub 身份与本机不一致。 ");
   }
+  packageValue.endpoints = includeResolvedPeerEndpoint(
+    packageValue.endpoints,
+    String(packageValue.peerNodeId),
+    pairingApi.serverUrl
+  );
   await localHub.configure(packageValue);
   onState?.("正在复制完整结构化数据…");
-  const bootstrap = await downloadStructuredSnapshot(pairing, packageValue);
+  const bootstrap = await downloadStructuredSnapshot(packageValue, pairingApi.serverUrl);
   await localHub.importSnapshot({
     snapshotId: bootstrap.snapshotId,
     spaceId: packageValue.spaceId,
@@ -233,10 +354,25 @@ async function claimThroughReachableEndpoint(
   claim: Record<string, unknown>
 ) {
   let lastError: unknown = null;
-  for (const endpoint of [...pairing.endpoints].sort((left, right) => right.priority - left.priority)) {
-    const candidate = new AetherApi({ baseUrl: endpoint.address });
+  const addresses = [
+    pairing.resolverServerUrl,
+    ...[...pairing.endpoints]
+      .sort((left, right) => right.priority - left.priority)
+      .map((endpoint) => endpoint.address)
+  ].filter((address, index, values): address is string => Boolean(address) && values.indexOf(address) === index);
+  for (const address of addresses) {
+    const candidate = new AetherApi({ baseUrl: address });
     try {
-      await candidate.claimHubPairingSession(pairing.sessionId, claim);
+      await withConnectionTimeout((signal) => candidate.health(signal), 6_000);
+    } catch (cause) {
+      lastError = cause;
+      continue;
+    }
+    try {
+      await withConnectionTimeout(
+        (signal) => candidate.claimHubPairingSession(pairing.sessionId, claim, signal),
+        15_000
+      );
       return candidate;
     } catch (cause) {
       lastError = cause;
@@ -248,7 +384,36 @@ async function claimThroughReachableEndpoint(
       ) throw cause;
     }
   }
-  throw lastError || new Error("无法连接电脑 Hub，请确认手机已连接 Tailscale 后重试。 ");
+  throw lastError || new Error("无法自动连接电脑 Hub，已尝试 USB、局域网和 Anywhere。 ");
+}
+
+function includeResolvedPeerEndpoint(value: unknown, nodeId: string, serverUrl: string) {
+  const endpoints = Array.isArray(value) ? [...value] : [];
+  const address = new URL(serverUrl).origin;
+  const existing = endpoints.findIndex((item) => String(item?.address || "") === address);
+  if (existing >= 0) {
+    const [endpoint] = endpoints.splice(existing, 1);
+    endpoints.unshift({ ...endpoint, priority: Math.max(1000, Number(endpoint?.priority) || 0) });
+    return endpoints;
+  }
+  endpoints.unshift({
+    nodeId,
+    transport: "lan",
+    address,
+    priority: 1000,
+    certificateFingerprint: ""
+  });
+  return endpoints;
+}
+
+async function withConnectionTimeout<T>(task: (signal: AbortSignal) => Promise<T>, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await task(controller.signal);
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
 }
 
 async function unwrapPairingEnvelope(envelopeValue: Record<string, unknown>, privateKeyBytes: ArrayBuffer) {
@@ -302,11 +467,10 @@ async function unwrapPairingEnvelope(envelopeValue: Record<string, unknown>, pri
   return JSON.parse(new TextDecoder().decode(clear)) as Record<string, any>;
 }
 
-async function downloadStructuredSnapshot(pairing: HubPairingCode, secrets: Record<string, any>) {
-  const endpoint = [...pairing.endpoints].sort((left, right) => right.priority - left.priority)[0];
+async function downloadStructuredSnapshot(secrets: Record<string, any>, sourceServerUrl: string) {
   const credential = secrets.peerCredential as { keyId: string; sharedSecret: string };
   const peer = {
-    baseUrl: endpoint.address,
+    baseUrl: new URL(sourceServerUrl).origin,
     spaceId: String(secrets.spaceId),
     nodeId: String(secrets.localNodeId),
     keyId: String(credential.keyId),

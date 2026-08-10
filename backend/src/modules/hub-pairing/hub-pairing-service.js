@@ -76,18 +76,32 @@ class HubPairingService {
     return {
       ...presentSession(session),
       secret,
-      qrPayload: {
-        protocolVersion: CLUSTER_PROTOCOL_VERSION,
-        schemaVersion: Number(context.schema_version),
-        spaceId: context.space_id,
-        sourceNodeId: context.local_node_id,
-        sessionId: id,
-        secret,
-        serverEphemeralPublicKey,
-        certificateFingerprint: fingerprint(serverEphemeralPublicKey),
-        endpoints,
-        expiresAt: session.expires_at
-      }
+      qrPayload: this.pairingPayload(session, secret, context)
+    };
+  }
+
+  resolve(id, input = {}) {
+    const secret = String(input.secret || "");
+    const session = this.requireBySecret(id, requireSecret(secret));
+    assertNotExpired(session, this.now());
+    return this.pairingPayload(session, secret);
+  }
+
+  pairingPayload(session, secret, context = this.clusterService.ensureSpace(session.user_id)) {
+    if (context.space_id !== session.space_id) {
+      throw new HttpError(409, "HUB_PAIRING_SPACE_MISMATCH", "配对数据空间已经变化。");
+    }
+    return {
+      protocolVersion: CLUSTER_PROTOCOL_VERSION,
+      schemaVersion: Number(context.schema_version),
+      spaceId: context.space_id,
+      sourceNodeId: context.local_node_id,
+      sessionId: session.id,
+      secret,
+      serverEphemeralPublicKey: session.server_ephemeral_public_key,
+      certificateFingerprint: fingerprint(session.server_ephemeral_public_key),
+      endpoints: parseStoredEndpoints(session.source_endpoints_json),
+      expiresAt: Number(session.expires_at)
     };
   }
 

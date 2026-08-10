@@ -10,10 +10,14 @@ import {
   CapacitorBarcodeScannerTypeHint
 } from "@capacitor/barcode-scanner";
 import type { AuthConfig } from "../lib/api";
+import { runCompletePairing } from "../lib/complete-pairing";
+import { pairAndroidLocalHub } from "../lib/hub-pairing";
+import { useLocalHub } from "../lib/local-hub";
 import { useSessionStore } from "../stores/session";
 
 const router = useRouter();
 const session = useSessionStore();
+const localHub = useLocalHub();
 const serverUrl = ref(import.meta.env.VITE_AETHERX_SERVER_URL || "http://127.0.0.1:4318");
 const username = ref("");
 const displayName = ref("");
@@ -25,6 +29,8 @@ const pairingCode = ref("");
 const authConfig = ref<AuthConfig | null>(null);
 const localError = ref("");
 const scanning = ref(false);
+const completePairingBusy = ref(false);
+const completePairingState = ref("");
 const registrationAvailable = computed(() => authConfig.value?.registrationAvailable !== false);
 const errorMessage = computed(() => localError.value || session.error.value);
 
@@ -77,12 +83,31 @@ async function submit() {
 
 async function connectWithPairingCode(code: string) {
   pairingCode.value = code.trim();
-  await session.pair(pairingCode.value);
-  await router.replace("/home");
+  completePairingBusy.value = true;
+  completePairingState.value = "";
+  try {
+    const completed = await runCompletePairing(pairingCode.value, {
+      pairClient: (clientCode) => session.pair(clientCode),
+      pairHub: (hubCode) => pairAndroidLocalHub(
+        hubCode,
+        localHub,
+        (state) => { completePairingState.value = state; }
+      ),
+      onState: (state) => { completePairingState.value = state; }
+    });
+    if (!completed) await session.pair(pairingCode.value);
+    if (completed) await localHub.refresh();
+    await router.replace("/home");
+  } catch (cause) {
+    localError.value = cause instanceof Error ? cause.message : "没有完成一体化配对。";
+    throw cause;
+  } finally {
+    completePairingBusy.value = false;
+  }
 }
 
 async function scanPairingCode() {
-  if (scanning.value || session.busy.value) return;
+  if (scanning.value || session.busy.value || completePairingBusy.value) return;
   localError.value = "";
   scanning.value = true;
   try {
@@ -164,16 +189,16 @@ onMounted(() => void inspectServer());
         </div>
       </div>
       <div v-else class="login-fields pairing-fields">
-        <div class="pairing-note"><Link2 :size="19"/><span><strong>连接电脑端 AetherX</strong><small>扫码或粘贴连接码后，请回到电脑端确认这台手机。</small></span></div>
-        <button class="scan-pairing-button" type="button" :disabled="scanning || session.busy.value" @click="scanPairingCode">
+        <div class="pairing-note"><Link2 :size="19"/><span><strong>连接电脑端 AetherX</strong><small>{{ completePairingState || "一体化配对码可同时连接客户端并建立备用 Hub。" }}</small></span></div>
+        <button class="scan-pairing-button" type="button" :disabled="scanning || session.busy.value || completePairingBusy" @click="scanPairingCode">
           <ScanLine :size="21" />
-          <span><strong>{{ scanning ? "正在打开相机…" : "扫描电脑二维码" }}</strong><small>使用手机相机安全读取一次性连接码</small></span>
+          <span><strong>{{ completePairingBusy ? "正在完成双重配对…" : scanning ? "正在打开相机…" : "扫描电脑二维码" }}</strong><small>一次扫描可同时配对客户端与手机 Hub</small></span>
         </button>
         <div class="pairing-divider"><span>或者手动粘贴</span></div>
         <div class="field"><label for="pairingCode">一次性连接码</label><textarea id="pairingCode" v-model="pairingCode" rows="4" placeholder="aetherx://pair?…" /></div>
       </div>
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
-      <button class="primary-button login-button" type="submit" :disabled="session.busy.value || (mode==='pair' ? !pairingCode.trim() : !username.trim() || !password)">
+      <button class="primary-button login-button" type="submit" :disabled="session.busy.value || completePairingBusy || (mode==='pair' ? !pairingCode.trim() : !username.trim() || !password)">
         <span>{{ session.busy.value ? (mode==='pair'?'等待电脑确认…':mode==='register'?'正在创建…':'正在连接…') : (mode==='pair'?'申请配对':mode==='register'?'创建并进入':'进入 AetherX') }}</span><ArrowRight :size="18" />
       </button>
       <footer>登录凭证只保存在这台手机的系统安全区中</footer>

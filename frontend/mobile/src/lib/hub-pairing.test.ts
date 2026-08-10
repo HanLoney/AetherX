@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonicalStringify, parseHubPairingCode } from "./hub-pairing";
+import {
+  canonicalStringify,
+  parseHubPairingCode,
+  parseHubPairingReference,
+  resolveHubPairingCode
+} from "./hub-pairing";
 
 describe("Android Local Hub pairing", () => {
   const createPayload = () => ({
@@ -52,6 +57,40 @@ describe("Android Local Hub pairing", () => {
   it("parses a bare Base64URL payload", () => {
     expect(parseHubPairingCode(encodePayload(createPayload())))
       .toMatchObject({ sessionId: "pair-1", sourceNodeId: "node-desktop" });
+  });
+
+  it("parses a compact v2 Hub pairing reference", () => {
+    const query = new URLSearchParams({
+      v: "2",
+      s: "http://192.168.1.20:4318",
+      i: "pair-1",
+      k: "s".repeat(43),
+      e: String(Date.now() + 60_000)
+    });
+    query.append("s", "https://desktop.example.ts.net:4318");
+    expect(parseHubPairingReference(`aetherx://hub-pair?${query}`)).toMatchObject({
+      version: 2,
+      serverUrls: [
+        "http://192.168.1.20:4318",
+        "https://desktop.example.ts.net:4318"
+      ],
+      sessionId: "pair-1"
+    });
+  });
+
+  it("resolves compact references before parsing the original payload", async () => {
+    const reference = JSON.stringify({
+      version: 2,
+      serverUrl: "https://hub.example.com",
+      sessionId: "pair-1",
+      secret: "s".repeat(43),
+      expiresAt: Date.now() + 60_000
+    });
+    await expect(resolveHubPairingCode(reference, async (parsed) => ({
+      ...createPayload(),
+      sessionId: parsed.sessionId,
+      secret: parsed.secret
+    }))).resolves.toMatchObject({ sessionId: "pair-1", spaceId: "space-1" });
   });
 
   it("returns a stable Chinese error for invalid scanner content", () => {

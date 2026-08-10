@@ -50,6 +50,12 @@ function registerHubPairingRoutes(
   );
   router.add(
     "POST",
+    "/api/v1/hub-pairing/sessions/:id/resolve",
+    ({ params, body }) => ({ data: service.resolve(params.id, body) }),
+    { public: true }
+  );
+  router.add(
+    "POST",
     "/api/v1/hub-pairing/sessions/:id/claim",
     ({ params, body }) => ({ data: service.claim(params.id, body) }),
     { public: true }

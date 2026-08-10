@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("desktop", {
   register: (input) => ipcRenderer.invoke("auth:register", input),
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
   getHubStatus: () => ipcRenderer.invoke("hub:status"),
+  getConnectionStatus: () => ipcRenderer.invoke("connections:status"),
   getHubDivergence: () => ipcRenderer.invoke("hub:divergence"),
   recoverHubDivergence: (authority) =>
     ipcRenderer.invoke("hub:divergence:recover", authority),
@@ -45,6 +46,7 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("hubs:pairing:approve", id),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   revokeDevice: (id) => ipcRenderer.invoke("devices:revoke", id),
+  deleteDeviceRecord: (id) => ipcRenderer.invoke("devices:delete-record", id),
   writeClipboard: (value) => ipcRenderer.invoke("clipboard:write", value),
   generateQrCode: (value) => ipcRenderer.invoke("qrcode:generate", value),
   listSyncChanges: (filters) => ipcRenderer.invoke("sync:changes", filters),

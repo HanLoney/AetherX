@@ -42,6 +42,7 @@ import { useSessionStore } from "../stores/session";
 import { useModuleStore } from "../stores/modules";
 import { useLocalHub } from "../lib/local-hub";
 import { pairAndroidLocalHub } from "../lib/hub-pairing";
+import { runCompletePairing } from "../lib/complete-pairing";
 
 const router = useRouter();
 const session = useSessionStore();
@@ -52,7 +53,7 @@ const interfaceSettings = useInterfaceSettings();
 const refreshing = ref(false);
 const hubManagementOpen = ref(false);
 const connectionOpen = ref(false);
-const connectionMode = ref<"address" | "pair">("address");
+const connectionMode = ref<"address" | "pair">("pair");
 const connectionUrl = ref("");
 const pairingCode = ref("");
 const connectionError = ref("");
@@ -526,7 +527,7 @@ async function refresh() {
 function openConnectionSettings() {
   connectionUrl.value = session.serverUrl.value;
   pairingCode.value = "";
-  connectionMode.value = "address";
+  connectionMode.value = "pair";
   connectionError.value = "";
   connectionOpen.value = true;
 }
@@ -588,7 +589,17 @@ async function applyHubConnection() {
       await session.reconnect(connectionUrl.value);
     } else {
       if (!pairingCode.value.trim()) throw new Error("请扫描或粘贴电脑端生成的配对码。 ");
-      await session.pair(pairingCode.value);
+      const completed = await runCompletePairing(pairingCode.value, {
+        pairClient: (clientCode) => session.pair(clientCode),
+        pairHub: (hubCode) => pairAndroidLocalHub(
+          hubCode,
+          localHub,
+          (state) => { connectionNotice.value = state; }
+        ),
+        onState: (state) => { connectionNotice.value = state; }
+      });
+      if (!completed) await session.pair(pairingCode.value);
+      if (completed) await localHub.refresh();
     }
     const connectedUrl = session.serverUrl.value;
     connectionNotice.value = `已连接 ${connectedUrl}，正在后台恢复同步`;
@@ -925,10 +936,10 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
             <div><span>HUB CONNECTION</span><h2>重新连接 Hub</h2></div>
             <button type="button" aria-label="关闭连接设置" :disabled="reconnecting || scanning" @click="closeConnectionSettings"><X :size="18" /></button>
           </header>
-          <p class="connection-intro">切换局域网或 Tailscale 地址时不必退出账号；如果电脑端换过数据或凭证，再使用新的配对码。</p>
+          <p class="connection-intro">扫描电脑端二维码后会自动检测 USB、局域网与 Anywhere，并选择当前可用的连接。</p>
           <div class="connection-tabs">
-            <button type="button" :class="{ active: connectionMode === 'address' }" @click="connectionMode = 'address'; connectionError = ''">地址重连</button>
-            <button type="button" :class="{ active: connectionMode === 'pair' }" @click="connectionMode = 'pair'; connectionError = ''">重新配对</button>
+            <button type="button" :class="{ active: connectionMode === 'pair' }" @click="connectionMode = 'pair'; connectionError = ''">扫码自动连接</button>
+            <button type="button" :class="{ active: connectionMode === 'address' }" @click="connectionMode = 'address'; connectionError = ''">手动地址（高级）</button>
           </div>
           <label v-if="connectionMode === 'address'" class="connection-field">
             <span>Hub 地址</span>

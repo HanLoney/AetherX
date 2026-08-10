@@ -97,6 +97,8 @@ const elements = {
   accountMenuName: document.querySelector("#accountMenuName"),
   accountUsername: document.querySelector("#accountUsername"),
   accountServer: document.querySelector("#accountServer"),
+  connectionCenterBtn: document.querySelector("#connectionCenterBtn"),
+  connectionCenterMask: document.querySelector("#connectionCenterMask"),
   deviceManagerBtn: document.querySelector("#deviceManagerBtn"),
   deviceManagerMask: document.querySelector("#deviceManagerMask"),
   logoutBtn: document.querySelector("#logoutBtn"),
@@ -203,6 +205,13 @@ const deviceManager = new window.AetherDeviceManager({
   getServerUrl: () => state.auth?.serverUrl || ""
 });
 deviceManager.bind();
+
+const connectionCenter = new window.AetherConnectionCenter({
+  api: window.desktop,
+  root: elements.connectionCenterMask,
+  onManageDevices: () => deviceManager.open()
+});
+connectionCenter.bind();
 
 function navIcon(paths) {
   return `<i aria-hidden="true"><svg viewBox="0 0 24 24">${paths}</svg></i>`;
@@ -738,6 +747,16 @@ function closeSettings() {
   elements.settingsMask.classList.add("hidden");
 }
 
+function isHubRecoveryActionable(status) {
+  return Boolean(
+    status && (
+      ["divergent", "recovering_divergence"].includes(status.state) ||
+      (status.forcedTakeover?.status === "reconciled" &&
+        Number(status.forcedTakeover?.divergentOperationCount) > 0)
+    )
+  );
+}
+
 function renderHubStatus() {
   const status = state.hubStatus;
   if (state.hubStatusError || !status) {
@@ -745,8 +764,9 @@ function renderHubStatus() {
     elements.hubLabel.textContent = "Hub";
     elements.hubStateLabel.textContent = "状态未知";
     elements.hubPill.title = "暂时无法读取当前 Hub 状态";
-    elements.hubPill.setAttribute("aria-disabled", "true");
-    elements.hubPill.tabIndex = -1;
+    elements.hubPill.setAttribute("aria-disabled", "false");
+    elements.hubPill.setAttribute("aria-label", "打开中枢与连接状态");
+    elements.hubPill.tabIndex = 0;
     return;
   }
 
@@ -759,9 +779,12 @@ function renderHubStatus() {
   const recoveringDivergence = status.state === "recovering_divergence";
   const forced = status.state === "forced_active";
   const switching = status.state !== "stable";
+  const desktopRuntime = status.desktopRuntime || null;
+  const embeddedDesktopHub = !mobile && desktopRuntime?.mode === "embedded";
+  const externalDesktopHub = !mobile && desktopRuntime?.mode === "external";
   const archivedEvidence = status.forcedTakeover?.status === "reconciled" &&
     Number(status.forcedTakeover?.divergentOperationCount) > 0;
-  const recoveryActionable = divergent || recoveringDivergence || archivedEvidence;
+  const recoveryActionable = isHubRecoveryActionable(status);
   elements.hubPill.className = `hub-pill ${mobile ? "mobile" : "desktop"}${switching ? " switching" : ""}${recoveryActionable ? " actionable" : ""}`;
   elements.hubLabel.textContent = recoveringDivergence
     ? "Hub 分歧恢复中"
@@ -774,7 +797,19 @@ function renderHubStatus() {
     : mobile
       ? "手机 Hub"
       : "电脑 Hub";
-  elements.hubStateLabel.textContent = recoveringDivergence ? "等待确认" : divergent ? "已隔离" : archivedEvidence ? "证据已归档" : switching ? "同步校验" : "当前";
+  elements.hubStateLabel.textContent = recoveringDivergence
+    ? "等待确认"
+    : divergent
+      ? "已隔离"
+      : archivedEvidence
+        ? "证据已归档"
+        : switching
+          ? "同步校验"
+          : embeddedDesktopHub
+            ? "桌面内置"
+            : externalDesktopHub
+              ? "外部中枢"
+              : "当前";
   elements.hubPill.title = recoveringDivergence
     ? "双 Hub 正在传输并校验权威快照，点击查看进度"
     : divergent
@@ -783,10 +818,10 @@ function renderHubStatus() {
       ? `查看 ${Number(status.forcedTakeover.divergentOperationCount)} 条已归档的 Hub 分歧证据`
     : switching
       ? `正在安全切换 Hub · ${status.state}`
-    : `当前活动 Hub：${activeNode?.name || elements.hubLabel.textContent} · 代次 ${Number(status.epoch) || 1}`;
-  elements.hubPill.setAttribute("aria-disabled", String(!recoveryActionable));
-  elements.hubPill.setAttribute("aria-label", recoveryActionable ? "打开 Hub 分叉恢复中心" : elements.hubPill.title);
-  elements.hubPill.tabIndex = recoveryActionable ? 0 : -1;
+    : `当前活动 Hub：${activeNode?.name || elements.hubLabel.textContent} · 代次 ${Number(status.epoch) || 1}${embeddedDesktopHub ? " · 由桌面端托管" : externalDesktopHub ? " · 当前由外部进程提供" : ""}`;
+  elements.hubPill.setAttribute("aria-disabled", "false");
+  elements.hubPill.setAttribute("aria-label", recoveryActionable ? "打开 Hub 分叉恢复中心" : "打开中枢与连接状态");
+  elements.hubPill.tabIndex = 0;
 }
 
 async function refreshHubStatus() {
@@ -2364,7 +2399,13 @@ walletModuleBtn.addEventListener("click", () => {
 document.querySelector("#interfaceSettingsBtn").addEventListener("click", openInterfaceSettings);
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
-elements.hubPill.addEventListener("click", openHubRecovery);
+elements.hubPill.addEventListener("click", () => {
+  if (isHubRecoveryActionable(state.hubStatus)) {
+    void openHubRecovery();
+    return;
+  }
+  connectionCenter.open();
+});
 elements.accountBtn.addEventListener("click", () => {
   const opening = elements.accountMenu.classList.contains("hidden");
   elements.accountMenu.classList.toggle("hidden", !opening);
@@ -2374,6 +2415,11 @@ elements.deviceManagerBtn.addEventListener("click", () => {
   elements.accountMenu.classList.add("hidden");
   elements.accountBtn.setAttribute("aria-expanded", "false");
   deviceManager.open();
+});
+elements.connectionCenterBtn.addEventListener("click", () => {
+  elements.accountMenu.classList.add("hidden");
+  elements.accountBtn.setAttribute("aria-expanded", "false");
+  connectionCenter.open();
 });
 elements.logoutBtn.addEventListener("click", async () => {
   elements.logoutBtn.disabled = true;
@@ -2657,6 +2703,9 @@ const disposeHubClusterChanged = window.desktop.onHubClusterChanged((status) => 
   state.hubStatus = status;
   state.hubStatusError = false;
   renderHubStatus();
+  if (!elements.connectionCenterMask.classList.contains("hidden")) {
+    void connectionCenter.refresh({ background: true });
+  }
   if (
     !elements.hubRecoveryMask.classList.contains("hidden") &&
     (["divergent", "recovering_divergence"].includes(status.state) ||
@@ -2682,6 +2731,7 @@ window.addEventListener("beforeunload", () => {
   dreamWriter?.stop();
   moodHeartbeat?.destroy();
   deviceManager.destroy();
+  connectionCenter.destroy();
 });
 
 initialize().catch((error) => {

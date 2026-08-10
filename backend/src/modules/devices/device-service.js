@@ -132,6 +132,19 @@ class DeviceService {
     }
   }
 
+  deleteDeviceRecord(userId, id) {
+    const device = this.repository.findDevice(userId, id);
+    if (!device) {
+      throw new HttpError(404, "DEVICE_NOT_FOUND", "设备不存在。");
+    }
+    if (device.status !== "revoked") {
+      throw new HttpError(409, "DEVICE_STILL_ACTIVE", "请先撤销设备访问，再删除设备记录。");
+    }
+    if (!this.repository.deleteRevokedDevice(userId, id)) {
+      throw new HttpError(409, "DEVICE_DELETE_CONFLICT", "设备记录状态已变化，请刷新后重试。");
+    }
+  }
+
   recordHeartbeat(userId, auth, input = {}) {
     const now = Date.now();
     const row = this.repository.upsertMobileHealth({
