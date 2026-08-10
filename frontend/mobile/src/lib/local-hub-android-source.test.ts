@@ -118,6 +118,8 @@ describe("Android Local Hub replication envelope", () => {
     expect(serviceSource).toContain('put("synchronization", synchronizationStatus())');
     expect(serviceSource).toContain('put("peerEndpoints", database.peerEndpoints())');
     expect(serviceSource).toContain('put("batteryOptimizationExempt", batteryOptimizationExempt())');
+    expect(androidManifestSource).toContain("android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS");
+    expect(pluginSource).toContain("Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS");
     expect(databaseSource).toContain("public synchronized JSONArray peerEndpoints()");
     expect(serviceSource).toContain("this::updateSynchronization");
     expect(peerSyncSource).toContain("ProgressListener");

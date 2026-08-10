@@ -2,6 +2,7 @@ package com.xuanxiaotech.aetherx.mobile;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
@@ -76,7 +77,15 @@ public class LocalHubPlugin extends Plugin {
     @PluginMethod
     public void openBatteryOptimizationSettings(PluginCall call) {
         try {
-            Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            PowerManager manager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            String packageName = getContext().getPackageName();
+            boolean exempt = manager != null && manager.isIgnoringBatteryOptimizations(packageName);
+            Intent intent = exempt
+                ? new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                : new Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + packageName)
+                );
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(intent);
             call.resolve(new JSObject().put("opened", true));

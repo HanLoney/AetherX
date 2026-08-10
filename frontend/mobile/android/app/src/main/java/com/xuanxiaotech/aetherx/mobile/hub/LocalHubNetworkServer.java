@@ -27,8 +27,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -38,11 +38,13 @@ public final class LocalHubNetworkServer {
     private static final int MAX_BODY_BYTES = 4 * 1024 * 1024;
     private static final long PEER_ALLOWED_SKEW_MS = 5 * 60 * 1000;
     private static final int LAST_PORT = LocalHubService.DEFAULT_PORT + 10;
+    private static final int HTTP_WORKER_COUNT = 8;
 
     private final LocalHubService service;
     private final LocalHubSecretStore secretStore;
     private final LocalHubClientSessionStore sessionStore;
-    private final ExecutorService clients = Executors.newCachedThreadPool();
+    private final ThreadPoolExecutor clients =
+        (ThreadPoolExecutor) Executors.newFixedThreadPool(HTTP_WORKER_COUNT);
     private final Map<String, Long> peerNonces = new ConcurrentHashMap<>();
     private volatile ServerSocket socket;
     private volatile Thread acceptThread;
@@ -56,6 +58,8 @@ public final class LocalHubNetworkServer {
         this.service = service;
         this.secretStore = secretStore;
         this.sessionStore = new LocalHubClientSessionStore(context);
+        // Avoid creating Android threads while a large SQLite sync is applying changes.
+        clients.prestartAllCoreThreads();
     }
 
     public synchronized int start() {
@@ -65,7 +69,7 @@ public final class LocalHubNetworkServer {
         closeListener();
         for (int candidate = LocalHubService.DEFAULT_PORT; candidate <= LAST_PORT; candidate += 1) {
             try {
-                ServerSocket next = new ServerSocket(candidate, 32, InetAddress.getByName("0.0.0.0"));
+                ServerSocket next = new ServerSocket(candidate, 128, InetAddress.getByName("0.0.0.0"));
                 next.setReuseAddress(true);
                 socket = next;
                 port = next.getLocalPort();
@@ -140,7 +144,12 @@ public final class LocalHubNetworkServer {
             try {
                 Socket client = current.accept();
                 client.setSoTimeout(320_000);
-                clients.execute(() -> handle(client));
+                try {
+                    clients.execute(() -> handle(client));
+                } catch (RuntimeException error) {
+                    try { client.close(); } catch (Exception ignored) {}
+                    throw error;
+                }
             } catch (SocketException error) {
                 if (socket != current || current.isClosed()) return;
                 Log.w(TAG, "Transient Local Hub listener failure; continuing", error);
