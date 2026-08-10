@@ -13,6 +13,14 @@ function isLoopbackHubUrl(value) {
   }
 }
 
+function resolveEnabledFlag(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error("Hub feature flags must use a boolean value.");
+}
+
 async function probeAetherXHub(baseUrl, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   if (typeof fetchImpl !== "function") return false;
@@ -137,6 +145,18 @@ async function startLocalHub(options) {
     registrationMode: environment.AETHERX_REGISTRATION_MODE || "open",
     registrationSecret: environment.AETHERX_REGISTRATION_SECRET || "",
     sessionTtlDays: Number(environment.AETHERX_SESSION_TTL_DAYS || 30),
+    replicationSchedulerEnabled: resolveEnabledFlag(
+      environment.AETHERX_REPLICATION_SCHEDULER_ENABLED
+    ),
+    switchRecoveryEnabled: resolveEnabledFlag(
+      environment.AETHERX_SWITCH_RECOVERY_ENABLED
+    ),
+    replicationPollIntervalMs: Number(
+      environment.AETHERX_REPLICATION_POLL_INTERVAL_MS || 5000
+    ),
+    replicationMaxBackoffMs: Number(
+      environment.AETHERX_REPLICATION_MAX_BACKOFF_MS || 300000
+    ),
     corsOrigin: environment.AETHERX_CORS_ORIGIN || "*"
   });
 
@@ -303,6 +323,7 @@ module.exports = {
   probeAetherXHub,
   prepareHubDataDir,
   resolveBackendRoot,
+  resolveEnabledFlag,
   resolveHubDataDir,
   startLocalHub,
   takeoverManagedHub

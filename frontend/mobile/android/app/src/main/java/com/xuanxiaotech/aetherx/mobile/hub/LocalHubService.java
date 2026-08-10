@@ -3,6 +3,7 @@ package com.xuanxiaotech.aetherx.mobile.hub;
 import android.content.Context;
 import android.os.Build;
 import android.os.PowerManager;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -14,6 +15,7 @@ import java.util.UUID;
 
 public final class LocalHubService {
     public static final int DEFAULT_PORT = 4319;
+    private static final String TAG = "AetherXLocalHub";
     private static volatile LocalHubService instance;
 
     private final LocalHubDatabase database;
@@ -538,6 +540,7 @@ public final class LocalHubService {
     }
 
     private synchronized void failSynchronization(Exception error) {
+        Log.e(TAG, "Local Hub synchronization failed", error);
         syncState = "error";
         syncStage = "error";
         syncMessage = error.getMessage() == null || error.getMessage().isEmpty()
