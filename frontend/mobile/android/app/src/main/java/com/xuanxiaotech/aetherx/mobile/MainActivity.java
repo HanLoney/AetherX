@@ -3,6 +3,7 @@ package com.xuanxiaotech.aetherx.mobile;
 import android.os.Bundle;
 import android.util.Log;
 import android.content.Intent;
+import android.webkit.WebSettings;
 
 import com.getcapacitor.BridgeActivity;
 import com.xuanxiaotech.aetherx.mobile.hub.LocalHubForegroundService;
@@ -30,5 +31,11 @@ public class MainActivity extends BridgeActivity {
         }, "aetherx-local-hub-bootstrap").start();
 
         super.onCreate(savedInstanceState);
+
+        if (BuildConfig.ALLOW_INSECURE_LAN) {
+            getBridge().getWebView().getSettings().setMixedContentMode(
+                WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            );
+        }
     }
 }

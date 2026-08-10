@@ -802,22 +802,24 @@ Android Local Hub 与 Windows 启动器已经接入同一状态机：
 
 ```text
 启动器 POST /api/v1/cluster/mobile-hubs/:nodeId/switch
-  → Hub 按手机 installation_id 定向发送 SSE hub-command
-  → 备用手机收到 switch-local-hub
-  → 手机先执行增量追平，再生成 stable 阶段证明
-  → 手机通过 /api/v1/peer/mobile-switch/start 与 /advance 推进切换
+  → 电脑 Hub 直接对备用手机执行预检、最终同步和 commit
+  → Android 原生 Peer 路由应用每个签名阶段
+  → 不依赖手机客户端 WebView、SSE 或前台状态
 
 手机 Hub 正在承载时
-  → 手机保留到电脑 Hub 的只读控制与健康上报 SSE
-  → 启动器发送 switch-desktop-hub
-  → 手机通过相同状态机把 active 角色安全交还电脑 Hub
+  → 电脑通过 Peer HMAC 请求 /api/v1/peer/mobile-switch/request
+  → Android 原生 Hub 主动运行 switchToPeer
+  → 手机通过 /api/v1/peer/mobile-switch/start 与 /advance
+  → 完成最终同步和完整性复核后把 active 角色安全交还电脑 Hub
 ```
 
-控制命令必须定向到与该 Local Hub 心跳绑定的手机安装，不能把桌面端自身的 SSE 订阅误算为“手机已收到”。切换命令不离线排队，手机控制通道不在线时直接返回 `MOBILE_HUB_CONTROL_OFFLINE`，避免设备稍后上线后发生用户已不再预期的延迟切换。普通“立即同步”命令可以定向排队，并且只能由目标手机安装取走。
+计划切换只走当前已登记的 Peer 端点并立即返回成功或失败，不写入离线命令队列，避免设备稍后上线后发生用户已不再预期的延迟切换。手机客户端 SSE 继续用于状态展示和普通“立即同步”命令，但不再是切换安全闭环的前置条件。
 
 手机在第一次 `stable → preparing_switch` 前必须先执行一次增量复制，Bootstrap 完成证明只代表全量基线完成，不代表此后新增的 Operation 已经追平。预检失败会保留原活动 Hub，并向界面报告具体失败项：`cluster`、`target`、`space`、`epoch`、`protocol`、`schema`、`database`、`credentials`、`agent`、`operations`、`records`、`media` 或 `bootstrap`。
 
-当前 Android Local Hub 是 Capacitor 进程内 Host，`serverUrl` 为 `capacitor://local-hub`，尚未开放可供电脑直接访问的 HTTP 端点。因而手机 Hub 承载期间，手机端可以独立使用；桌面端发起新的写请求时，如果会话交接返回 `PEER_ENDPOINT_UNAVAILABLE`，桌面端会通过保留的手机控制通道请求安全切回电脑 Hub，等待电脑节点恢复 `stable + active` 后使用同一 `request_id` 自动重试原请求。未来 Android 网络 Host 完成后，可移除该兼容回退并让桌面端直接连接手机 Hub。
+桌面发起切换时会先通过 `POST /api/v1/peer/synchronize` 要求备用 Hub 在原生 Peer 通道内追平，再进入预检和状态机。Android 前台 Hub 每 10 秒发送一次签名 `hello` 保活，维持息屏和 WebView 挂起时的 Tailscale/Anywhere 入站链路；普通同步失败仍按复制健康状态退避，不会改变活动 Hub。
+
+Android Local Hub 同时提供 `capacitor://local-hub` 进程内访问和受会话、Peer HMAC 保护的网络 Host。普通客户端会话与 Hub 间 Peer 请求分离；即使 WebView 被系统挂起，前台服务中的原生网络 Host 仍可处理预检、控制消息、最终同步和主动交还请求。
 
 阶段、提交和中止消息同时经过 Peer 请求 HMAC 与 Space Key HMAC；控制消息只接受 30 秒内的新鲜时间戳。目标已经应用 commit 但响应丢失时，源 Hub 会保持 `committing_switch`，同一 `transition_id` 可以重试并获得目标的幂等 ACK。当前阶段使用共享 Space Key 认证控制状态，后续仍应升级为节点身份私钥签名和可审计控制日志。
 

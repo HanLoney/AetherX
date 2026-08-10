@@ -10,9 +10,21 @@ function registerPeerRoutes(
     clusterService,
     switchStateMachineService,
     clientSessionHandoffService,
-    divergenceRecoveryService
+    divergenceRecoveryService,
+    replicationScheduler
   }
 ) {
+  if (replicationScheduler) {
+    router.add(
+      "POST",
+      "/api/v1/peer/synchronize",
+      async ({ userId }) => ({
+        data: await replicationScheduler.runNow(userId)
+      }),
+      { peer: true }
+    );
+  }
+
   if (divergenceRecoveryService) {
     router.add(
       "GET",
@@ -233,6 +245,28 @@ function registerPeerRoutes(
         body
       )
     }),
+    { peer: true, allowDuringClusterTransition: true }
+  );
+
+  router.add(
+    "POST",
+    "/api/v1/peer/mobile-switch/request",
+    async ({ userId, auth }) => {
+      const prepared = await switchStateMachineService.prepare(userId, {
+        targetNodeId: auth.peerNodeId
+      });
+      const committed = await switchStateMachineService.commit(userId, {
+        transitionId: prepared.transitionId
+      });
+      return {
+        data: {
+          completed: committed.committed === true,
+          activeNodeId: committed.activeNodeId,
+          epoch: committed.epoch,
+          state: committed.cluster?.state || "stable"
+        }
+      };
+    },
     { peer: true, allowDuringClusterTransition: true }
   );
 

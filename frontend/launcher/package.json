@@ -1,6 +1,6 @@
 {
   "name": "aetherx-launcher",
-  "version": "0.1.6",
+  "version": "1.2.6",
   "description": "AetherX Windows deployment and health control center",
   "main": "main.js",
   "author": "Xuanxiaotech",
@@ -15,12 +15,15 @@
     "test": "node --test",
     "smoke:hub": "node scripts/smoke-hub.js",
     "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
+    "verify:signature": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/verify-windows-signature.ps1 \"dist/win-unpacked/AetherX 启动器.exe\" dist/AetherX-启动器-*.exe",
     "build:desktop": "npm --prefix ../desktop run dist:dir",
     "prepare:payload": "node scripts/prepare-payload.js",
-    "dist": "npm run build:desktop && npm run prepare:payload && electron-builder --win nsis && npm run verify:backend && npm run smoke:hub"
+    "dist:package": "npm run prepare:payload && electron-builder --win nsis && npm run verify:backend && npm run smoke:hub",
+    "dist": "npm run build:desktop && npm run dist:package",
+    "dist:signed": "npm run dist && npm run verify:signature"
   },
   "devDependencies": {
-    "electron": "^37.2.0",
+    "electron": "^43.3.0",
     "electron-builder": "^26.0.12"
   },
   "build": {

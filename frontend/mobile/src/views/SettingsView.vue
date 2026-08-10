@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, shallowRef } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef } from "vue";
 import {
   AlertTriangle,
   Check,
@@ -94,6 +94,7 @@ const crop = reactive({ baseScale: 1, offsetX: 0, offsetY: 0 });
 const aiState = ref<{hasApiKey:boolean;model?:string}|null>(null);
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
+let hubStatusTimer: number | null = null;
 
 const displayName = computed(() => String(
   data.profile.value.displayName
@@ -123,13 +124,6 @@ const currentHubBadge = computed(() => {
   if (data.syncState.value === "error" && !isLocalHubActive.value) return "连接异常";
   return "当前使用";
 });
-const syncDescription = computed(() => data.syncState.value === "online"
-  ? "电脑与手机正在实时同步"
-  : data.syncState.value === "syncing"
-    ? "正在读取最新内容"
-    : data.syncState.value === "error"
-      ? "连接暂时中断，点击重新同步"
-      : "正在等待电脑端连接");
 const localHubDescription = computed(() => {
   const state = localHub.status.value;
   if (!localHub.available) return "仅 Android 安装包提供";
@@ -152,6 +146,77 @@ const localHubBadge = computed(() => {
   if (state?.role === "active") return "当前";
   if (!state?.configured) return "待配对";
   return localHubBootstrapReady.value ? "待命" : "待恢复";
+});
+const hubSynchronization = computed(() => localHub.status.value?.synchronization || null);
+const hubSyncProgress = computed(() => {
+  const sync = hubSynchronization.value;
+  if (localHubSyncing.value && sync?.state !== "syncing") return 3;
+  if (sync?.state === "syncing" || sync?.state === "synced") return Math.max(0, Math.min(100, Number(sync.progress || 0)));
+  const state = localHub.status.value;
+  if (!state?.configured) return 0;
+  if (localHubBootstrapReady.value) return sync?.state === "error" ? Math.max(0, Number(sync.progress || 0)) : 0;
+  const total = Math.max(0, Number(state.mediaTotalBytes || 0));
+  const received = Math.max(0, Math.min(total, Number(state.mediaBytes || 0)));
+  if (state.bootstrap?.status === "restored") return 92;
+  if (state.bootstrap?.status === "waiting_blobs") return Math.round(35 + (total > 0 ? received / total : 0) * 50);
+  return 15;
+});
+const hubSyncTone = computed(() => {
+  if (!localHub.status.value?.configured || !localHubBootstrapReady.value) return "preparing";
+  if (localHubSyncing.value) return "syncing";
+  return hubSynchronization.value?.state || "idle";
+});
+const hubSyncLabel = computed(() => {
+  if (!localHub.status.value?.configured) return "未建立同步";
+  if (!localHubBootstrapReady.value) return `副本准备中 ${hubSyncProgress.value}%`;
+  if (hubSynchronization.value?.state === "syncing" || localHubSyncing.value) return `同步中 ${hubSyncProgress.value}%`;
+  if (hubSynchronization.value?.state === "synced") return "已同步";
+  if (hubSynchronization.value?.state === "error") return "同步失败";
+  return "等待首次同步";
+});
+const hubSyncMessage = computed(() => {
+  if (!localHub.status.value?.configured) return "先在连接管理中完成手机 Hub 配对";
+  if (!localHubBootstrapReady.value) return localHubDescription.value;
+  if (hubSynchronization.value?.message) return hubSynchronization.value.message;
+  return "点击立即同步，确认电脑 Hub 与手机 Hub 的数据完全一致";
+});
+const desktopHubSyncLabel = computed(() => {
+  if (hubSyncTone.value === "syncing") return "同步中";
+  if (hubSyncTone.value === "synced") return "已同步";
+  if (hubSyncTone.value === "error") return isLocalHubActive.value ? "待重试" : "连接异常";
+  if (hubSyncTone.value === "preparing") return "数据源";
+  return isLocalHubActive.value ? "同步端" : "承载中";
+});
+const phoneHubSyncLabel = computed(() => {
+  if (hubSyncTone.value === "syncing") return "同步中";
+  if (hubSyncTone.value === "synced") return "已同步";
+  if (hubSyncTone.value === "error") return "待重试";
+  if (hubSyncTone.value === "preparing") return localHub.status.value?.configured ? `${hubSyncProgress.value}%` : "未配对";
+  return isLocalHubActive.value ? "承载中" : "待同步";
+});
+
+async function pollHubStatus() {
+  if (document.visibilityState !== "visible" || router.currentRoute.value.path !== "/settings") return;
+  await localHub.refresh().catch(() => undefined);
+}
+
+async function openBatteryOptimizationSettings() {
+  localHubSyncError.value = "";
+  try {
+    await localHub.openBatteryOptimizationSettings();
+  } catch (cause) {
+    localHubSyncError.value = cause instanceof Error ? cause.message : "无法打开系统后台运行设置。";
+  }
+}
+
+onMounted(() => {
+  void pollHubStatus();
+  hubStatusTimer = window.setInterval(() => { void pollHubStatus(); }, 1_200);
+});
+
+onUnmounted(() => {
+  if (hubStatusTimer !== null) window.clearInterval(hubStatusTimer);
+  hubStatusTimer = null;
 });
 
 function previewFontScale(event: Event) {
@@ -732,11 +797,15 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
         <div><h3>{{ currentHubTitle }}</h3><p>{{ currentHubDescription }}</p></div>
       </div>
       <div class="hub-route" aria-label="电脑 Hub 与手机 Hub 的当前状态">
-        <div :class="{ active: !isLocalHubActive }"><Server :size="18" /><span>电脑 Hub</span><b>{{ !isLocalHubActive ? '承载中' : '同步端' }}</b></div>
+        <div :class="{ active: !isLocalHubActive }"><Server :size="18" /><span>电脑 Hub</span><b>{{ desktopHubSyncLabel }}</b></div>
         <i><span /><Link2 :size="14" /><span /></i>
-        <div :class="{ active: isLocalHubActive }"><Smartphone :size="18" /><span>手机 Hub</span><b>{{ isLocalHubActive ? '承载中' : (localHubBootstrapReady ? '待命' : '未就绪') }}</b></div>
+        <div :class="{ active: isLocalHubActive }"><Smartphone :size="18" /><span>手机 Hub</span><b>{{ phoneHubSyncLabel }}</b></div>
       </div>
-      <p class="hub-sync-state"><Cloud :size="14" />{{ syncDescription }}</p>
+      <div class="hub-replication-status" :class="hubSyncTone">
+        <div><span><Cloud :size="14" />双 Hub 同步</span><b>{{ hubSyncLabel }}</b></div>
+        <p>{{ hubSyncMessage }}</p>
+        <i role="progressbar" :aria-valuenow="hubSyncProgress" aria-valuemin="0" aria-valuemax="100"><b :style="{ width: `${hubSyncProgress}%` }" /></i>
+      </div>
       <div v-if="localHub.status.value?.configured && localHubBootstrapReady" class="hub-action-row">
         <button
           class="hub-switch-button"
@@ -751,6 +820,16 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
           <RefreshCw :size="17" :class="{ spin: localHubSyncing }" />{{ localHubSyncing ? '同步中…' : '立即同步' }}
         </button>
       </div>
+      <button
+        v-if="localHub.status.value?.configured && localHub.status.value?.batteryOptimizationExempt === false"
+        class="hub-background-warning"
+        type="button"
+        @click="openBatteryOptimizationSettings"
+      >
+        <AlertTriangle :size="16" />
+        <span><strong>允许手机 Hub 后台运行</strong><small>关闭 AetherX 与 Tailscale 的电池优化，息屏后才能持续接收切换与同步请求</small></span>
+        <ChevronRight :size="15" />
+      </button>
       <button class="hub-management-entry" type="button" @click="hubManagementOpen = true">
         <span>连接管理</span><small>地址、配对与故障处理</small><ChevronRight :size="16" />
       </button>
@@ -1068,6 +1147,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .profile-meta{position:relative;z-index:1;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding:0 4px 0 10px;border-radius:14px;background:rgba(112,104,135,.045)}.profile-meta>span{min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;color:#8e8797;font-size: calc(8px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.profile-meta>button{height:31px;flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 10px;border:1px solid rgba(255,255,255,.75);border-radius:11px;color:#806c82;background:linear-gradient(125deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.14));font-size: calc(8px * var(--font-scale, 1));font-weight:700}
 .section-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:25px 4px 11px}.section-heading>div{display:grid;gap:3px}.section-heading span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.section-heading h2{margin:0;color:#514d5d;font-size: calc(16px * var(--font-scale, 1))}.section-heading>svg{color:#7ca48f}
 .current-hub-card{position:relative;overflow:hidden;padding:16px;border:1px solid rgba(255,255,255,.88);border-radius:27px 27px 27px 10px;background:radial-gradient(circle at 100% 0,rgba(var(--blue-rgb),.17),transparent 36%),linear-gradient(145deg,rgba(255,255,255,.82),rgba(244,248,253,.62));box-shadow:0 20px 52px rgba(71,75,105,.12);backdrop-filter:blur(22px)}.current-hub-card.mobile{background:radial-gradient(circle at 0 100%,rgba(var(--pink-rgb),.17),transparent 38%),linear-gradient(145deg,rgba(255,255,255,.83),rgba(252,246,250,.64))}.current-hub-head{display:flex;align-items:center;justify-content:space-between}.current-hub-head>span{display:flex;align-items:center;gap:6px;color:#7e7889;font-size:calc(8px * var(--font-scale,1));font-weight:800}.current-hub-head>span i{width:7px;height:7px;border-radius:50%;background:#5cb88f;box-shadow:0 0 0 5px rgba(92,184,143,.11)}.current-hub-head>b{padding:5px 9px;border-radius:999px;color:#fff;background:#659c84;font-size:calc(7px * var(--font-scale,1))}.current-hub-head>b.warning{background:#bd7890}.current-hub-main{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:15px}.current-hub-icon{width:51px;height:51px;display:grid;place-items:center;border-radius:18px;color:#678cab;background:rgba(255,255,255,.74);box-shadow:0 11px 28px rgba(69,79,105,.11)}.mobile .current-hub-icon{color:#a27395}.current-hub-main h3{margin:0;color:#454151;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.035em}.current-hub-main p{margin:5px 0 0;color:#8e8796;font-size:calc(8px * var(--font-scale,1));line-height:1.55}.hub-route{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-top:17px;padding:11px;border:1px solid rgba(109,103,132,.07);border-radius:18px;background:rgba(255,255,255,.5)}.hub-route>div{min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:2px 7px;color:#aaa4b0}.hub-route>div>span{overflow:hidden;color:#746e7d;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.hub-route>div>b{grid-column:2;color:#aaa4b0;font-size:calc(6px * var(--font-scale,1));font-weight:600}.hub-route>div.active{color:#668e7b}.hub-route>div.active>b{color:#63947c}.hub-route>i{display:flex;align-items:center;color:#a9a3b0}.hub-route>i span{width:10px;height:1px;background:rgba(126,119,143,.25)}.hub-sync-state{display:flex;align-items:center;gap:6px;margin:12px 2px 0;color:#8d8795;font-size:calc(7px * var(--font-scale,1))}.hub-sync-state svg{color:#7797b5}.hub-action-row{display:grid;grid-template-columns:1.35fr .85fr;gap:9px;margin-top:15px}.hub-action-row button{min-width:0;height:46px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(8px * var(--font-scale,1));font-weight:800}.hub-sync-button{border:1px solid rgba(var(--blue-rgb),.18);color:#67829d;background:rgba(255,255,255,.62)}.hub-switch-button{border:0;color:#fff;background:linear-gradient(115deg,#bc88a8,#838fb8 56%,#709bc0);box-shadow:0 9px 20px rgba(114,116,154,.17)}.hub-action-row button:disabled{opacity:.52}.hub-management-entry{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;margin-top:10px;padding:9px 3px 0;border:0;border-top:1px solid rgba(112,105,133,.08);color:#736d7c;background:transparent;text-align:left}.hub-management-entry>span{font-size:calc(8px * var(--font-scale,1));font-weight:700}.hub-management-entry>small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));}.hub-management-entry>svg{color:#aaa3b0}
+.hub-background-warning{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;margin-top:11px;padding:10px 11px;border:1px solid rgba(190,132,83,.18);border-radius:15px;color:#9c704d;background:rgba(255,246,230,.62);text-align:left}.hub-background-warning>span{display:grid;gap:2px}.hub-background-warning strong{font-size:calc(8px * var(--font-scale,1))}.hub-background-warning small{color:#a78d78;font-size:calc(7px * var(--font-scale,1));line-height:1.4}.hub-background-warning>svg:last-child{color:#b79272}
 .settings-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.085);backdrop-filter:blur(18px)}.settings-list article,.settings-list>button{width:100%;min-height:68px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;padding:11px 13px;border:0;border-bottom:1px solid rgba(106,98,129,.07);color:inherit;background:transparent;text-align:left}.settings-list article:last-child,.settings-list>button:last-child{border:0}.settings-list i{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#7d9ec1;background:linear-gradient(145deg,rgba(var(--pink-rgb),.1),rgba(var(--blue-rgb),.14))}.settings-list div{min-width:0;display:grid;gap:4px}.settings-list strong{font-size: calc(10px * var(--font-scale, 1))}.settings-list span{overflow:hidden;color:#9993a3;font-size: calc(7px * var(--font-scale, 1));text-overflow:ellipsis;white-space:nowrap}.settings-list b{padding:4px 7px;border-radius:999px;color:#65927f;background:rgba(96,180,145,.09);font-size: calc(7px * var(--font-scale, 1))}.settings-list b.warning{color:#a56e8f;background:rgba(var(--pink-rgb),.1)}.hub-connection-row:active{background:rgba(var(--blue-rgb),.055)}.connection-notice{display:flex;align-items:center;justify-content:center;gap:5px;margin:9px 12px 0;color:#65927f;font-size:calc(8px * var(--font-scale, 1))}.compact-heading+.settings-list{border-radius:19px 19px 19px 8px;box-shadow:0 12px 32px rgba(75,70,103,.065)}
 .hub-force-entry{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px;padding:7px;border:0;color:#a67b83;background:transparent;font-size:calc(7px * var(--font-scale,1));font-weight:700}.hub-force-entry:disabled{opacity:.45}
 .module-heading{margin-top:22px}.compact-heading{margin-top:20px}.module-control-list{overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.59);box-shadow:0 15px 42px rgba(75,70,103,.075);backdrop-filter:blur(18px)}.module-control-list label{position:relative;min-height:68px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:13px;padding:12px 14px;border-bottom:1px solid rgba(106,98,129,.07);transition:opacity .18s ease}.module-control-list label:last-child{border-bottom:0}.module-control-list label.disabled{opacity:.62}.module-control-list label>span{min-width:0;display:grid;gap:4px}.module-control-list strong{color:#4f4a5b;font-size:calc(10px * var(--font-scale,1))}.module-control-list small{overflow:hidden;color:#9993a3;font-size:calc(7px * var(--font-scale,1));line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.module-control-list input{position:absolute;opacity:0;pointer-events:none}.module-control-list label>i{position:relative;width:39px;height:23px;border-radius:999px;background:rgba(133,127,151,.18);box-shadow:inset 0 0 0 1px rgba(108,101,130,.08);transition:background .2s ease}.module-control-list label>i b{position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(75,67,95,.2);transition:transform .22s cubic-bezier(.2,.9,.25,1.15)}.module-control-list input:checked+i{background:linear-gradient(135deg,#cb8dac,#7fa8d0)}.module-control-list input:checked+i b{transform:translateX(16px)}.module-control-list label.core>i{opacity:.55}.module-error{margin:9px 12px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));text-align:center}
@@ -1081,4 +1161,5 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .interface-settings-sheet{width:100%;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.13),transparent 31%),radial-gradient(circle at 4% 80%,rgba(var(--pink-rgb),.12),transparent 35%),rgba(251,250,253,.98);box-shadow:0 -22px 70px rgba(67,62,91,.2)}.interface-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.interface-settings-sheet header span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.interface-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.interface-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.font-size-card{margin-top:18px;padding:16px;border:1px solid rgba(255,255,255,.82);border-radius:23px 23px 23px 9px;background:rgba(255,255,255,.65);box-shadow:0 15px 38px rgba(75,70,103,.09);backdrop-filter:blur(18px)}.font-setting-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px}.font-setting-head>i{width:39px;height:39px;display:grid;place-items:center;border-radius:14px;color:#987aa0;background:linear-gradient(145deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.14))}.font-setting-head>div{display:grid;gap:4px}.font-setting-head strong{color:#575160;font-size:calc(11px * var(--font-scale, 1))}.font-setting-head span{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.font-setting-head>b{padding:5px 8px;border-radius:999px;color:#fff;background:linear-gradient(120deg,#c986ad,#849ac6);font-size:calc(8px * var(--font-scale, 1))}.font-preview{display:grid;gap:5px;margin-top:15px;padding:14px;border:1px solid rgba(116,108,137,.07);border-radius:16px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.055),rgba(var(--blue-rgb),.065))}.font-preview>span{color:#a07a9e;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.12em}.font-preview>strong{color:#56505f;font-size:calc(13px * var(--font-scale, 1))}.font-preview>small{color:#918a99;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control{height:47px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:8px;color:#9891a1;font-size:calc(8px * var(--font-scale, 1))}.font-scale-control input{width:100%;accent-color:#9b87b5}.font-scale-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}.font-scale-footer small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1))}.font-scale-footer button{padding:6px 8px;border:0;border-radius:9px;color:#87718d;background:rgba(var(--pink-rgb),.09);font-size:calc(7px * var(--font-scale, 1));font-weight:700}.font-scale-error{margin:10px 0 0;color:#aa5970;font-size:calc(8px * var(--font-scale, 1));text-align:center}
 .archive-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.16),transparent 31%),radial-gradient(circle at 4% 86%,rgba(var(--pink-rgb),.13),transparent 35%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}.archive-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.archive-settings-sheet header span{color:#7e98b3;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.archive-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.archive-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.archive-hero{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:16px;padding:15px;border:1px solid rgba(255,255,255,.8);border-radius:21px 21px 21px 8px;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(var(--pink-rgb),.075));box-shadow:0 13px 35px rgba(75,70,103,.08)}.archive-hero>i{width:45px;height:45px;display:grid;place-items:center;border-radius:15px;color:#718eac;background:rgba(255,255,255,.64)}.archive-hero>div{display:grid;gap:5px}.archive-hero strong{color:#56505f;font-size:calc(11px * var(--font-scale, 1))}.archive-hero span{color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.55}.archive-password{display:grid;gap:7px;margin-top:15px}.archive-password>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.archive-password input{height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale, 1))}.archive-password input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.archive-password small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.archive-export-button{width:100%;min-height:57px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.14);border-radius:16px;color:#7187a2;background:rgba(var(--blue-rgb),.075);text-align:left}.archive-export-button>span{display:grid;gap:3px}.archive-export-button strong{font-size:calc(9px * var(--font-scale, 1))}.archive-export-button small{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.archive-restore-card{margin-top:12px;padding:15px;border:1px solid rgba(var(--pink-rgb),.13);border-radius:20px 20px 8px 20px;background:rgba(255,249,252,.72)}.archive-restore-card>div{display:grid;gap:4px}.archive-restore-card strong{color:#655661;font-size:calc(10px * var(--font-scale, 1))}.archive-restore-card span,.archive-restore-card>p{color:#9d8790;font-size:calc(7px * var(--font-scale, 1));line-height:1.55}.archive-file-input{display:none}.archive-file-button{width:100%;min-height:43px;display:flex;align-items:center;justify-content:center;gap:7px;overflow:hidden;margin-top:11px;padding:0 12px;border:1px dashed rgba(123,146,178,.3);border-radius:13px;color:#71829a;background:rgba(255,255,255,.58);font-size:calc(8px * var(--font-scale, 1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.archive-restore-card>p{margin:10px 1px 0}.archive-restore-button{width:100%;height:46px;margin-top:11px;border:0;border-radius:14px;color:#fff;background:linear-gradient(115deg,#c77d9f,#8a8fb9 58%,#729ec4);font-size:calc(9px * var(--font-scale, 1));font-weight:800}.archive-export-button:disabled,.archive-file-button:disabled,.archive-restore-button:disabled,.archive-settings-sheet header button:disabled{opacity:.5}.archive-notice{display:flex;align-items:flex-start;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale, 1));line-height:1.5}.archive-notice svg{flex:0 0 auto;margin-top:1px}.archive-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}
 .crop-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:rgba(40,37,56,.34);backdrop-filter:blur(9px)}.avatar-cropper{width:min(100%,390px);padding:18px;border:1px solid rgba(255,255,255,.78);border-radius:28px;background:linear-gradient(145deg,rgba(255,252,254,.98),rgba(243,247,252,.98));box-shadow:0 28px 80px rgba(50,45,69,.3)}.avatar-cropper header{display:flex;align-items:center;justify-content:space-between}.avatar-cropper header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.avatar-cropper h2{margin:3px 0 0;color:#4d4859;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.avatar-cropper header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.crop-stage{position:relative;width:min(74vw,292px);overflow:hidden;aspect-ratio:1;margin:18px auto 0;border-radius:28px;background:#dedbe5;box-shadow:inset 0 0 0 1px rgba(77,70,98,.1),0 17px 35px rgba(75,68,97,.17)}.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}.crop-stage canvas:active{cursor:grabbing}.crop-guide{position:absolute;inset:10px;border:1px solid rgba(255,255,255,.76);border-radius:21px;box-shadow:0 0 0 1px rgba(68,61,86,.08);pointer-events:none}.avatar-cropper>p{margin:12px 0 0;color:#918a9b;font-size: calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.crop-zoom{height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:8px;padding:0 5px;color:#8a8295}.crop-zoom input{width:100%;accent-color:#a785b3}.crop-error{color:#aa5970!important}.crop-actions{display:grid;grid-template-columns:1fr 1.45fr;gap:9px;margin-top:12px}.crop-actions button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;color:#797283;background:rgba(105,97,131,.08);font-size: calc(9px * var(--font-scale, 1));font-weight:700}.crop-actions button:last-child{color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.crop-actions button:disabled,.avatar-cropper header button:disabled{opacity:.55}
+.hub-replication-status{margin-top:12px;padding:11px 12px;border:1px solid rgba(112,105,133,.08);border-radius:15px;background:rgba(255,255,255,.48)}.hub-replication-status>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.hub-replication-status>div span{display:flex;align-items:center;gap:6px;color:#777181;font-size:calc(8px * var(--font-scale,1));font-weight:800}.hub-replication-status>div svg{color:#7897b4}.hub-replication-status>div b{color:#71907f;font-size:calc(8px * var(--font-scale,1))}.hub-replication-status.syncing>div b{color:#718aaa}.hub-replication-status.error>div b{color:#b06f84}.hub-replication-status p{margin:6px 0 0;color:#97909f;font-size:calc(7px * var(--font-scale,1));line-height:1.45}.hub-replication-status>i{height:4px;display:block;overflow:hidden;margin-top:9px;border-radius:999px;background:rgba(113,107,134,.1)}.hub-replication-status>i b{height:100%;display:block;border-radius:inherit;background:linear-gradient(90deg,#79a6c8,#9e8fbd 55%,#ca8cac);transition:width .35s ease}.hub-replication-status.synced>i b{background:linear-gradient(90deg,#7eb69c,#70a58c)}.hub-replication-status.error>i b{background:#c98295}
 </style>

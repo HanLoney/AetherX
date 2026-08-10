@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "AetherX",
   webDir: "dist",
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
     backgroundColor: "#f8f7fc"
   }
 };

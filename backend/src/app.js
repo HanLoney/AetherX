@@ -1,6 +1,7 @@
 const http = require("node:http");
 const { createRouter } = require("./lib/router");
 const { openDatabase } = require("./infrastructure/database");
+const { acquireDataDirLock } = require("./infrastructure/data-dir-lock");
 const { createSecretBox } = require("./infrastructure/secret-box");
 const { TodoRepository } = require("./modules/todos/todo-repository");
 const { TodoService } = require("./modules/todos/todo-service");
@@ -283,7 +284,14 @@ const {
 } = require("./modules/module-activity/module-activity-routes");
 
 function createApp(config) {
-  const database = openDatabase(config.dataDir);
+  const releaseDataDirLock = acquireDataDirLock(config.dataDir);
+  let database;
+  try {
+    database = openDatabase(config.dataDir);
+  } catch (error) {
+    releaseDataDirLock();
+    throw error;
+  }
   const secretBox = createSecretBox(config.dataDir, config.masterKey);
   let archiveService = null;
   const authService = new AuthService(new AuthRepository(database), {
@@ -639,7 +647,8 @@ function createApp(config) {
     switchRecoveryService,
     clientSessionHandoffService,
     syncEventBroker,
-    divergenceRecoveryService
+    divergenceRecoveryService,
+    peerTransport
   );
   registerHubPairingRoutes(
     router,
@@ -656,7 +665,8 @@ function createApp(config) {
     clusterService,
     switchStateMachineService,
     clientSessionHandoffService,
-    divergenceRecoveryService
+    divergenceRecoveryService,
+    replicationScheduler
   });
   registerReplicationSchedulerRoutes(router, replicationScheduler);
   registerModuleSettingsRoutes(router, moduleManager);
@@ -730,17 +740,21 @@ function createApp(config) {
       });
     },
     async close() {
-      await switchRecoveryService.stop();
-      await replicationScheduler.stop();
-      mobileHubSyncNotifier.close();
-      return new Promise((resolve, reject) => {
-        syncEventBroker.close();
-        server.close((error) => {
-          database.close();
-          if (error) reject(error);
-          else resolve();
+      try {
+        await switchRecoveryService.stop();
+        await replicationScheduler.stop();
+        mobileHubSyncNotifier.close();
+        return await new Promise((resolve, reject) => {
+          syncEventBroker.close();
+          server.close((error) => {
+            database.close();
+            if (error) reject(error);
+            else resolve();
+          });
         });
-      });
+      } finally {
+        releaseDataDirLock();
+      }
     }
   };
 }
