@@ -37,6 +37,10 @@ function registerDeviceRoutes(router, service) {
     service.revokeDevice(userId, params.id);
     return { status: 204 };
   });
+  router.add("DELETE", "/api/v1/devices/:id/record", ({ userId, params }) => {
+    service.deleteDeviceRecord(userId, params.id);
+    return { status: 204 };
+  });
 }
 
 module.exports = { registerDeviceRoutes };

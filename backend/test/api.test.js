@@ -576,6 +576,14 @@ test("phone pairing requires desktop approval and creates a revocable device tok
     assert.equal(devices.payload.data.devices.length, 1);
     assert.equal(devices.payload.data.devices[0].id, deviceId);
 
+    const activeDelete = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/devices/${deviceId}/record`
+    );
+    assert.equal(activeDelete.response.status, 409);
+    assert.equal(activeDelete.payload.error.code, "DEVICE_STILL_ACTIVE");
+
     const revoked = await request(
       baseUrl,
       "DELETE",
@@ -591,6 +599,16 @@ test("phone pairing requires desktop approval and creates a revocable device tok
       deviceToken
     );
     assert.equal(rejected.response.status, 401);
+
+    const deleted = await request(
+      baseUrl,
+      "DELETE",
+      `/api/v1/devices/${deviceId}/record`
+    );
+    assert.equal(deleted.response.status, 204);
+
+    const devicesAfterDelete = await request(baseUrl, "GET", "/api/v1/devices");
+    assert.equal(devicesAfterDelete.payload.data.devices.length, 0);
   });
 });
 
@@ -613,6 +631,24 @@ test("Hub pairing requires owner approval and redeems encrypted node credentials
     assert.equal(session.qrPayload.sessionId, session.id);
     assert.equal(session.qrPayload.secret, session.secret);
     assert.equal(session.qrPayload.endpoints.length, 2);
+    const resolved = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/hub-pairing/sessions/${session.id}/resolve`,
+      { secret: session.secret }
+    );
+    assert.equal(resolved.response.status, 200);
+    assert.deepEqual(resolved.payload.data, session.qrPayload);
+    assert.equal(JSON.stringify(resolved.payload).includes("encryptedServerEphemeralPrivateKey"), false);
+
+    const rejectedResolve = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/hub-pairing/sessions/${session.id}/resolve`,
+      { secret: "x".repeat(43) }
+    );
+    assert.equal(rejectedResolve.response.status, 404);
+    assert.equal(rejectedResolve.payload.error.code, "HUB_PAIRING_NOT_FOUND");
     const unsafeEndpoint = await request(
       baseUrl,
       "POST",

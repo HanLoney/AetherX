@@ -107,6 +107,10 @@
                     <div><strong id="accountMenuName">我的空间</strong><small id="accountUsername"></small></div>
                   </div>
                   <small id="accountServer" class="account-server"></small>
+                  <button id="connectionCenterBtn" class="device-menu-button" type="button" role="menuitem">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="m7 9 5.8-3M7 11l5.8 3"/></svg>
+                    <span>中枢与连接状态</span>
+                  </button>
                   <button id="deviceManagerBtn" class="device-menu-button" type="button" role="menuitem">
                     <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="2.5" width="8" height="15" rx="2"/><path d="M8.5 5h3M9 14.5h2"/></svg>
                     <span>连接手机 / 设备管理</span>
@@ -222,6 +226,87 @@
       </main>
     </div>
 
+    <div id="connectionCenterMask" class="modal-mask hidden">
+      <section class="connection-center-panel" role="dialog" aria-modal="true" aria-labelledby="connectionCenterTitle">
+        <header class="connection-center-head">
+          <div>
+            <p>HUB &amp; LINK MATRIX</p>
+            <h2 id="connectionCenterTitle">中枢与连接状态</h2>
+            <span>电脑 Hub 与手机 Hub 是同级副本，桌面端和手机客户端始终跟随当前活动 Hub。</span>
+          </div>
+          <div class="connection-head-actions">
+            <button id="refreshConnectionCenterBtn" class="connection-refresh-button" type="button" aria-label="刷新连接状态" title="刷新连接状态">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v5h-5M5 17v-5h5"/><path d="M18 12a6 6 0 0 0-10.6-3.8L5 12M6 12a6 6 0 0 0 10.6 3.8L19 12"/></svg>
+            </button>
+            <button id="closeConnectionCenterBtn" class="close-button" type="button" aria-label="关闭连接状态">×</button>
+          </div>
+        </header>
+
+        <section class="connection-overview" aria-live="polite">
+          <div class="connection-overview-copy">
+            <span id="connectionOverallDot" class="connection-overall-dot checking"></span>
+            <div><small>当前链路</small><strong id="connectionOverallTitle">正在读取连接状态</strong><p id="connectionOverallDetail">核对中枢、客户端与网络入口</p></div>
+          </div>
+          <div class="connection-overview-meta">
+            <span><small>当前活动</small><strong id="connectionActiveHub">--</strong></span>
+            <span><small>Hub 代次</small><strong id="connectionEpoch">--</strong></span>
+            <span><small>复制状态</small><strong id="connectionSyncState">检测中</strong></span>
+          </div>
+        </section>
+
+        <section class="hub-peer-topology" aria-label="双 Hub 拓扑">
+          <article id="computerHubNode" class="hub-peer-node computer" data-state="checking">
+            <header><span class="hub-node-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="11" rx="2.5"/><path d="M8 20h8M12 16v4"/></svg></span><div><small>COMPUTER HUB</small><h3>电脑 Hub</h3></div><strong id="computerHubRole" class="hub-role-pill">检测中</strong></header>
+            <div class="hub-node-pulse" aria-hidden="true"><span></span></div>
+            <dl>
+              <div><dt>运行方式</dt><dd id="computerHubRuntime">读取中</dd></div>
+              <div><dt>接口</dt><dd id="computerHubHealth">读取中</dd></div>
+              <div><dt>复制</dt><dd id="computerHubReplication">读取中</dd></div>
+              <div><dt>节点</dt><dd id="computerHubIdentity">--</dd></div>
+            </dl>
+          </article>
+
+          <div id="hubPeerBridge" class="hub-peer-bridge" data-state="checking">
+            <span class="bridge-line"><i></i></span>
+            <strong id="hubPeerBridgeTitle">正在核对</strong>
+            <small id="hubPeerBridgeDetail">SIGNED SYNC</small>
+            <div class="bridge-progress"><i id="hubPeerBridgeProgress"></i></div>
+          </div>
+
+          <article id="mobileHubNode" class="hub-peer-node mobile" data-state="checking">
+            <header><span class="hub-node-icon"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><path d="M10 6h4M10.5 18h3"/></svg></span><div><small>MOBILE HUB</small><h3>手机 Hub</h3></div><strong id="mobileHubRole" class="hub-role-pill">检测中</strong></header>
+            <div class="hub-node-pulse" aria-hidden="true"><span></span></div>
+            <dl>
+              <div><dt>本地服务</dt><dd id="mobileHubHealth">读取中</dd></div>
+              <div><dt>同步进度</dt><dd id="mobileHubProgress">读取中</dd></div>
+              <div><dt>原图</dt><dd id="mobileHubMedia">读取中</dd></div>
+              <div><dt>节点</dt><dd id="mobileHubIdentity">--</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="connection-route-grid">
+          <article id="desktopClientCard" class="connection-route-card" data-state="checking">
+            <span class="route-card-icon desktop"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="11" rx="2.5"/><path d="M8 20h8M12 16v4"/></svg></span>
+            <div><small>DESKTOP CLIENT</small><strong>桌面客户端</strong><p id="desktopClientRoute">正在读取当前路由</p></div><b id="desktopClientState">检测中</b>
+          </article>
+          <article id="anywhereCard" class="connection-route-card" data-state="checking">
+            <span class="route-card-icon anywhere"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5S14.4 18.2 12 20.5M12 3.5C9.6 5.8 8.4 8.6 8.4 12s1.2 6.2 3.6 8.5"/></svg></span>
+            <div><small>AETHERX ANYWHERE</small><strong id="anywhereTitle">私人网络</strong><p id="anywhereDetail">正在读取 Tailscale 与局域网</p></div><b id="anywhereState">检测中</b>
+          </article>
+          <article id="mobileClientCard" class="connection-route-card" data-state="checking">
+            <span class="route-card-icon mobile"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><path d="M10 6h4M10.5 18h3"/></svg></span>
+            <div><small>MOBILE CLIENT</small><strong id="mobileClientName">手机客户端</strong><p id="mobileClientRoute">正在读取客户端心跳</p></div><b id="mobileClientState">检测中</b>
+          </article>
+        </section>
+
+        <footer class="connection-center-footer">
+          <div id="connectionEndpointList" class="connection-endpoint-list"></div>
+          <button id="manageConnectionDevicesBtn" type="button">管理配对与设备</button>
+        </footer>
+      </section>
+    </div>
+
     <div id="deviceManagerMask" class="modal-mask hidden">
       <section class="device-manager-panel" role="dialog" aria-modal="true" aria-labelledby="deviceManagerTitle">
         <header class="device-manager-head">
@@ -247,16 +332,11 @@
               <div class="pairing-phone-illustration" aria-hidden="true">
                 <svg viewBox="0 0 64 64"><rect x="18" y="7" width="28" height="50" rx="9"/><path d="M28 13h8M29 50h6"/><path class="pairing-wave" d="M10 27c5-5 5-11 0-16M54 27c-5-5-5-11 0-16"/></svg>
               </div>
-              <p>先选择用途。普通连接码用于手机客户端登录；备用 Hub 配对码用于把完整数据副本留在手机。</p>
-              <button id="generatePairingBtn" class="device-primary-button" type="button">生成手机客户端连接码</button>
-              <button id="generateHubPairingBtn" class="device-text-button" type="button">生成备用 Hub 配对码</button>
+              <p>推荐一次完成手机客户端登录与备用 Hub 配对；扫码后手机会自动选择 USB、局域网或 Anywhere，无需填写地址。</p>
+              <button id="generateCompletePairingBtn" class="device-primary-button" type="button">生成一体化配对码</button>
             </div>
 
             <div id="pairingActive" class="pairing-active hidden">
-              <div class="pairing-kind-switch" role="group" aria-label="连接码类型">
-                <button id="clientPairingModeBtn" type="button" aria-pressed="true">手机客户端连接码</button>
-                <button id="hubPairingModeBtn" type="button" aria-pressed="false">备用 Hub 配对码</button>
-              </div>
               <div class="pairing-status-row">
                 <span id="pairingStatusDot" class="pairing-status-dot waiting"></span>
                 <div><strong id="pairingStatusTitle">等待手机申请</strong><small id="pairingStatusDetail">把连接码粘贴到手机端</small></div>
@@ -268,9 +348,9 @@
                   <span id="pairingQrPlaceholder">正在生成二维码…</span>
                 </div>
                 <div class="pairing-manual">
-                  <strong id="pairingShareTitle">用手机扫码连接</strong>
-                  <p id="pairingShareDescription">手机端打开“连接电脑”并扫描。无法扫码时，也可以复制连接码。</p>
-                  <label id="pairingCodeLabel" for="pairingCode">手机客户端连接码（aetherx://pair）</label>
+                  <strong id="pairingShareTitle">一次连接客户端并建立手机 Hub</strong>
+                  <p id="pairingShareDescription">手机扫描一次，电脑批准一次；客户端登录和备用 Hub 身份会同时建立。</p>
+                  <label id="pairingCodeLabel" for="pairingCode">一体化配对码（aetherx://complete-pair）</label>
                   <div class="pairing-code-box">
                     <textarea id="pairingCode" rows="3" readonly spellcheck="false"></textarea>
                     <button id="copyPairingCodeBtn" type="button">复制</button>
@@ -524,6 +604,7 @@
 
     <script src="clock.js"></script>
     <script src="device-manager.js"></script>
+    <script src="connection-center.js"></script>
     <script src="ai-providers.js"></script>
     <script src="module-settings.js"></script>
     <script src="markdown-renderer.js"></script>

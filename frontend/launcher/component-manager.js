@@ -329,8 +329,10 @@ class ComponentManager {
         probeHub(),
         inspectTcpPort()
       ]);
-    const hubInstalled = Boolean(hubMarker.installed);
     const desktopRunning = Boolean(desktopControl);
+    const hubInstalled = Boolean(
+      hubMarker.installed || desktopInstalled || hubControl?.host === "desktop"
+    );
     const hubRunning = hubHealth.healthy;
     const hubPortConflict = hubPort.occupied && !hubRunning;
     const installedDesktopVersion = desktopMarker.version || desktopControl?.version || null;
@@ -365,9 +367,11 @@ class ComponentManager {
         running: hubRunning,
         healthy: hubRunning,
         controllable: Boolean(hubControl),
-        ownedByLauncher: Boolean(hubControl),
+        host: hubControl?.host || "",
+        ownedByLauncher: hubControl?.host === "launcher",
+        ownedByDesktop: hubControl?.host === "desktop",
         pid: hubControl?.pid || null,
-        version: hubMarker.version || null,
+        version: hubMarker.version || (hubControl?.host === "desktop" ? desktopControl?.version : null) || null,
         latencyMs: hubHealth.latencyMs,
         portConflict: hubPortConflict,
         portOwner: hubPortConflict ? {
@@ -375,7 +379,7 @@ class ComponentManager {
           processName: hubPort.processName
         } : null,
         url: HUB_URL,
-        dataDir: this.paths.hubData,
+        dataDir: hubControl?.dataDir || this.paths.hubData,
         status: hubRunning ? "running" : hubPortConflict ? "conflict" : hubInstalled ? "stopped" : "missing"
       },
       mobile: {
@@ -582,7 +586,6 @@ class ComponentManager {
       status = await this.installDesktop();
     }
     if (status.desktop.running) return status;
-    if (!status.hub.running) await this.startHub();
     this.emit("desktop", "starting", "正在启动桌面端");
     const executable = path.join(this.paths.desktopInstall, "AetherX.exe");
     const child = spawn(executable, [], { detached: true, stdio: "ignore" });
@@ -614,9 +617,7 @@ class ComponentManager {
   }
 
   async startAll() {
-    await this.startHub();
-    await this.startDesktop();
-    return this.getStatus();
+    return this.startDesktop();
   }
 
   async stopAll() {

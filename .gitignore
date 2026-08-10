@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-*/
 .data/
 
 # Local configuration and secrets

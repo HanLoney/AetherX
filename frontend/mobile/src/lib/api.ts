@@ -384,8 +384,16 @@ export class AetherApi {
   redeemPairingSession(id: string, secret: string) {
     return this.request<{ token: string; device: { id: string; name: string } }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/redeem`, { secret });
   }
-  claimHubPairingSession(id: string, input: Record<string, unknown>) {
-    return this.request<{ status: "pending" }>("POST", `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/claim`, input);
+  claimHubPairingSession(id: string, input: Record<string, unknown>, signal?: AbortSignal) {
+    return this.request<{ status: "pending" }>("POST", `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/claim`, input, signal);
+  }
+  resolveHubPairingSession(id: string, secret: string, signal?: AbortSignal) {
+    return this.request<Record<string, unknown>>(
+      "POST",
+      `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/resolve`,
+      { secret },
+      signal
+    );
   }
   redeemHubPairingSession(id: string, secret: string) {
     return this.request<{

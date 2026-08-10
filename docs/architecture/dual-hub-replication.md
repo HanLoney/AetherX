@@ -523,19 +523,17 @@ SQLite 触发器可以暂时保留为覆盖审计，但不能继续作为 Hub �
 
 ### 11.1 二维码内容
 
-Hub 配对二维码包含：
+Hub 配对 v2 二维码只包含：
 
-- 协议版本；
-- `space_id`；
-- 发起节点 ID；
+- 短码版本；
+- 手机可达的 USB 回环、局域网和 Anywhere 候选解析地址；
 - 一次性配对会话 ID；
 - 一次性高熵秘密；
-- 临时密钥协商公钥；
-- 证书指纹；
-- 局域网和 Anywhere 候选地址；
 - 过期标记。
 
-不得包含长期设备令牌、Space Data Key 或节点私钥。
+手机先并发探测短码中的候选地址，并使用第一个通过 `/health` 检查的入口提交配对；全部不可达时才统一显示 USB、局域网和 Anywhere 诊断，不要求用户判断或输入 IP。随后手机使用会话 ID 和高熵秘密调用公开的 `resolve` 接口，校验会话未过期后取得协议版本、`space_id`、发起节点 ID、临时密钥协商公钥、证书指纹以及局域网和 Anywhere 候选地址。认领、快照下载和本地 Peer 配置继续复用已验证入口，避免在蜂窝网络下重新选中不可达的高优先级 LAN 地址。这样可显著降低二维码版本与码元密度，同时不降低后续 X25519、身份签名和用户批准门禁。不得返回长期设备令牌、Space Data Key、Peer 凭据或节点私钥。
+
+新版手机继续接受旧版内嵌完整载荷，供滚动升级期间兼容；新版桌面默认只生成 v2 短码。
 
 ### 11.2 配对步骤
 
@@ -586,6 +584,7 @@ Hub 配对二维码包含：
 
 ```text
 POST /api/v1/hub-pairing/sessions
+POST /api/v1/hub-pairing/sessions/:id/resolve
 POST /api/v1/hub-pairing/sessions/:id/claim
 POST /api/v1/hub-pairing/sessions/:id/approve
 POST /api/v1/hub-pairing/sessions/:id/redeem

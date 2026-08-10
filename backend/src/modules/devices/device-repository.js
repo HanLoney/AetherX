@@ -110,6 +110,17 @@ class DeviceRepository {
     );
   }
 
+  deleteRevokedDevice(userId, id) {
+    return (
+      this.database
+        .prepare(
+          `DELETE FROM paired_devices
+           WHERE user_id = ? AND id = ? AND status = 'revoked'`
+        )
+        .run(userId, id).changes > 0
+    );
+  }
+
   upsertMobileHealth(input) {
     this.database.prepare(
       `INSERT INTO mobile_client_health(

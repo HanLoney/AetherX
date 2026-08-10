@@ -5,12 +5,13 @@ async function generatePairingQrDataUrl(value) {
   if (!content || content.length > 4096) {
     throw new Error("二维码内容无效。");
   }
-  return QRCode.toDataURL(content, {
-    errorCorrectionLevel: "M",
-    margin: 2,
-    width: 360,
-    color: { dark: "#514a61ff", light: "#ffffffff" }
+  const svg = await QRCode.toString(content, {
+    type: "svg",
+    errorCorrectionLevel: "Q",
+    margin: 4,
+    color: { dark: "#111111ff", light: "#ffffffff" }
   });
+  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
 }
 
 module.exports = { generatePairingQrDataUrl };

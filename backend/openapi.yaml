@@ -188,6 +188,17 @@ paths:
         - $ref: "#/components/parameters/Id"
       responses:
         "200": { description: Hub 配对状态和待确认节点指纹 }
+  /hub-pairing/sessions/{id}/resolve:
+    post:
+      security: []
+      summary: 使用二维码中的一次性凭据解析 Hub 配对公开资料
+      description: 返回临时公钥、节点标识和候选入口，不返回长期 Peer 凭据、Space Key 或服务端临时私钥。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 当前未过期会话的 Hub 配对公开资料 }
+        "404": { description: 会话不存在或一次性凭据无效 }
+        "410": { description: 配对会话已过期 }
   /hub-pairing/sessions/{id}/claim:
     post:
       security: []
@@ -646,6 +657,17 @@ paths:
       summary: 撤销设备及其访问令牌
       responses:
         "204": { description: 已撤销 }
+  /devices/{id}/record:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      summary: 删除已撤销的设备记录
+      responses:
+        "204": { description: 已删除 }
+        "409": { description: 设备仍处于活动状态，必须先撤销访问 }
   /sync/changes:
     get:
       summary: 按游标补拉当前账号的增量变化

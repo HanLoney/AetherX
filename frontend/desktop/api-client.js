@@ -268,6 +268,10 @@ class XuanApiClient {
     return this.request("DELETE", `/api/v1/devices/${encodeURIComponent(id)}`);
   }
 
+  deleteDeviceRecord(id) {
+    return this.request("DELETE", `/api/v1/devices/${encodeURIComponent(id)}/record`);
+  }
+
   listSyncChanges(filters = {}) {
     const query = new URLSearchParams(
       Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
