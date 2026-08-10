@@ -49,6 +49,7 @@ let authenticationServerUrl = defaultServerUrl;
 let authenticationToken = "";
 let latestClusterStatus = null;
 let clusterRecoveryPromise = null;
+let tailscaleManager = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 const api = new XuanApiClient({
@@ -156,7 +157,100 @@ function applyClusterStatus(status) {
 
 function sendHubClusterChanged(status) {
   if (!status || !mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("hub:cluster-changed", status);
+  mainWindow.webContents.send("hub:cluster-changed", withDesktopRuntime(status));
+}
+
+function withDesktopRuntime(status) {
+  return status ? { ...status, desktopRuntime: localHub?.status?.() || null } : status;
+}
+
+function getTailscaleManager() {
+  if (tailscaleManager) return tailscaleManager;
+  const modulePath = app.isPackaged
+    ? path.join(process.resourcesPath, "connection-runtime", "tailscale-manager.js")
+    : path.resolve(__dirname, "..", "launcher", "tailscale-manager.js");
+  const { TailscaleManager } = require(modulePath);
+  tailscaleManager = new TailscaleManager();
+  return tailscaleManager;
+}
+
+async function probeLocalHub() {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  try {
+    const response = await fetch(`${localHubServerUrl}/health`, { signal: controller.signal });
+    if (!response.ok) return { online: false, latencyMs: Date.now() - startedAt, mobile: null };
+    const payload = await response.json();
+    return {
+      online: payload?.data?.service === "aetherx-backend",
+      latencyMs: Date.now() - startedAt,
+      mobile: payload?.data?.mobile || null
+    };
+  } catch {
+    return { online: false, latencyMs: null, mobile: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadConnectionStatus() {
+  const authenticated = Boolean(currentUser && api.token);
+  const [hubHealth, cluster, localCluster, mobileDetail, devices, endpoints] = await Promise.all([
+    probeLocalHub(),
+    authenticated ? settleStatus(api.getClusterStatus(), latestClusterStatus) : null,
+    authenticated
+      ? settleStatus(authenticatedLocalHubApi().getClusterStatus(), null)
+      : null,
+    authenticated ? settleStatus(api.listMobileHubs(), { hubs: [] }) : { hubs: [] },
+    authenticated ? settleStatus(api.listDevices(), []) : [],
+    settleStatus(discoverHubPairingEndpoints({ serverUrl: localHubServerUrl }), [])
+  ]);
+  const network = await settleStatus(
+    getTailscaleManager().getStatus({ hubHealthy: hubHealth.online }),
+    {
+      tailscale: { installed: false, connected: false, state: "unavailable", peers: [] },
+      remote: { enabled: false, healthy: false, status: "unavailable", url: "" }
+    }
+  );
+  const activeNode = cluster?.nodes?.find((node) => node.id === cluster.activeNodeId) || null;
+  const localNode = localCluster?.nodes?.find((node) => node.id === localCluster.localNodeId) || null;
+  const deviceList = Array.isArray(devices) ? devices : devices?.devices || [];
+  return {
+    authenticated,
+    desktop: {
+      running: true,
+      pid: process.pid,
+      version: app.getVersion(),
+      routedServerUrl: api.baseUrl,
+      connected: Boolean(cluster)
+    },
+    computerHub: {
+      online: hubHealth.online,
+      latencyMs: hubHealth.latencyMs,
+      runtime: localHub?.status?.() || null,
+      node: localNode,
+      active: Boolean(localCluster && localCluster.activeNodeId === localCluster.localNodeId),
+      cluster: localCluster,
+      mobileSummary: hubHealth.mobile
+    },
+    activeHub: activeNode,
+    cluster,
+    mobileHubs: Array.isArray(mobileDetail?.hubs) ? mobileDetail.hubs : [],
+    devices: deviceList,
+    network: {
+      ...network,
+      endpoints: Array.isArray(endpoints) ? endpoints : []
+    }
+  };
+}
+
+async function settleStatus(promise, fallback) {
+  try {
+    return await promise;
+  } catch {
+    return fallback;
+  }
 }
 
 async function handleDesktopControlEvent(message) {
@@ -373,12 +467,13 @@ function registerIpcHandlers() {
         } catch {}
       }
       applyClusterStatus(status);
-      return status;
+      return withDesktopRuntime(status);
     } catch (error) {
-      if (latestClusterStatus) return latestClusterStatus;
+      if (latestClusterStatus) return withDesktopRuntime(latestClusterStatus);
       throw error;
     }
   });
+  ipcMain.handle("connections:status", () => loadConnectionStatus());
   ipcMain.handle("hub:divergence", () =>
     authenticatedLocalHubApi().getHubDivergence(500, 0)
   );
@@ -452,6 +547,7 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("devices:list", () => api.listDevices());
   ipcMain.handle("devices:revoke", (_event, id) => api.revokeDevice(id));
+  ipcMain.handle("devices:delete-record", (_event, id) => api.deleteDeviceRecord(id));
   ipcMain.handle("clipboard:write", (_event, value) => {
     clipboard.writeText(String(value || ""));
     return true;
@@ -874,7 +970,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     localHub = await startLocalHub({
       electronApp: app,
       baseUrl: localHubServerUrl,
-      enableAdbReverse: true
+      enableAdbReverse: true,
+      requestQuit: () => app.quit()
     });
   } catch (error) {
     console.error("Unable to start the bundled AetherX Hub.", error);

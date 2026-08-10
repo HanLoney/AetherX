@@ -22,13 +22,13 @@ backend/.data/xuanai.db
 
 ### 桌面端内置 Hub
 
-开发模式仍使用 `backend/.data`。打包后的桌面端默认使用 Electron `userData` 目录下的 `hub` 子目录；Windows 通常位于：
+开发模式仍使用 `backend/.data`。打包后的桌面端与 Windows 启动器共用：
 
 ```text
 %APPDATA%\AetherX\hub
 ```
 
-具体路径可能受产品名、安装方式和环境变量影响，应以实际 `AETHERX_DATA_DIR` 或应用日志为准。
+旧桌面版本位于 `userData/hub` 的数据库会在公共目录尚无数据库时原子迁移到这里。若两个目录都包含数据，应用会拒绝自动合并。具体路径仍可能受显式 `AETHERX_DATA_DIR` 影响。
 
 桌面登录会话保存在 `userData/auth.json`，令牌由 Electron `safeStorage` 加密。它不是业务数据备份的必要组成部分，恢复后可以重新登录。
 

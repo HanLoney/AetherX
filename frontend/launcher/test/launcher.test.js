@@ -274,6 +274,20 @@ test("启动器界面提供完整的安装、启动、停止与监控入口", ()
   assert.match(manager, /getMobileHubControl/);
 });
 
+test("启动器区分桌面内置 Hub 与启动器托管 Hub", () => {
+  const renderer = fs.readFileSync(path.join(launcherDir, "launcher.js"), "utf8");
+  const manager = fs.readFileSync(path.join(launcherDir, "component-manager.js"), "utf8");
+  assert.match(renderer, /hub\.ownedByDesktop[\s\S]*桌面端已接管/);
+  assert.match(renderer, /hub\.ownedByLauncher[\s\S]*启动器托管/);
+  assert.match(manager, /ownedByDesktop: hubControl\?\.host === "desktop"/);
+  assert.match(manager, /ownedByLauncher: hubControl\?\.host === "launcher"/);
+  const startDesktop = manager.match(/async startDesktop\(\)[\s\S]*?\n  }/)?.[0] || "";
+  const startAll = manager.match(/async startAll\(\)[\s\S]*?\n  }/)?.[0] || "";
+  assert.doesNotMatch(startDesktop, /startHub\(/);
+  assert.doesNotMatch(startAll, /startHub\(/);
+  assert.match(startAll, /return this\.startDesktop\(\)/);
+});
+
 test("Tailscale Serve 状态只识别属于 AetherX 的 HTTPS 转发", () => {
   const endpoint = "aetherx-home.example.ts.net:4318";
   const matched = inspectServeConfiguration({

@@ -51,6 +51,7 @@
       "interface-settings.js",
       "clock.js",
       "device-manager.js",
+      "connection-center.js",
       "mobile-hub-status.js",
       "pairing-endpoints.js",
       "emoji-picker.js",
@@ -115,6 +116,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../launcher/tailscale-manager.js",
+        "to": "connection-runtime/tailscale-manager.js"
       },
       {
         "from": ".",

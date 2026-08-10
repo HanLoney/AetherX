@@ -7,6 +7,7 @@ const html = fs.readFileSync(path.join(__dirname, "..", "home.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "home.css"), "utf8");
 const javascript = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
 const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 
 test("sidebar navigation is grouped into clear functional areas", () => {
   ["dailyNavLabel", "spaceNavGroup", "createNavGroup", "systemNavLabel"].forEach(
@@ -116,6 +117,23 @@ test("desktop header shows the current active Hub separately from AI connectivit
   assert.match(javascript, /手机 Hub/);
   assert.match(javascript, /电脑 Hub/);
   assert.match(css, /\.hub-pill\s*\{/);
+});
+
+test("desktop integrates the Hub connection matrix instead of relying on the launcher", () => {
+  assert.match(html, /id="connectionCenterMask"/);
+  assert.match(html, /id="computerHubNode"[\s\S]*id="hubPeerBridge"[\s\S]*id="mobileHubNode"/);
+  assert.match(html, /id="desktopClientCard"/);
+  assert.match(html, /id="anywhereCard"/);
+  assert.match(html, /id="mobileClientCard"/);
+  assert.ok(html.indexOf('src="connection-center.js"') < html.indexOf('src="home.js"'));
+  assert.match(preload, /getConnectionStatus:\s*\(\) => ipcRenderer\.invoke\("connections:status"\)/);
+  assert.match(main, /ipcMain\.handle\("connections:status", \(\) => loadConnectionStatus\(\)\)/);
+  assert.match(javascript, /elements\.connectionCenterBtn\.addEventListener\("click"/);
+  assert.match(javascript, /isHubRecoveryActionable\(state\.hubStatus\)/);
+  assert.match(javascript, /connectionCenter\.open\(\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "connection-center.js"), "utf8"), /上次连接到 \$\{activeHubName\}/);
+  assert.match(css, /\.hub-peer-topology\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 138px minmax\(0, 1fr\);/s);
+  assert.match(css, /\.connection-route-grid\s*\{/);
 });
 
 test("desktop exposes a complete dual-Hub divergence recovery center", () => {
