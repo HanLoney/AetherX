@@ -113,6 +113,10 @@ test("local hub starts once and returns an owned shutdown handle", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].host, "0.0.0.0");
   assert.equal(calls[0].port, 4318);
+  assert.equal(calls[0].replicationSchedulerEnabled, true);
+  assert.equal(calls[0].switchRecoveryEnabled, true);
+  assert.equal(calls[0].replicationPollIntervalMs, 5000);
+  assert.equal(calls[0].replicationMaxBackoffMs, 300000);
   assert.equal(reverseCalls.length, 1);
   assert.equal(reverseCalls[0].env.AETHERX_PORT, "4318");
   await hub.stop();
