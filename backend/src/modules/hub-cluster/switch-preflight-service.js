@@ -1,6 +1,8 @@
 const { HttpError } = require("../../lib/http-error");
 const { canonicalStringify } = require("../replication/operation-codec");
 
+const SWITCH_PEER_TIMEOUT_MS = 300_000;
+
 class SwitchPreflightService {
   constructor({
     clusterService,
@@ -100,7 +102,8 @@ class SwitchPreflightService {
     const remoteResponse = await this.peerTransport.requestJson(userId, target.id, {
       method: "POST",
       path: "/api/v1/peer/switch/preflight",
-      body: {}
+      body: {},
+      timeoutMs: SWITCH_PEER_TIMEOUT_MS
     });
     const remote = this.integrityService.verifySwitchPreflightProof(
       userId,

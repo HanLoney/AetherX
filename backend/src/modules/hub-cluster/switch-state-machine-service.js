@@ -23,6 +23,7 @@ const ABORTABLE_STATES = new Set([
   "final_sync",
   "integrity_check"
 ]);
+const SWITCH_PEER_TIMEOUT_MS = 300_000;
 
 class SwitchStateMachineService {
   constructor({
@@ -81,7 +82,8 @@ class SwitchStateMachineService {
         {
           method: "POST",
           path: "/api/v1/peer/switch/final-sync",
-          body: { transitionId }
+          body: { transitionId },
+          timeoutMs: SWITCH_PEER_TIMEOUT_MS
         }
       );
       await this.advancePhase(userId, {
@@ -149,7 +151,8 @@ class SwitchStateMachineService {
     const remote = await this.peerTransport.requestJson(userId, targetNodeId, {
       method: "POST",
       path: "/api/v1/peer/switch/control",
-      body: signed
+      body: signed,
+      timeoutMs: SWITCH_PEER_TIMEOUT_MS
     });
     this.verifyAck(current.space_id, targetNodeId, signed, remote.data, {
       state: "stable",
@@ -287,7 +290,8 @@ class SwitchStateMachineService {
       const remote = await this.peerTransport.requestJson(userId, targetNodeId, {
         method: "POST",
         path: "/api/v1/peer/switch/control",
-        body: signed
+        body: signed,
+        timeoutMs: SWITCH_PEER_TIMEOUT_MS
       });
       this.verifyAck(context.space_id, targetNodeId, signed, remote.data, {
         state: "stable",
@@ -352,7 +356,8 @@ class SwitchStateMachineService {
       {
         method: "POST",
         path: "/api/v1/peer/switch/control",
-        body: signed
+        body: signed,
+        timeoutMs: SWITCH_PEER_TIMEOUT_MS
       }
     );
     this.verifyAck(context.space_id, input.targetNodeId, signed, remote.data, {

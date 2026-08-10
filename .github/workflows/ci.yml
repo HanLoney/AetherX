@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,19 +27,30 @@ jobs:
             frontend/mobile/package-lock.json
 
       - name: Check documentation
-        run: node scripts/check-docs.js
+        run: |
+          node scripts/check-docs.js
+          node scripts/check-release.js
 
       - name: Test backend
         working-directory: backend
         run: |
           npm ci
           npm test
+          npm audit --audit-level=high
 
       - name: Test desktop
         working-directory: frontend/desktop
         run: |
           npm ci
           npm test
+          npm audit --audit-level=high
+
+      - name: Test launcher
+        working-directory: frontend/launcher
+        run: |
+          npm ci
+          npm test
+          npm audit --audit-level=high
 
       - name: Test mobile
         working-directory: frontend/mobile
@@ -47,3 +58,74 @@ jobs:
           npm ci
           npm test
           npm run build
+          npm audit --audit-level=high
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build web assets
+        working-directory: frontend/mobile
+        run: |
+          npm ci
+          npm run android:sync
+
+      - name: Test and build Android variants
+        working-directory: frontend/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleRelease assembleLanRelease --stacktrace
+
+      - name: Upload unsigned Android smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ci-apks
+          path: frontend/mobile/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/desktop/package-lock.json
+            frontend/launcher/package-lock.json
+
+      - name: Install packaging dependencies
+        shell: pwsh
+        run: |
+          npm --prefix backend ci
+          npm --prefix frontend/desktop ci
+          npm --prefix frontend/launcher ci
+
+      - name: Package desktop directory
+        run: npm --prefix frontend/desktop run dist:dir
+
+      - name: Package launcher and smoke Hub
+        run: npm --prefix frontend/launcher run dist:package

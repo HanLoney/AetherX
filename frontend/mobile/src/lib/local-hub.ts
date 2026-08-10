@@ -12,6 +12,14 @@ export interface LocalHubStatus {
     address: string;
     priority: number;
   }>;
+  peerEndpoints: ReadonlyArray<{
+    nodeId: string;
+    transport: "lan" | "anywhere" | "development";
+    address: string;
+    priority: number;
+    certificateFingerprint: string;
+  }>;
+  batteryOptimizationExempt: boolean;
   nodeId: string;
   localNodeId: string;
   activeNodeId: string;
@@ -52,6 +60,18 @@ export interface LocalHubStatus {
     createdAt: number;
     reconciledAt: number | null;
   };
+  synchronization: {
+    state: "idle" | "syncing" | "synced" | "error";
+    stage: string;
+    progress: number;
+    direction: "" | "push" | "pull";
+    message: string;
+    applied: number;
+    pushed: number;
+    startedAt: number | null;
+    updatedAt: number | null;
+    completedAt: number | null;
+  };
 }
 
 interface LocalHubPlugin {
@@ -62,6 +82,7 @@ interface LocalHubPlugin {
   start(): Promise<LocalHubStatus>;
   stop(): Promise<LocalHubStatus>;
   status(): Promise<LocalHubStatus>;
+  openBatteryOptimizationSettings(): Promise<{ opened: boolean }>;
   configure(input: Record<string, unknown>): Promise<LocalHubStatus>;
   updatePeerEndpoints(input: { endpoints: Array<Record<string, unknown>> }): Promise<LocalHubStatus>;
   importSnapshot(input: {
@@ -269,6 +290,7 @@ export function useLocalHub() {
     loading: readonly(loading),
     available: Capacitor.getPlatform() === "android",
     refresh: refreshLocalHub,
+    openBatteryOptimizationSettings: LocalHub.openBatteryOptimizationSettings,
     configure: async (input: Record<string, unknown>) => {
       status.value = await LocalHub.configure(input);
       return status.value;

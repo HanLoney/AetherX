@@ -37,6 +37,13 @@ const mainActivitySource = readFileSync(
   ),
   "utf8"
 );
+const pluginSource = readFileSync(
+  new URL(
+    "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/LocalHubPlugin.java",
+    import.meta.url
+  ),
+  "utf8"
+);
 const foregroundServiceSource = readFileSync(
   new URL(
     "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubForegroundService.java",
@@ -98,6 +105,26 @@ describe("Android Local Hub replication envelope", () => {
     expect(peerSyncSource).toContain("database.operationHead(localNodeId)");
   });
 
+  it("publishes live dual Hub synchronization progress", () => {
+    const serviceSource = readFileSync(
+      new URL(
+        "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubService.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+
+    expect(databaseSource).toContain("public synchronized JSONObject lastSyncStatus");
+    expect(serviceSource).toContain('put("synchronization", synchronizationStatus())');
+    expect(serviceSource).toContain('put("peerEndpoints", database.peerEndpoints())');
+    expect(serviceSource).toContain('put("batteryOptimizationExempt", batteryOptimizationExempt())');
+    expect(databaseSource).toContain("public synchronized JSONArray peerEndpoints()");
+    expect(serviceSource).toContain("this::updateSynchronization");
+    expect(peerSyncSource).toContain("ProgressListener");
+    expect(peerSyncSource).toContain('progress("operations"');
+    expect(peerSyncSource).toContain("reportMediaProgress");
+  });
+
   it("normalizes local documents and ignores redundant JSON aliases during switch checks", () => {
     expect(databaseSource.match(/normalizeReplicatedDocument\(/g)?.length).toBeGreaterThanOrEqual(3);
     expect(databaseSource).toContain("removeRedundantJsonAliases(result)");
@@ -124,10 +151,20 @@ describe("Android Local Hub replication envelope", () => {
       ),
       "utf8"
     );
+    const foregroundServiceSource = readFileSync(
+      new URL(
+        "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubForegroundService.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
 
     expect(pluginSource).toContain("service().startAndResumePendingSwitch()");
     expect(serviceSource).toContain("public synchronized JSONObject startAndResumePendingSwitch()");
     expect(serviceSource).toContain("return resumeReplication()");
+    expect(foregroundServiceSource).toContain(
+      "LocalHubService.get(getApplicationContext()).startAndResumePendingSwitch()"
+    );
   });
 
   it("does not leave a zombie Local Hub listener after a transient socket failure", () => {
@@ -137,6 +174,46 @@ describe("Android Local Hub replication envelope", () => {
     expect(networkServerSource).not.toContain(
       'Log.w(TAG, "Local Hub listener stopped unexpectedly", error);\n                return;'
     );
+  });
+
+  it("authenticates every native peer route with Hub HMAC instead of a client session", () => {
+    expect(networkServerSource).toContain('request.pathname.startsWith("/api/v1/peer/")');
+    expect(networkServerSource).toContain("verifyPeer(request)");
+    expect(networkServerSource.indexOf('request.pathname.startsWith("/api/v1/peer/")'))
+      .toBeLessThan(networkServerSource.indexOf("sessionStore.validate(token)"));
+  });
+
+  it("handles Hub switch control in native code while the WebView is suspended", () => {
+    const serviceSource = readFileSync(
+      new URL(
+        "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubService.java",
+        import.meta.url
+      ),
+      "utf8"
+    );
+
+    expect(networkServerSource).toContain("dispatchNativePeer(request)");
+    expect(networkServerSource).toContain('"/api/v1/peer/switch/preflight"');
+    expect(networkServerSource).toContain('"/api/v1/peer/synchronize"');
+    expect(networkServerSource).toContain('"/api/v1/peer/switch/control"');
+    expect(networkServerSource).toContain('"/api/v1/peer/switch/final-sync"');
+    expect(networkServerSource).toContain('"/api/v1/peer/mobile-switch/request"');
+    expect(networkServerSource).toContain("return service.switchToPeer()");
+    expect(peerSyncSource).toContain("public JSONObject createSwitchPreflightProof()");
+    expect(peerSyncSource).toContain("public JSONObject applyPeerSwitchControl(JSONObject signedControl)");
+    expect(peerSyncSource).toContain("public JSONObject runPeerFinalSync(JSONObject input)");
+    expect(serviceSource).toContain("public synchronized JSONObject applyPeerSwitchControl");
+    expect(serviceSource).toContain("public synchronized JSONObject runPeerFinalSync");
+    expect(networkServerSource.indexOf("dispatchNativePeer(request)"))
+      .toBeLessThan(networkServerSource.indexOf("LocalHubNetworkBridge.dispatch("));
+  });
+
+  it("keeps the peer route warm while Android is locked", () => {
+    expect(foregroundServiceSource).toContain("KEEPALIVE_INTERVAL_SECONDS = 10");
+    expect(foregroundServiceSource).toContain("scheduleWithFixedDelay");
+    expect(foregroundServiceSource).toContain("service.keepPeerAlive()");
+    expect(peerSyncSource).toContain("public JSONObject keepAlive()");
+    expect(peerSyncSource).toContain('"/api/v1/peer/hello"');
   });
 
   it("routes cold-start network requests from native Hub state instead of the page session", () => {
@@ -182,9 +259,16 @@ describe("Android Local Hub replication envelope", () => {
 
   it("keeps the paired Android Hub reachable while its activity is in the background", () => {
     expect(foregroundServiceSource).toContain("startForeground(NOTIFICATION_ID");
-    expect(foregroundServiceSource).toContain("LocalHubService.get(getApplicationContext()).start()");
+    expect(foregroundServiceSource).toContain(
+      "LocalHubService.get(getApplicationContext()).startAndResumePendingSwitch()"
+    );
     expect(foregroundServiceSource).toContain("return START_STICKY");
+    expect(foregroundServiceSource).toContain("PowerManager.PARTIAL_WAKE_LOCK");
+    expect(foregroundServiceSource).toContain("wakeLock.acquire()");
+    expect(foregroundServiceSource).toContain("wakeLock.release()");
     expect(androidManifestSource).toContain('android:foregroundServiceType="connectedDevice"');
     expect(androidManifestSource).toContain("android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE");
+    expect(androidManifestSource).toContain("android.permission.WAKE_LOCK");
+    expect(pluginSource).toContain("Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
   });
 });

@@ -9,7 +9,8 @@ function registerClusterRoutes(
   switchRecoveryService = null,
   clientSessionHandoffService = null,
   syncEventBroker = null,
-  divergenceRecoveryService = null
+  divergenceRecoveryService = null,
+  peerTransport = null
 ) {
   router.add("GET", "/api/v1/cluster/status", ({ userId }) => ({
     data: service.status(userId)
@@ -46,10 +47,12 @@ function registerClusterRoutes(
         };
       }
     );
+  }
+  if (switchStateMachineService && peerTransport) {
     router.add(
       "POST",
       "/api/v1/cluster/mobile-hubs/:id/switch",
-      ({ userId, params, body }) => {
+      async ({ userId, params }) => {
         const hub = service.requireMobileHub(userId, params.id);
         if (!hub.active && !hub.ready) {
           throw new HttpError(
@@ -58,41 +61,43 @@ function registerClusterRoutes(
             "手机 Hub 尚未完成全量迁入与完整性校验，不能切换。"
           );
         }
-        const target = hub.active ? "desktop" : "mobile";
-        if (!hub.client?.id) {
-          throw new HttpError(
-            409,
-            "MOBILE_HUB_CONTROL_OFFLINE",
-            "手机端尚未建立实时控制通道，请先打开手机上的 AetherX。"
-          );
+        if (hub.active) {
+          const response = await peerTransport.requestJson(userId, hub.id, {
+            method: "POST",
+            path: "/api/v1/peer/mobile-switch/request",
+            body: {},
+            timeoutMs: 300_000
+          });
+          return {
+            data: {
+              requested: true,
+              completed: response.data?.completed === true,
+              nodeId: hub.id,
+              target: "desktop",
+              result: response.data
+            }
+          };
         }
-        const command = {
-          commandId: randomUUID(),
-          type: target === "mobile" ? "switch-local-hub" : "switch-desktop-hub",
-          nodeId: hub.id,
-          endpoints: normalizeClientEndpoints(body?.endpoints),
-          requestedAt: Date.now()
-        };
-        const delivery = syncEventBroker.publish(userId, "hub-command", command, {
-          queueWhenOffline: true,
-          alwaysQueue: true,
-          clientId: hub.client.id
+        const synchronization = await peerTransport.requestJson(userId, hub.id, {
+          method: "POST",
+          path: "/api/v1/peer/synchronize",
+          body: {},
+          timeoutMs: 300_000
         });
-        if (delivery.delivered === 0 && !delivery.queued) {
-          throw new HttpError(
-            409,
-            "MOBILE_HUB_CONTROL_OFFLINE",
-            "手机端实时控制通道尚未连接，请先打开手机上的 AetherX。"
-          );
-        }
+        const prepared = await switchStateMachineService.prepare(userId, {
+          targetNodeId: hub.id
+        });
+        const committed = await switchStateMachineService.commit(userId, {
+          transitionId: prepared.transitionId
+        });
         return {
           data: {
             requested: true,
-            delivered: delivery.delivered,
-            queued: delivery.queued,
+            completed: committed.committed === true,
             nodeId: hub.id,
-            target,
-            requestedAt: command.requestedAt
+            target: "mobile",
+            synchronization: synchronization.data,
+            result: committed
           }
         };
       },

@@ -1,7 +1,9 @@
 package com.xuanxiaotech.aetherx.mobile;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.PowerManager;
+import android.provider.Settings;
 import android.util.Log;
 
 import com.getcapacitor.JSArray;
@@ -69,6 +71,18 @@ public class LocalHubPlugin extends Plugin {
     @PluginMethod
     public void status(PluginCall call) {
         resolve(call, () -> service().status());
+    }
+
+    @PluginMethod
+    public void openBatteryOptimizationSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve(new JSObject().put("opened", true));
+        } catch (Exception error) {
+            call.reject("无法打开系统电池优化设置。", "BATTERY_SETTINGS_UNAVAILABLE", error);
+        }
     }
 
     @PluginMethod

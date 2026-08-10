@@ -19,6 +19,7 @@ import {
 } from "../lib/storage";
 import { LocalHubClient } from "../lib/local-hub-client";
 import { useLocalHub } from "../lib/local-hub";
+import { hubRouteCandidates } from "../lib/hub-route";
 
 const ready = ref(false);
 const busy = ref(false);
@@ -77,7 +78,12 @@ async function bootstrap() {
     if (stored?.token) {
       api = createApi(serverUrl.value, preferred?.token || stored.token);
       user.value = stored.user;
-      void validateStoredSession(api, stored);
+      void validateStoredSession(api, stored, preferred || {
+        nodeId: routing.value?.activeNodeId || "",
+        serverUrl: serverUrl.value,
+        token: stored.token,
+        lastSeenAt: 0
+      });
     } else {
       api = createApi(serverUrl.value);
     }
@@ -86,15 +92,32 @@ async function bootstrap() {
   return bootstrapPromise;
 }
 
-async function validateStoredSession(candidate: AetherApi, stored: { token: string; user: AuthUser }) {
+async function validateStoredSession(
+  candidate: AetherApi,
+  stored: { token: string; user: AuthUser },
+  route: StoredHubRouting["nodes"][number]
+) {
   try {
-    const status = await candidate.ensureActiveHub();
-    await rememberCluster(candidate, status);
-    const current = await candidate.session();
+    const connection = await validateHubConnection(candidate, stored.user);
+    await rememberCluster(candidate, connection.status);
     if (api !== candidate) return;
-    user.value = current.user;
-    await saveSession({ token: candidate.accessToken || stored.token, user: current.user });
+    user.value = connection.user;
+    await saveSession({ token: candidate.accessToken || stored.token, user: connection.user });
   } catch {
+    try {
+      const recovered = await connectStoredHub(route, stored.user, candidate.serverUrl);
+      if (api !== candidate) return;
+      api = recovered.api;
+      serverUrl.value = recovered.api.serverUrl;
+      user.value = recovered.user;
+      await rememberCluster(recovered.api, recovered.status);
+      await Promise.all([
+        saveServerUrl(recovered.api.serverUrl),
+        saveSession({ token: recovered.api.accessToken || stored.token, user: recovered.user })
+      ]);
+    } catch {
+      // Keep cached data available while all saved Hub endpoints are unreachable.
+    }
     // 网络中断时继续使用本地缓存；真正的 401 会由 API 统一触发退出。
   }
 }
@@ -315,11 +338,9 @@ async function activateDesktopHub() {
     if (!route?.serverUrl || !route.token) {
       throw new Error("电脑 Hub 已接管，但手机缺少可用的登录凭证，请重新配对连接。 ");
     }
-    const candidate = createApi(route.serverUrl, route.token, false);
-    const current = await withConnectionTimeout(async (signal) => {
-      await candidate.health(signal);
-      return candidate.session(signal);
-    });
+    const connection = await connectStoredHub(route, currentUser);
+    const candidate = connection.api;
+    const current = { user: connection.user };
     if (current.user.username !== currentUser.username) {
       throw new Error("电脑 Hub 返回了另一个账号，请重新配对。 ");
     }
@@ -366,7 +387,7 @@ function requireApi() {
   return api;
 }
 
-function createDesktopControlConnection() {
+async function createDesktopControlConnection() {
   const currentLocalNodeId = useLocalHub().status.value?.localNodeId || localNodeId.value;
   const route = [...(routing.value?.nodes || [])]
     .filter((node) =>
@@ -376,10 +397,8 @@ function createDesktopControlConnection() {
     )
     .sort((left, right) => right.lastSeenAt - left.lastSeenAt)[0];
   if (!route) return null;
-  return {
-    nodeId: route.nodeId,
-    api: new AetherApi({ baseUrl: route.serverUrl, token: route.token })
-  };
+  const connection = await connectStoredHub(route, user.value);
+  return { nodeId: route.nodeId, api: connection.api };
 }
 
 export function useSessionStore() {
@@ -468,6 +487,34 @@ async function rememberNode(node: StoredHubRouting["nodes"][number]) {
 
 function normalizeRouteUrl(value: string) {
   return String(value || "").trim().replace(/\/+$/, "").toLocaleLowerCase();
+}
+
+async function connectStoredHub(
+  route: StoredHubRouting["nodes"][number],
+  expectedUser: AuthUser | null,
+  excludedUrl = ""
+) {
+  const peerEndpoints = useLocalHub().status.value?.peerEndpoints || [];
+  const candidates = hubRouteCandidates(route, peerEndpoints)
+    .filter((url) => normalizeRouteUrl(url) !== normalizeRouteUrl(excludedUrl));
+  if (!candidates.length) throw new Error("No reachable Hub endpoint is available.");
+  return Promise.any(candidates.map(async (url) => {
+    const candidate = createApi(url, route.token, false);
+    const validated = await validateHubConnection(candidate, expectedUser);
+    return { api: candidate, ...validated };
+  }));
+}
+
+async function validateHubConnection(candidate: AetherApi, expectedUser: AuthUser | null) {
+  return withConnectionTimeout(async (signal) => {
+    await candidate.health(signal);
+    const current = await candidate.session(signal);
+    if (expectedUser && current.user.username !== expectedUser.username) {
+      throw new Error("The Hub returned a different account.");
+    }
+    const status = await candidate.clusterStatus(signal);
+    return { user: current.user, status };
+  }, 8_000);
 }
 
 interface PairingCode {

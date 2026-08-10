@@ -243,6 +243,16 @@ paths:
         "200": { description: 备用 Hub 的实时切换预检证明 }
         "403": { description: 请求节点不是当前活动 Hub，或本机不是完成同步的备用 Hub }
         "409": { description: 集群不稳定、数据库异常、凭证不可读或 Agent 正忙 }
+  /peer/synchronize:
+    post:
+      security:
+        - peerHmac: []
+      summary: Synchronize the receiving standby Hub before a planned switch
+      description: Runs replication through the authenticated native Peer channel without depending on a foreground client or WebView.
+      responses:
+        "200": { description: Replication status and synchronized operation/media progress }
+        "409": { description: The Hub role or cluster state does not allow synchronization }
+        "503": { description: The active peer Hub is unreachable }
   /peer/switch/control:
     post:
       security:
@@ -279,6 +289,16 @@ paths:
       responses:
         "200": { description: 下一阶段控制消息或切换完成状态 }
         "409": { description: ACK、证明或阶段顺序无效 }
+  /peer/mobile-switch/request:
+    post:
+      security:
+        - peerHmac: []
+      summary: 请求当前活动 Hub 将角色安全交给发起请求的备用 Hub
+      description: 用于界面或 WebView 已挂起时仍通过原生 Peer 通道完成计划切换；内部执行预检、最终同步、完整性复核和 commit，不离线排队。
+      responses:
+        "200": { description: 切换已完成，返回新的活动节点、epoch 和稳定状态 }
+        "409": { description: 请求节点不是就绪备用 Hub，或集群不稳定、完整性校验失败 }
+        "503": { description: Peer 端点不可达 }
   /peer/media/manifest:
     get:
       security:
@@ -485,6 +505,122 @@ paths:
         "200": { description: 链头序号和哈希一致，已更新逐 Peer 复制健康状态 }
         "400": { description: 证明指向的来源节点无效 }
         "409": { description: 链头序号或 Operation 哈希与本 Hub 不一致 }
+  /peer/divergence-recoveries/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      security:
+        - peerHmac: []
+      summary: 查询分叉恢复会话的对端状态
+      description: 返回恢复阶段、权威节点、目标 epoch、快照摘要和等待确认状态，不包含业务正文。
+      responses:
+        "200": { description: 当前恢复会话状态 }
+        "404": { description: 恢复会话不存在或不属于认证 Peer }
+  /peer/divergence-recoveries/{id}/snapshot/chunks:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 向恢复目标连续上传加密快照分块
+      description: 分块必须按偏移连续上传，并同时通过 Peer HMAC、分块 SHA-256 和总大小限制校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offset, data, chunkHash]
+              properties:
+                offset: { type: integer, minimum: 0 }
+                data: { type: string, contentEncoding: base64 }
+                chunkHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { description: 已确认的连续字节位置，重复分块按幂等请求处理 }
+        "409": { description: 分块哈希错误、偏移不连续或会话阶段不允许上传 }
+    get:
+      security:
+        - peerHmac: []
+      summary: 从权威 Hub 范围读取加密快照分块
+      parameters:
+        - in: query
+          name: offset
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: length
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Base64 快照分块、分块摘要、总摘要和完整快照摘要 }
+        "416": { description: 请求偏移超出快照范围 }
+  /peer/divergence-recoveries/{id}/snapshot/complete:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 完成加密快照上传并应用权威分支
+      description: 校验连续分块、总字节数、载荷摘要、Space Key 加密信封、媒体清单和 Operation 哈希链后才应用恢复控制。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [byteSize, payloadHash]
+              properties:
+                byteSize: { type: integer, minimum: 1 }
+                payloadHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { description: 已应用恢复快照并返回 Space Key 签名控制 }
+        "409": { description: 快照不完整、摘要不一致、媒体或 Operation 校验失败 }
+  /peer/divergence-recoveries/{id}/media/{mediaId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      security:
+        - peerHmac: []
+      summary: 范围下载权威分支的恢复媒体
+      description: 响应头返回整文件摘要、分块摘要、偏移和总大小，接收端必须在落盘前后分别校验。
+      parameters:
+        - in: query
+          name: offset
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: length
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: 恢复媒体二进制分块
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { description: 媒体不在恢复清单中 }
+        "409": { description: 权威分支媒体缺失或大小不匹配 }
+        "416": { description: 请求偏移超出媒体范围 }
+  /peer/divergence-recoveries/{id}/ack:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 提交恢复应用完成的签名确认
+      description: ACK 必须绑定恢复 ID、Space、Peer 节点、权威节点、目标 epoch 和快照摘要，并使用 Space Key HMAC 认证。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ack, authenticationTag]
+              properties:
+                ack: { type: object }
+                authenticationTag: { type: string }
+      responses:
+        "200": { description: 双端确认完成，集群进入统一的新 epoch }
+        "409": { description: ACK 字段、签名或恢复阶段无效 }
   /devices:
     get:
       summary: 查询当前账号的配对设备
@@ -569,11 +705,48 @@ paths:
   /cluster/mobile-hubs/{id}/switch:
     post:
       summary: 请求目标手机安全切换活动 Hub
+      description: 电脑 Hub 活动时直接执行 Peer 状态机切到手机；手机 Hub 活动时通过签名 Peer 请求让手机原生 Hub 安全交还电脑，不依赖手机客户端 SSE 或界面前台状态。
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
-        "200": { description: 切换指令已送达手机控制通道 }
-        "409": { description: 手机副本未就绪或实时控制通道离线 }
+        "200": { description: 切换已完成，返回目标 Hub 和状态机提交结果 }
+        "409": { description: 手机副本未就绪、集群不稳定或完整性校验失败 }
+        "503": { description: 当前活动 Hub 的 Peer 端点不可达 }
+  /cluster/divergence:
+    get:
+      summary: 查询双 Hub 分叉及恢复状态
+      parameters:
+        - in: query
+          name: recoveryId
+          schema: { type: string }
+      responses:
+        "200": { description: 分叉证据摘要、隔离写入、权威候选和当前恢复进度 }
+  /cluster/divergence/evidence:
+    get:
+      summary: 导出当前分叉的签名证据
+      description: 返回双方完整性摘要、Operation 链头和隔离写入清单，并附带 Space Key HMAC 证据标签。
+      responses:
+        "200": { description: 可审计的分叉证据及其 SHA-256 摘要和认证标签 }
+        "409": { description: 当前集群没有可导出的分叉状态 }
+  /cluster/divergence/recover:
+    post:
+      summary: 选择唯一权威 Hub 并发起完整分支恢复
+      description: 冻结双方写入，把所选权威分支以 AES-256-GCM 加密快照、媒体校验和签名控制复制到另一 Hub；被舍弃分支保留在签名证据中。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authority]
+              properties:
+                authority:
+                  type: string
+                  enum: [desktop, mobile]
+      responses:
+        "202": { description: 恢复会话已创建或已有会话已重新投递 }
+        "400": { description: 未明确选择手机 Hub 或电脑 Hub }
+        "409": { description: 集群不处于可恢复的分叉状态 }
   /cluster/status:
     get:
       summary: 查询当前账号的数据空间与本地 Hub 角色

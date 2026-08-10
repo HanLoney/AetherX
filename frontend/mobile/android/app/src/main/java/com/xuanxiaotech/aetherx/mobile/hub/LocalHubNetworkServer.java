@@ -166,9 +166,13 @@ public final class LocalHubNetworkServer {
                         .put("service", "aetherx-android-local-hub"));
                     return;
                 }
-                if ("POST".equals(request.method) &&
-                    "/api/v1/peer/client-sessions/mint".equals(request.pathname)) {
+                if (request.pathname.startsWith("/api/v1/peer/")) {
                     verifyPeer(request);
+                    JSONObject nativeResponse = dispatchNativePeer(request);
+                    if (nativeResponse != null) {
+                        writeData(output, 200, nativeResponse);
+                        return;
+                    }
                     JSONObject response = LocalHubNetworkBridge.dispatch(
                         request.method,
                         request.path,
@@ -178,11 +182,16 @@ public final class LocalHubNetworkServer {
                         writeBridgeResponse(output, response);
                         return;
                     }
-                    JSONObject data = response.optJSONObject("data");
-                    if (data == null) data = new JSONObject();
-                    LocalHubClientSessionStore.Session session = sessionStore.issue();
-                    data.put("token", session.token).put("expiresAt", session.expiresAt);
-                    writeData(output, 200, data);
+                    if ("POST".equals(request.method) &&
+                        "/api/v1/peer/client-sessions/mint".equals(request.pathname)) {
+                        JSONObject data = response.optJSONObject("data");
+                        if (data == null) data = new JSONObject();
+                        LocalHubClientSessionStore.Session session = sessionStore.issue();
+                        data.put("token", session.token).put("expiresAt", session.expiresAt);
+                        writeData(output, 200, data);
+                    } else {
+                        writeBridgeResponse(output, response);
+                    }
                     return;
                 }
                 String token = bearer(request.headers.get("authorization"));
@@ -208,12 +217,35 @@ public final class LocalHubNetworkServer {
                 int status = "PEER_REQUEST_REPLAYED".equals(error.getMessage()) ? 409 : 401;
                 writeError(output, status, error.getMessage(), "Hub 间认证失败。");
             } catch (IllegalStateException error) {
-                int status = "LOCAL_HUB_RUNTIME_UNAVAILABLE".equals(error.getMessage()) ? 503 : 500;
-                writeError(output, status, String.valueOf(error.getMessage()), localErrorMessage(error));
+                String code = String.valueOf(error.getMessage());
+                int status = "LOCAL_HUB_RUNTIME_UNAVAILABLE".equals(code)
+                    ? 503
+                    : code.startsWith("SWITCH_") ? 409 : 500;
+                writeError(output, status, code, localErrorMessage(error));
             }
         } catch (Exception error) {
             Log.w(TAG, "Local Hub request failed", error);
         }
+    }
+
+    private JSONObject dispatchNativePeer(Request request) throws Exception {
+        if (!"POST".equals(request.method)) return null;
+        if ("/api/v1/peer/switch/preflight".equals(request.pathname)) {
+            return service.createPeerSwitchPreflightProof();
+        }
+        if ("/api/v1/peer/synchronize".equals(request.pathname)) {
+            return service.synchronize();
+        }
+        if ("/api/v1/peer/switch/control".equals(request.pathname)) {
+            return service.applyPeerSwitchControl(request.body);
+        }
+        if ("/api/v1/peer/switch/final-sync".equals(request.pathname)) {
+            return service.runPeerFinalSync(request.body);
+        }
+        if ("/api/v1/peer/mobile-switch/request".equals(request.pathname)) {
+            return service.switchToPeer();
+        }
+        return null;
     }
 
     private void serveMedia(OutputStream output, String encodedMediaId) throws Exception {

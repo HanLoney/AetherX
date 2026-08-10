@@ -107,6 +107,10 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("当前连接");
     expect(settingsSource).toContain("连接管理");
     expect(settingsSource).toContain("currentHubTitle");
+    expect(settingsSource).toContain('class="hub-replication-status"');
+    expect(settingsSource).toContain('role="progressbar"');
+    expect(settingsSource).toContain("desktopHubSyncLabel");
+    expect(settingsSource).toContain("phoneHubSyncLabel");
     expect(settingsSource).toContain('<Teleport to="body">');
     expect(settingsSource).toContain("重新连接 Hub");
     expect(settingsSource).toContain("session.reconnect(connectionUrl.value)");

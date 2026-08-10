@@ -101,7 +101,7 @@ async function readIdentity() {
     platform: device?.platform || Capacitor.getPlatform(),
     model,
     osVersion: device?.osVersion || "",
-    appVersion: app?.version || "0.1.0"
+    appVersion: app?.version || __AETHERX_VERSION__
   };
 }
 

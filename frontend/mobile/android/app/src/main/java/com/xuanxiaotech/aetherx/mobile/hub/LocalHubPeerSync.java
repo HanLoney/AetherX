@@ -24,6 +24,10 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class LocalHubPeerSync {
+    public interface ProgressListener {
+        void onProgress(String stage, int progress, String message);
+    }
+
     private static final String TAG = "AetherXLocalHub";
     private static final int STRUCTURED_SNAPSHOT_CHUNK_BYTES = 512 * 1024;
     private static final long ENDPOINT_CACHE_TTL_MS = 5 * 60_000;
@@ -32,6 +36,7 @@ public final class LocalHubPeerSync {
     private final LocalHubDatabase database;
     private final LocalHubSecretStore secretStore;
     private final LocalHubBlobStore blobStore;
+    private final ProgressListener progressListener;
     private String selectedEndpoint;
 
     public LocalHubPeerSync(
@@ -39,33 +44,46 @@ public final class LocalHubPeerSync {
         LocalHubSecretStore secretStore,
         LocalHubBlobStore blobStore
     ) {
+        this(database, secretStore, blobStore, (stage, progress, message) -> {});
+    }
+
+    public LocalHubPeerSync(
+        LocalHubDatabase database,
+        LocalHubSecretStore secretStore,
+        LocalHubBlobStore blobStore,
+        ProgressListener progressListener
+    ) {
         this.database = database;
         this.secretStore = secretStore;
         this.blobStore = blobStore;
+        this.progressListener = progressListener == null
+            ? (stage, progress, message) -> {}
+            : progressListener;
+    }
+
+    public JSONObject keepAlive() throws Exception {
+        JSONObject config = database.replicationConfig();
+        JSONObject secrets = requireSecrets();
+        JSONObject credential = secrets.getJSONObject("peerCredential");
+        String endpoint = selectEndpoint(config);
+        JSONObject response = hello(endpoint, config, credential, secrets);
+        return new JSONObject()
+            .put("reachable", true)
+            .put("endpoint", endpoint)
+            .put("peer", response)
+            .put("checkedAt", System.currentTimeMillis());
     }
 
     public JSONObject run() throws Exception {
         JSONObject config = database.replicationConfig();
         if ("active".equals(config.optString("role"))) return pushActiveOperations(config);
+        progress("connecting", 8, "正在连接电脑 Hub");
         JSONObject secrets = secretStore.load();
         if (secrets == null) throw new IllegalStateException("LOCAL_HUB_CREDENTIAL_UNAVAILABLE");
         JSONObject credential = secrets.getJSONObject("peerCredential");
         String endpoint = selectEndpoint(config);
-        request(
-            endpoint,
-            config,
-            credential,
-            secrets,
-            "POST",
-            "/api/v1/peer/hello",
-            new JSONObject()
-                .put("protocolVersion", config.optInt("protocolVersion", LocalHubDatabase.PROTOCOL_VERSION))
-                .put("schemaVersion", LocalHubDatabase.NODE_SCHEMA_VERSION)
-                .put("spaceId", config.getString("spaceId"))
-                .put("nodeId", config.getString("localNodeId"))
-                .put("epoch", config.getLong("epoch"))
-                .put("activeNodeId", config.getString("activeNodeId"))
-        );
+        hello(endpoint, config, credential, secrets);
+        progress("operations", 20, "正在检查电脑 Hub 的最新变更");
         String origin = config.getString("peerNodeId");
         long after = config.getLong("after");
         int applied = 0;
@@ -91,6 +109,11 @@ public final class LocalHubPeerSync {
             hasMore = page.optBoolean("hasMore", false);
             if (hasMore && nextAfter <= after) throw new IllegalStateException("LOCAL_HUB_SYNC_CURSOR_STALLED");
             after = nextAfter;
+            long headSequence = page.optLong("headSequence", after);
+            int operationProgress = headSequence <= 0
+                ? 55
+                : 20 + (int) Math.round(Math.min(1d, (double) after / (double) headSequence) * 35d);
+            progress("operations", operationProgress, "正在同步电脑 Hub 的变更");
         }
         if (after > 0) {
             JSONObject current = database.replicationConfig();
@@ -101,7 +124,9 @@ public final class LocalHubPeerSync {
             request(endpoint, config, credential, secrets, "POST", "/api/v1/peer/acknowledgements",
                 new JSONObject().put("acknowledgements", acknowledgements));
         }
+        progress("media", 62, "正在核对双 Hub 媒体文件");
         JSONObject media = synchronizeMedia(endpoint, config, credential, secrets);
+        progress("verifying", 94, "正在校验双 Hub 操作链");
         JSONObject syncProof = reportSyncComplete(
             endpoint,
             config,
@@ -120,6 +145,29 @@ public final class LocalHubPeerSync {
             .put("completedAt", System.currentTimeMillis());
         database.recordSyncResult(result);
         return result;
+    }
+
+    private JSONObject hello(
+        String endpoint,
+        JSONObject config,
+        JSONObject credential,
+        JSONObject secrets
+    ) throws Exception {
+        return request(
+            endpoint,
+            config,
+            credential,
+            secrets,
+            "POST",
+            "/api/v1/peer/hello",
+            new JSONObject()
+                .put("protocolVersion", config.optInt("protocolVersion", LocalHubDatabase.PROTOCOL_VERSION))
+                .put("schemaVersion", LocalHubDatabase.NODE_SCHEMA_VERSION)
+                .put("spaceId", config.getString("spaceId"))
+                .put("nodeId", config.getString("localNodeId"))
+                .put("epoch", config.getLong("epoch"))
+                .put("activeNodeId", config.getString("activeNodeId"))
+        );
     }
 
     public JSONObject recoverDivergence(JSONObject input) throws Exception {
@@ -572,6 +620,7 @@ public final class LocalHubPeerSync {
     }
 
     private JSONObject pushActiveOperations(JSONObject config) throws Exception {
+        progress("connecting", 8, "正在连接电脑 Hub");
         JSONObject secrets = requireSecrets();
         JSONObject credential = secrets.getJSONObject("peerCredential");
         String endpoint = selectEndpoint(config);
@@ -604,6 +653,8 @@ public final class LocalHubPeerSync {
         long after = hello.optJSONObject("watermarks") == null
             ? 0
             : hello.getJSONObject("watermarks").optLong(localNodeId, 0);
+        long headSequence = database.operationHead(localNodeId).optLong("originSequence", after);
+        progress("operations", 20, "正在检查手机 Hub 的待同步变更");
         int pushed = 0;
         for (;;) {
             JSONArray operations = database.listOperationsAfter(localNodeId, after, 200);
@@ -627,9 +678,16 @@ public final class LocalHubPeerSync {
             if (next <= after) throw new IllegalStateException("LOCAL_HUB_PUSH_CURSOR_STALLED");
             after = next;
             pushed += operations.length();
+            long total = Math.max(0, headSequence);
+            int operationProgress = total <= 0
+                ? 55
+                : 20 + (int) Math.round(Math.min(1d, (double) after / (double) total) * 35d);
+            progress("operations", operationProgress, "正在把手机 Hub 的变更同步到电脑");
             if (operations.length() < 200) break;
         }
+        progress("media", 62, "正在核对双 Hub 媒体文件");
         JSONObject media = pushActiveMedia(endpoint, config, credential, secrets);
+        progress("verifying", 94, "正在校验双 Hub 操作链");
         JSONObject syncProof = reportSyncComplete(
             endpoint,
             config,
@@ -713,8 +771,12 @@ public final class LocalHubPeerSync {
             }
             for (int offsetIndex = 0; offsetIndex < descriptors.length(); offsetIndex += 1) {
                 JSONObject remote = remoteItems.getJSONObject(offsetIndex);
-                if (remote.optBoolean("completed", false)) continue;
                 JSONObject descriptor = descriptors.getJSONObject(offsetIndex);
+                int absoluteIndex = start + offsetIndex;
+                if (remote.optBoolean("completed", false)) {
+                    reportMediaProgress(absoluteIndex + 1d, blobs.length(), "正在核对电脑 Hub 的媒体文件");
+                    continue;
+                }
                 long offset = remote.optLong("receivedBytes", 0);
                 long byteSize = descriptor.getLong("byteSize");
                 while (offset < byteSize) {
@@ -737,10 +799,14 @@ public final class LocalHubPeerSync {
                     if (next <= offset) throw new IllegalStateException("LOCAL_HUB_MEDIA_PUSH_STALLED");
                     uploadedBytes += next - offset;
                     offset = next;
+                    double itemProgress = byteSize <= 0 ? 1d : Math.min(1d, (double) offset / (double) byteSize);
+                    reportMediaProgress(absoluteIndex + itemProgress, blobs.length(), "正在同步媒体到电脑 Hub");
                 }
                 transferred += 1;
+                reportMediaProgress(absoluteIndex + 1d, blobs.length(), "正在同步媒体到电脑 Hub");
             }
         }
+        if (blobs.length() == 0) progress("media", 88, "双 Hub 媒体文件已一致");
         return new JSONObject()
             .put("discovered", blobs.length())
             .put("transferred", transferred)
@@ -849,10 +915,14 @@ public final class LocalHubPeerSync {
                 offset = blobStore.append(blob, offset, response.bytes);
                 downloaded += response.bytes.length;
                 database.updateBlobProgress(mediaId, offset, "pending", "");
+                double itemProgress = byteSize <= 0 ? 1d : Math.min(1d, (double) offset / (double) byteSize);
+                reportMediaProgress(index + itemProgress, blobs.length(), "正在同步媒体到手机 Hub");
             }
             String localPath = blobStore.finalizeBlob(blob);
             database.updateBlobProgress(mediaId, byteSize, "verified", localPath);
+            reportMediaProgress(index + 1d, blobs.length(), "正在同步媒体到手机 Hub");
         }
+        if (blobs.length() == 0) progress("media", 88, "双 Hub 媒体文件已一致");
         return new JSONObject()
             .put("discovered", discovered)
             .put("transferred", blobs.length())
@@ -899,6 +969,15 @@ public final class LocalHubPeerSync {
             .put("receipt", receipt)
             .put("source", finalized)
             .put("completedAt", System.currentTimeMillis());
+    }
+
+    private void reportMediaProgress(double completed, int total, String message) {
+        double ratio = total <= 0 ? 1d : Math.max(0d, Math.min(1d, completed / (double) total));
+        progress("media", 65 + (int) Math.round(ratio * 23d), message);
+    }
+
+    private void progress(String stage, int value, String message) {
+        progressListener.onProgress(stage, Math.max(0, Math.min(100, value)), message);
     }
 
     public JSONObject switchToLocal() throws Exception {
@@ -1069,6 +1148,29 @@ public final class LocalHubPeerSync {
             completeOutgoingExchange(endpoint, config, credential, secrets, pending, syncKey);
         }
         throw new IllegalStateException("LOCAL_HUB_SWITCH_STALLED");
+    }
+
+    public JSONObject createSwitchPreflightProof() throws Exception {
+        return signedSwitchProof(syncKey());
+    }
+
+    public JSONObject applyPeerSwitchControl(JSONObject signedControl) throws Exception {
+        return database.applySwitchControl(signedControl, syncKey(), false);
+    }
+
+    public JSONObject runPeerFinalSync(JSONObject input) throws Exception {
+        JSONObject config = database.replicationConfig();
+        JSONObject status = database.status(true, 0);
+        String transitionId = input.optString("transitionId", "");
+        if (transitionId.isEmpty() ||
+            !config.getString("peerNodeId").equals(status.optString("activeNodeId")) ||
+            status.optString("localNodeId").equals(status.optString("activeNodeId")) ||
+            !"final_sync".equals(status.optString("state")) ||
+            !transitionId.equals(status.optString("transitionId")) ||
+            !status.optString("localNodeId").equals(status.optString("transitionTargetNodeId"))) {
+            throw new IllegalStateException("SWITCH_STATE_CONFLICT");
+        }
+        return run();
     }
 
     private void completeOutgoingExchange(
@@ -1298,6 +1400,10 @@ public final class LocalHubPeerSync {
         JSONObject secrets = secretStore.load();
         if (secrets == null) throw new IllegalStateException("LOCAL_HUB_CREDENTIAL_UNAVAILABLE");
         return secrets;
+    }
+
+    private byte[] syncKey() throws Exception {
+        return Base64.decode(requireSecrets().getString("spaceSyncKey"), Base64.DEFAULT);
     }
 
     private String selectEndpoint(JSONObject config) throws Exception {
