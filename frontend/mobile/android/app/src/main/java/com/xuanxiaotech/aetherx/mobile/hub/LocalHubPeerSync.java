@@ -1413,20 +1413,24 @@ public final class LocalHubPeerSync {
         long now = System.currentTimeMillis();
         if (!healthyEndpoint.isEmpty() && now - healthyEndpointAt < ENDPOINT_CACHE_TTL_MS) {
             for (int index = 0; index < endpoints.length(); index += 1) {
-                String candidate = endpoints.getJSONObject(index).getString("address");
+                JSONObject endpoint = endpoints.getJSONObject(index);
+                String candidate = endpoint.getString("address");
                 if (!healthyEndpoint.equals(candidate)) continue;
-                selectedEndpoint = candidate;
-                Log.i(TAG, "Reusing healthy peer endpoint: " + candidate);
-                return candidate;
+                if (isReachable(candidate, endpointTimeoutMs(endpoint))) {
+                    selectedEndpoint = candidate;
+                    Log.i(TAG, "Reusing healthy peer endpoint: " + candidate);
+                    return candidate;
+                }
+                forgetHealthyEndpoint(candidate);
+                Log.i(TAG, "Cached peer endpoint is no longer reachable: " + candidate);
+                break;
             }
         }
         String fallback = endpoints.getJSONObject(endpoints.length() - 1).getString("address");
         for (int index = 0; index < endpoints.length(); index += 1) {
             JSONObject endpoint = endpoints.getJSONObject(index);
             String candidate = endpoint.getString("address");
-            String transport = endpoint.optString("transport");
-            int timeoutMs = ("lan".equals(transport) || "development".equals(transport)) ? 1_000 : 3_500;
-            if (isReachable(candidate, timeoutMs)) {
+            if (isReachable(candidate, endpointTimeoutMs(endpoint))) {
                 selectedEndpoint = candidate;
                 rememberHealthyEndpoint(candidate);
                 Log.i(TAG, "Selected peer endpoint: " + candidate);
@@ -1436,6 +1440,11 @@ public final class LocalHubPeerSync {
         selectedEndpoint = fallback;
         Log.i(TAG, "Peer health probes timed out; falling back to: " + fallback);
         return fallback;
+    }
+
+    private static int endpointTimeoutMs(JSONObject endpoint) {
+        String transport = endpoint.optString("transport");
+        return ("lan".equals(transport) || "development".equals(transport)) ? 1_000 : 3_500;
     }
 
     private static void rememberHealthyEndpoint(String endpoint) {
@@ -1475,8 +1484,9 @@ public final class LocalHubPeerSync {
         String path,
         JSONObject body
     ) throws Exception {
+        HttpURLConnection connection = null;
         try {
-            HttpURLConnection connection = open(endpoint, config, credential, method, path, body);
+            connection = open(endpoint, config, credential, method, path, body);
             connection.setConnectTimeout(8_000);
             connection.setReadTimeout(20_000);
             connection.setInstanceFollowRedirects(false);
@@ -1502,6 +1512,8 @@ public final class LocalHubPeerSync {
         } catch (IOException error) {
             forgetHealthyEndpoint(endpoint);
             throw error;
+        } finally {
+            if (connection != null) connection.disconnect();
         }
     }
 
@@ -1533,26 +1545,31 @@ public final class LocalHubPeerSync {
         JSONObject secrets,
         String path
     ) throws Exception {
-        HttpURLConnection connection = open(endpoint, config, credential, "GET", path, new JSONObject());
-        connection.setConnectTimeout(8_000);
-        connection.setReadTimeout(30_000);
-        connection.setInstanceFollowRedirects(false);
-        int status = connection.getResponseCode();
-        if (status < 200 || status >= 300) {
-            String responseText = read(connection.getErrorStream());
-            JSONObject payload = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText);
-            JSONObject error = payload.optJSONObject("error");
-            throw new IllegalStateException(error == null
-                ? "LOCAL_HUB_PEER_REQUEST_FAILED"
-                : error.optString("code", "LOCAL_HUB_PEER_REQUEST_FAILED"));
+        HttpURLConnection connection = null;
+        try {
+            connection = open(endpoint, config, credential, "GET", path, new JSONObject());
+            connection.setConnectTimeout(8_000);
+            connection.setReadTimeout(30_000);
+            connection.setInstanceFollowRedirects(false);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                String responseText = read(connection.getErrorStream());
+                JSONObject payload = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText);
+                JSONObject error = payload.optJSONObject("error");
+                throw new IllegalStateException(error == null
+                    ? "LOCAL_HUB_PEER_REQUEST_FAILED"
+                    : error.optString("code", "LOCAL_HUB_PEER_REQUEST_FAILED"));
+            }
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[64 * 1024];
+            try (InputStream input = connection.getInputStream()) {
+                int read;
+                while ((read = input.read(buffer)) >= 0) if (read > 0) output.write(buffer, 0, read);
+            }
+            return new BinaryResponse(connection, output.toByteArray());
+        } finally {
+            if (connection != null) connection.disconnect();
         }
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[64 * 1024];
-        try (InputStream input = connection.getInputStream()) {
-            int read;
-            while ((read = input.read(buffer)) >= 0) if (read > 0) output.write(buffer, 0, read);
-        }
-        return new BinaryResponse(connection, output.toByteArray());
     }
 
     private HttpURLConnection open(
@@ -1646,16 +1663,26 @@ public final class LocalHubPeerSync {
     }
 
     private static final class BinaryResponse {
-        final HttpURLConnection connection;
         final byte[] bytes;
+        final String blobHash;
+        final String blobOffset;
+        final String blobSize;
+        final String chunkHash;
 
         BinaryResponse(HttpURLConnection connection, byte[] bytes) {
-            this.connection = connection;
             this.bytes = bytes;
+            blobHash = connection.getHeaderField("X-AetherX-Blob-Hash");
+            blobOffset = connection.getHeaderField("X-AetherX-Blob-Offset");
+            blobSize = connection.getHeaderField("X-AetherX-Blob-Size");
+            chunkHash = connection.getHeaderField("X-AetherX-Chunk-Hash");
         }
 
         String header(String name) {
-            return connection.getHeaderField(name);
+            if ("X-AetherX-Blob-Hash".equals(name)) return blobHash;
+            if ("X-AetherX-Blob-Offset".equals(name)) return blobOffset;
+            if ("X-AetherX-Blob-Size".equals(name)) return blobSize;
+            if ("X-AetherX-Chunk-Hash".equals(name)) return chunkHash;
+            return null;
         }
     }
 }
