@@ -216,7 +216,7 @@ public final class LocalHubService {
         return database.verifyIntegrity();
     }
 
-    public JSONObject synchronize() {
+    public synchronized JSONObject synchronize() {
         ensureRunning();
         try {
             database.requireBootstrapCompleted();
