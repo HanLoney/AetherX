@@ -1,14 +1,43 @@
 apply plugin: 'com.android.application'
 
+def productVersion = file("../../../../VERSION").text.trim()
+def versionParts = productVersion.tokenize('.').collect { Integer.parseInt(it) }
+if (versionParts.size() != 3 || versionParts.any { it < 0 || it > 999 }) {
+    throw new GradleException("VERSION must use numeric MAJOR.MINOR.PATCH components from 0 to 999")
+}
+def productVersionCode = versionParts[0] * 1000000 + versionParts[1] * 1000 + versionParts[2]
+def signingValue = { String environmentName, String propertyName ->
+    System.getenv(environmentName) ?: (project.findProperty(propertyName) as String)
+}
+def releaseKeystore = signingValue("AETHERX_ANDROID_KEYSTORE", "aetherxAndroidKeystore")
+def releaseKeystorePassword = signingValue("AETHERX_ANDROID_KEYSTORE_PASSWORD", "aetherxAndroidKeystorePassword")
+def releaseKeyAlias = signingValue("AETHERX_ANDROID_KEY_ALIAS", "aetherxAndroidKeyAlias")
+def releaseKeyPassword = signingValue("AETHERX_ANDROID_KEY_PASSWORD", "aetherxAndroidKeyPassword")
+def releaseSigningValues = [releaseKeystore, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword]
+def releaseSigningReady = releaseSigningValues.every { it != null && !it.trim().isEmpty() }
+def releaseSigningPartiallyConfigured = releaseSigningValues.any { it != null && !it.trim().isEmpty() }
+def releaseSigningRequired = (System.getenv("AETHERX_REQUIRE_SIGNING") ?: "false").toBoolean()
+
+if ((releaseSigningPartiallyConfigured || releaseSigningRequired) && !releaseSigningReady) {
+    throw new GradleException(
+        "Android release signing requires AETHERX_ANDROID_KEYSTORE, " +
+        "AETHERX_ANDROID_KEYSTORE_PASSWORD, AETHERX_ANDROID_KEY_ALIAS and " +
+        "AETHERX_ANDROID_KEY_PASSWORD"
+    )
+}
+
 android {
     namespace = "com.xuanxiaotech.aetherx.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         applicationId "com.xuanxiaotech.aetherx.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode productVersionCode
+        versionName productVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +45,31 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile file(releaseKeystore)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
+        debug {
+            buildConfigField "boolean", "ALLOW_INSECURE_LAN", "true"
+        }
         release {
+            buildConfigField "boolean", "ALLOW_INSECURE_LAN", "false"
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) signingConfig signingConfigs.release
+        }
+        lanRelease {
+            initWith release
+            buildConfigField "boolean", "ALLOW_INSECURE_LAN", "true"
+            matchingFallbacks = ["release"]
+            if (releaseSigningReady) signingConfig signingConfigs.release
         }
     }
 }

@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/desktop/package-lock.json
+            frontend/mobile/package-lock.json
+            frontend/launcher/package-lock.json
+      - name: Verify release contract
+        run: |
+          node scripts/check-docs.js
+          node scripts/check-release.js --tag --require-clean
+      - name: Test all Node and web components
+        run: |
+          npm --prefix backend ci
+          npm --prefix backend test
+          npm --prefix backend audit --omit=dev --audit-level=high
+          npm --prefix frontend/desktop ci
+          npm --prefix frontend/desktop test
+          npm --prefix frontend/desktop audit --audit-level=high
+          npm --prefix frontend/launcher ci
+          npm --prefix frontend/launcher test
+          npm --prefix frontend/launcher audit --audit-level=high
+          npm --prefix frontend/mobile ci
+          npm --prefix frontend/mobile test
+          npm --prefix frontend/mobile run build
+          npm --prefix frontend/mobile audit --audit-level=high
+
+  android:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: frontend/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Restore Android signing key
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/aetherx-release.keystore"
+          test -s "$RUNNER_TEMP/aetherx-release.keystore"
+      - name: Build signed Android release
+        working-directory: frontend/mobile
+        env:
+          AETHERX_REQUIRE_SIGNING: "true"
+          AETHERX_ANDROID_KEYSTORE: ${{ runner.temp }}/aetherx-release.keystore
+          AETHERX_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          AETHERX_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AETHERX_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          npm ci
+          npm run android:sync
+          chmod +x android/gradlew
+          cd android
+          ./gradlew testDebugUnitTest assembleRelease assembleLanRelease bundleRelease --stacktrace
+      - name: Verify APK and AAB signatures
+        run: |
+          node scripts/verify-android-signature.js frontend/mobile/android/app/build/outputs/apk/release/app-release.apk
+          node scripts/verify-android-signature.js frontend/mobile/android/app/build/outputs/apk/lanRelease/app-lanRelease.apk
+          node scripts/verify-android-bundle.js frontend/mobile/android/app/build/outputs/bundle/release/app-release.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            frontend/mobile/android/app/build/outputs/apk/release/app-release.apk
+            frontend/mobile/android/app/build/outputs/apk/lanRelease/app-lanRelease.apk
+            frontend/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+  windows:
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 50
+    env:
+      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/desktop/package-lock.json
+            frontend/launcher/package-lock.json
+      - name: Require Windows signing credentials
+        shell: pwsh
+        run: |
+          if (-not $env:CSC_LINK) { throw "WINDOWS_CSC_LINK is required" }
+          if (-not $env:CSC_KEY_PASSWORD) { throw "WINDOWS_CSC_KEY_PASSWORD is required" }
+      - name: Install packaging dependencies
+        shell: pwsh
+        run: |
+          npm --prefix backend ci
+          npm --prefix frontend/desktop ci
+          npm --prefix frontend/launcher ci
+      - name: Build and verify signed desktop artifacts
+        shell: pwsh
+        run: |
+          npm --prefix frontend/desktop run dist
+          npm --prefix frontend/desktop run verify:backend
+          npm --prefix frontend/desktop run verify:signature
+      - name: Build and verify signed launcher
+        shell: pwsh
+        run: |
+          npm --prefix frontend/launcher run dist:package
+          npm --prefix frontend/launcher run verify:signature
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            frontend/desktop/dist/AetherX-*.exe
+            frontend/launcher/dist/AetherX-启动器-*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Require real-device release approval
+        env:
+          RELEASE_SMOKE_APPROVAL: ${{ secrets.RELEASE_SMOKE_APPROVAL }}
+        run: test "$RELEASE_SMOKE_APPROVAL" = "$GITHUB_REF_NAME"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-release"
+          path: release-assets
+          merge-multiple: true
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --verify-tag --generate-notes

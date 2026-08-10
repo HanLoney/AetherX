@@ -342,7 +342,7 @@ async function startControlSync(
   userId: string
 ) {
   if (controlSync) return;
-  const connection = session.createDesktopControlConnection();
+  const connection = await session.createDesktopControlConnection();
   if (!connection) {
     throw new Error("手机 Hub 已启用，但找不到电脑 Hub 的控制连接，请重新配对。");
   }

@@ -15,6 +15,17 @@ describe("normalizeServerUrl", () => {
   it("rejects non-http protocols", () => {
     expect(normalizeServerUrl("file:///tmp/aetherx")).toBe("");
   });
+
+  it("allows private LAN and Tailscale HTTP endpoints", () => {
+    expect(normalizeServerUrl("http://192.168.1.20:4318/path")).toBe("http://192.168.1.20:4318");
+    expect(normalizeServerUrl("http://100.72.4.9:4318")).toBe("http://100.72.4.9:4318");
+  });
+
+  it("rejects public cleartext HTTP endpoints", () => {
+    expect(normalizeServerUrl("http://203.0.113.8:4318")).toBe("");
+    expect(normalizeServerUrl("http://hub.example.com")).toBe("");
+    expect(normalizeServerUrl("http://fcloud.example.com")).toBe("");
+  });
 });
 
 describe("parsePairingCode", () => {

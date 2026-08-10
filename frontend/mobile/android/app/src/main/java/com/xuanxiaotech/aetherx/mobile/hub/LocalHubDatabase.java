@@ -339,6 +339,26 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         return status(true, LocalHubService.DEFAULT_PORT);
     }
 
+    public synchronized JSONArray peerEndpoints() throws JSONException {
+        JSONArray endpoints = new JSONArray();
+        SQLiteDatabase db = getReadableDatabase();
+        try (Cursor cursor = db.rawQuery(
+            "SELECT e.node_id,e.transport,e.address,e.priority,e.fingerprint " +
+                "FROM hub_endpoints e JOIN hub_cluster_state s ON s.space_id=e.space_id " +
+                "WHERE e.node_id<>s.local_node_id ORDER BY e.priority DESC",
+            null)) {
+            while (cursor.moveToNext()) {
+                endpoints.put(new JSONObject()
+                    .put("nodeId", cursor.getString(0))
+                    .put("transport", cursor.getString(1))
+                    .put("address", cursor.getString(2))
+                    .put("priority", cursor.getInt(3))
+                    .put("certificateFingerprint", cursor.getString(4)));
+            }
+        }
+        return endpoints;
+    }
+
     private static boolean validPeerEndpoint(String transport, String address) {
         try {
             URL url = new URL(address);
@@ -1501,6 +1521,41 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         putMeta("last_sync_at", String.valueOf(System.currentTimeMillis()));
     }
 
+    public synchronized JSONObject lastSyncStatus() throws JSONException {
+        String raw = meta("last_sync_result");
+        String syncedAt = meta("last_sync_at");
+        if (raw == null || raw.isEmpty()) {
+            return new JSONObject()
+                .put("state", "idle")
+                .put("stage", "idle")
+                .put("progress", 0)
+                .put("direction", "")
+                .put("message", "尚未执行双 Hub 同步")
+                .put("applied", 0)
+                .put("pushed", 0)
+                .put("startedAt", JSONObject.NULL)
+                .put("updatedAt", JSONObject.NULL)
+                .put("completedAt", JSONObject.NULL);
+        }
+        JSONObject result = new JSONObject(raw);
+        long completedAt = result.optLong("completedAt", parseLongOrZero(syncedAt));
+        String direction = result.optString("direction", "pull");
+        int applied = result.optInt("applied", 0);
+        int pushed = result.optInt("pushed", 0);
+        int changed = applied + pushed;
+        return new JSONObject()
+            .put("state", "synced")
+            .put("stage", "completed")
+            .put("progress", 100)
+            .put("direction", direction)
+            .put("message", changed > 0 ? "双 Hub 已同步 " + changed + " 项变更" : "电脑 Hub 与手机 Hub 已同步")
+            .put("applied", applied)
+            .put("pushed", pushed)
+            .put("startedAt", JSONObject.NULL)
+            .put("updatedAt", completedAt)
+            .put("completedAt", completedAt);
+    }
+
     public synchronized JSONArray pendingBootstrapBlobs() throws JSONException {
         JSONArray result = new JSONArray();
         try (Cursor cursor = getReadableDatabase().rawQuery(
@@ -1509,6 +1564,14 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             while (cursor.moveToNext()) result.put(blobFromCursor(cursor));
         }
         return result;
+    }
+
+    private static long parseLongOrZero(String value) {
+        try {
+            return value == null ? 0 : Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     public synchronized JSONArray pendingIncrementalBlobs() throws JSONException {

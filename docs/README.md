@@ -13,6 +13,7 @@
 ## 开发与 API
 
 - [开发者指南](development.md)：环境、启动方式、测试矩阵和数据库迁移规则；
+- [发布检查清单](release-checklist.md)：统一版本、签名、构建门禁和真机验收；
 - [API 使用说明](api.md)：认证、响应格式、请求示例和 OpenAPI 入口；
 - [OpenAPI 契约](../backend/openapi.yaml)：机器可读的接口定义；
 - [Hub 复制 Operation v1 Schema](protocol/replication-operation-v1.schema.json)：双 Hub 操作日志的机器可读契约；

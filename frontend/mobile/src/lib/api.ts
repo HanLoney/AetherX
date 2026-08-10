@@ -549,7 +549,32 @@ export interface AgentChatResult {
 
 export function normalizeServerUrl(value: string) {
   const normalized = String(value || "").trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(normalized) ? normalized : "";
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    return "";
+  }
+  if (url.protocol === "https:") return url.origin;
+  if (url.protocol !== "http:" || !isPrivateHttpHost(url.hostname)) return "";
+  return url.origin;
+}
+
+function isPrivateHttpHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "::1") return true;
+  if (host.includes(":") && (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:"))) {
+    return true;
+  }
+  const octets = host.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+  return octets[0] === 10 ||
+    octets[0] === 127 ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168) ||
+    (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127);
 }
 
 function isWriteMethod(method: string) {
