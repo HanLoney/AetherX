@@ -33,11 +33,7 @@ class XuanApiClient {
 
   async request(method, path, body) {
     const controller = new AbortController();
-    const timeout = path.includes("/agent/")
-      ? 300_000
-      : path.includes("/ai/image-generations")
-        ? 245_000
-        : 65_000;
+    const timeout = requestTimeoutForPath(path);
     const timer = setTimeout(() => controller.abort(), timeout);
     const requestId = isWriteMethod(method) ? randomUUID() : "";
     try {
@@ -851,6 +847,16 @@ class XuanApiClient {
   }
 }
 
+function requestTimeoutForPath(path) {
+  const value = String(path || "");
+  if (value.includes("/agent/") ||
+      /^\/api\/v1\/cluster\/mobile-hubs\/[^/]+\/switch(?:\?|$)/.test(value)) {
+    return 300_000;
+  }
+  if (value.includes("/ai/image-generations")) return 245_000;
+  return 65_000;
+}
+
 function hydrateMediaSources(value, baseUrl, token) {
   if (Array.isArray(value)) {
     value.forEach((item) => hydrateMediaSources(item, baseUrl, token));
@@ -876,4 +882,4 @@ function isWriteMethod(method) {
   return !["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase());
 }
 
-module.exports = { XuanApiClient, ApiError };
+module.exports = { XuanApiClient, ApiError, requestTimeoutForPath };
