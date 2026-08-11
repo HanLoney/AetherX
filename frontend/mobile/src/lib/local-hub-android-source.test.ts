@@ -84,7 +84,7 @@ describe("Android Local Hub replication envelope", () => {
     expect(peerSyncSource).toContain('Cipher.getInstance("AES/GCM/NoPadding")');
     expect(peerSyncSource).toContain('"/snapshot/complete"');
     expect(peerSyncSource).toContain('"/ack"');
-    expect(serviceSource).toContain("public synchronized JSONObject recoverDivergence");
+    expect(serviceSource).toContain("public JSONObject recoverDivergence");
     expect(pluginSource).toContain("public void recoverDivergence(PluginCall call)");
   });
 
@@ -162,8 +162,10 @@ describe("Android Local Hub replication envelope", () => {
     );
 
     expect(pluginSource).toContain("service().startAndResumePendingSwitch()");
-    expect(serviceSource).toContain("public synchronized JSONObject startAndResumePendingSwitch()");
-    expect(serviceSource).toContain("return resumeReplication()");
+    expect(serviceSource).toContain("public JSONObject startAndResumePendingSwitch()");
+    expect(serviceSource).toContain("scheduleRecovery()");
+    expect(serviceSource).toContain("recoveryScheduled.compareAndSet(false, true)");
+    expect(serviceSource).toContain('put("recoveryPending", true)');
     expect(foregroundServiceSource).toContain(
       "LocalHubService.get(getApplicationContext()).startAndResumePendingSwitch()"
     );
@@ -196,6 +198,7 @@ describe("Android Local Hub replication envelope", () => {
 
     expect(networkServerSource).toContain("dispatchNativePeer(request)");
     expect(networkServerSource).toContain('"/api/v1/peer/switch/preflight"');
+    expect(networkServerSource).toContain('"/api/v1/peer/status"');
     expect(networkServerSource).toContain('"/api/v1/peer/synchronize"');
     expect(networkServerSource).toContain('"/api/v1/peer/switch/control"');
     expect(networkServerSource).toContain('"/api/v1/peer/switch/final-sync"');
@@ -204,10 +207,22 @@ describe("Android Local Hub replication envelope", () => {
     expect(peerSyncSource).toContain("public JSONObject createSwitchPreflightProof()");
     expect(peerSyncSource).toContain("public JSONObject applyPeerSwitchControl(JSONObject signedControl)");
     expect(peerSyncSource).toContain("public JSONObject runPeerFinalSync(JSONObject input)");
-    expect(serviceSource).toContain("public synchronized JSONObject applyPeerSwitchControl");
-    expect(serviceSource).toContain("public synchronized JSONObject runPeerFinalSync");
+    expect(serviceSource).toContain("public JSONObject createPeerSwitchPreflightProof()");
+    expect(serviceSource).not.toContain(
+      "public synchronized JSONObject createPeerSwitchPreflightProof()"
+    );
+    expect(serviceSource).toContain("replicationOperationLock.tryLock(5, TimeUnit.SECONDS)");
+    expect(serviceSource).toContain('throw new IllegalStateException("LOCAL_HUB_BUSY")');
+    expect(serviceSource).toContain("public JSONObject applyPeerSwitchControl");
+    expect(serviceSource).toContain("public JSONObject runPeerFinalSync");
+    expect(networkServerSource).toContain('"LOCAL_HUB_BUSY".equals(code)');
     expect(networkServerSource.indexOf("dispatchNativePeer(request)"))
       .toBeLessThan(networkServerSource.indexOf("LocalHubNetworkBridge.dispatch("));
+    expect(networkServerSource).toContain("BRIDGE_WORKER_COUNT = 4");
+    expect(networkServerSource).toContain("HTTP_WORKER_COUNT = 16");
+    expect(networkServerSource).toContain("client.setSoTimeout(15_000)");
+    expect(networkServerSource).toContain("bridgeWorkers.tryAcquire()");
+    expect(networkServerSource).toContain("bridgeWorkers.release()");
   });
 
   it("keeps the peer route warm while Android is locked", () => {
