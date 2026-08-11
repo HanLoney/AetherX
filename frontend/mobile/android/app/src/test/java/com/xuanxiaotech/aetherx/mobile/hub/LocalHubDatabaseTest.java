@@ -1,6 +1,8 @@
 package com.xuanxiaotech.aetherx.mobile.hub;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -16,5 +18,15 @@ public class LocalHubDatabaseTest {
         assertEquals("\"emoji 😺\"", LocalHubDatabase.quoteJsonString("emoji 😺"));
         assertEquals("\"\\ud800\"", LocalHubDatabase.quoteJsonString("\ud800"));
         assertEquals("\"\\udc00\"", LocalHubDatabase.quoteJsonString("\udc00"));
+    }
+
+    @Test
+    public void localHubRecoveryIncludesInterruptedBootstrap() {
+        assertFalse(LocalHubService.requiresRecovery(false, "unpaired", "", false));
+        assertFalse(LocalHubService.requiresRecovery(true, "stable", "completed", false));
+        assertTrue(LocalHubService.requiresRecovery(true, "stable", "", false));
+        assertTrue(LocalHubService.requiresRecovery(true, "stable", "restored", false));
+        assertTrue(LocalHubService.requiresRecovery(true, "stable", "completed", true));
+        assertTrue(LocalHubService.requiresRecovery(true, "switching", "completed", false));
     }
 }

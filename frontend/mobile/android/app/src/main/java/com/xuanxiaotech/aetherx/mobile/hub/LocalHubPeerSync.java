@@ -1,13 +1,21 @@
 package com.xuanxiaotech.aetherx.mobile.hub;
 
 import android.util.Base64;
+import android.util.Base64InputStream;
+import android.util.JsonReader;
+import android.util.JsonToken;
 import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -15,6 +23,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.UUID;
 
@@ -510,113 +519,340 @@ public final class LocalHubPeerSync {
         );
         String snapshotId = manifest.optString("id", "");
         if (snapshotId.isEmpty()) throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
-        JSONObject envelope = downloadSnapshotEnvelope(
-            endpoint,
-            config,
-            credential,
-            secrets,
-            snapshotId
-        );
-        JSONObject snapshot = decryptSnapshotEnvelope(envelope, secrets.getString("spaceSyncKey"));
-        JSONObject aad = envelope.optJSONObject("aad");
-        JSONObject snapshotManifest = snapshot.optJSONObject("manifest");
-        JSONObject metadata = snapshot.optJSONObject("metadata");
-        JSONObject replication = snapshot.optJSONObject("replication");
-        if (
-            aad == null || snapshotManifest == null || metadata == null || replication == null ||
-            !snapshotId.equals(snapshot.optString("snapshotId")) ||
-            !snapshotId.equals(aad.optString("snapshotId")) ||
-            !config.getString("spaceId").equals(aad.optString("spaceId")) ||
-            !config.getString("peerNodeId").equals(aad.optString("sourceNodeId")) ||
-            !config.getString("localNodeId").equals(aad.optString("requestedByNodeId")) ||
-            config.getLong("epoch") != aad.optLong("epoch") ||
-            !snapshotManifest.optString("manifestHash").equals(aad.optString("manifestHash"))
-        ) {
-            throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_IDENTITY_INVALID");
+        File envelopeFile = null;
+        File snapshotFile = null;
+        try {
+            envelopeFile = downloadSnapshotEnvelope(
+                endpoint,
+                config,
+                credential,
+                secrets,
+                snapshotId
+            );
+            SnapshotEnvelopeMetadata envelope = readSnapshotEnvelopeMetadata(envelopeFile);
+            snapshotFile = decryptSnapshotEnvelopeToFile(
+                envelopeFile,
+                envelope,
+                secrets.getString("spaceSyncKey"),
+                snapshotId
+            );
+            JSONObject snapshot;
+            try (InputStream input = new BufferedInputStream(new FileInputStream(snapshotFile))) {
+                snapshot = readJsonObject(input);
+            }
+            JSONObject aad = envelope.aad;
+            JSONObject snapshotManifest = snapshot.optJSONObject("manifest");
+            JSONObject metadata = snapshot.optJSONObject("metadata");
+            JSONObject replication = snapshot.optJSONObject("replication");
+            if (
+                aad == null || snapshotManifest == null || metadata == null || replication == null ||
+                !snapshotId.equals(snapshot.optString("snapshotId")) ||
+                !snapshotId.equals(aad.optString("snapshotId")) ||
+                !config.getString("spaceId").equals(aad.optString("spaceId")) ||
+                !config.getString("peerNodeId").equals(aad.optString("sourceNodeId")) ||
+                !config.getString("localNodeId").equals(aad.optString("requestedByNodeId")) ||
+                config.getLong("epoch") != aad.optLong("epoch") ||
+                !snapshotManifest.optString("manifestHash").equals(aad.optString("manifestHash"))
+            ) {
+                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_IDENTITY_INVALID");
+            }
+            JSONObject records = metadata.optJSONObject("records");
+            JSONObject account = metadata.optJSONObject("account");
+            JSONObject credentials = metadata.optJSONObject("credentials");
+            JSONArray media = metadata.optJSONArray("media");
+            if (records == null || account == null || credentials == null || media == null) {
+                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
+            }
+            return new JSONObject()
+                .put("snapshotId", snapshotId)
+                .put("spaceId", config.getString("spaceId"))
+                .put("tables", records)
+                .put("account", account)
+                .put("credentials", credentials)
+                .put("media", media)
+                .put("manifest", snapshotManifest)
+                .put("replication", replication);
+        } finally {
+            deleteTemporaryFile(snapshotFile);
+            deleteTemporaryFile(envelopeFile);
         }
-        JSONObject records = metadata.optJSONObject("records");
-        JSONObject account = metadata.optJSONObject("account");
-        JSONObject credentials = metadata.optJSONObject("credentials");
-        JSONArray media = metadata.optJSONArray("media");
-        if (records == null || account == null || credentials == null || media == null) {
-            throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
-        }
-        return new JSONObject()
-            .put("snapshotId", snapshotId)
-            .put("spaceId", config.getString("spaceId"))
-            .put("tables", records)
-            .put("account", account)
-            .put("credentials", credentials)
-            .put("media", media)
-            .put("manifest", snapshotManifest)
-            .put("replication", replication);
     }
 
-    private JSONObject downloadSnapshotEnvelope(
+    private File downloadSnapshotEnvelope(
         String endpoint,
         JSONObject config,
         JSONObject credential,
         JSONObject secrets,
         String snapshotId
     ) throws Exception {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        File outputFile = blobStore.temporaryFile("snapshot-envelope", snapshotId);
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
         long offset = 0;
         long byteSize = -1;
         String payloadHash = "";
-        for (;;) {
-            String path = "/api/v1/peer/snapshots/" + encode(snapshotId) +
-                "/payload/chunks?offset=" + offset +
-                "&length=" + STRUCTURED_SNAPSHOT_CHUNK_BYTES;
-            JSONObject chunk = request(
-                endpoint,
-                config,
-                credential,
-                secrets,
-                "GET",
-                path,
-                new JSONObject()
-            );
-            if (!snapshotId.equals(chunk.optString("snapshotId")) ||
-                chunk.optLong("offset", -1) != offset) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
-            long currentByteSize = chunk.optLong("byteSize", -1);
-            if (currentByteSize < 1 || (byteSize >= 0 && currentByteSize != byteSize)) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
-            byteSize = currentByteSize;
-            byte[] bytes = Base64.decode(chunk.optString("data", ""), Base64.DEFAULT);
-            if (!LocalHubDatabase.sha256(bytes).equals(chunk.optString("chunkHash"))) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
-            long nextOffset = chunk.optLong("nextOffset", -1);
-            if (bytes.length == 0 || nextOffset != offset + bytes.length || nextOffset > byteSize) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
-            String currentPayloadHash = chunk.optString("payloadHash", "");
-            if (currentPayloadHash.isEmpty() ||
-                (!payloadHash.isEmpty() && !payloadHash.equals(currentPayloadHash))) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
-            payloadHash = currentPayloadHash;
-            output.write(bytes);
-            offset = nextOffset;
-            boolean complete = chunk.optBoolean("complete", false);
-            if (complete) {
-                if (offset != byteSize) {
+        try (FileOutputStream fileOutput = new FileOutputStream(outputFile, false);
+             BufferedOutputStream output = new BufferedOutputStream(fileOutput)) {
+            for (;;) {
+                String path = "/api/v1/peer/snapshots/" + encode(snapshotId) +
+                    "/payload/chunks?offset=" + offset +
+                    "&length=" + STRUCTURED_SNAPSHOT_CHUNK_BYTES;
+                JSONObject chunk = request(
+                    endpoint,
+                    config,
+                    credential,
+                    secrets,
+                    "GET",
+                    path,
+                    new JSONObject()
+                );
+                if (!snapshotId.equals(chunk.optString("snapshotId")) ||
+                    chunk.optLong("offset", -1) != offset) {
                     throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
                 }
-                break;
+                long currentByteSize = chunk.optLong("byteSize", -1);
+                if (currentByteSize < 1 || (byteSize >= 0 && currentByteSize != byteSize)) {
+                    throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                }
+                byteSize = currentByteSize;
+                byte[] bytes = Base64.decode(chunk.optString("data", ""), Base64.DEFAULT);
+                if (!LocalHubDatabase.sha256(bytes).equals(chunk.optString("chunkHash"))) {
+                    throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                }
+                long nextOffset = chunk.optLong("nextOffset", -1);
+                if (bytes.length == 0 || nextOffset != offset + bytes.length || nextOffset > byteSize) {
+                    throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                }
+                String currentPayloadHash = chunk.optString("payloadHash", "");
+                if (currentPayloadHash.isEmpty() ||
+                    (!payloadHash.isEmpty() && !payloadHash.equals(currentPayloadHash))) {
+                    throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                }
+                payloadHash = currentPayloadHash;
+                digest.update(bytes);
+                output.write(bytes);
+                offset = nextOffset;
+                boolean complete = chunk.optBoolean("complete", false);
+                if (complete) {
+                    if (offset != byteSize) {
+                        throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                    }
+                    break;
+                }
+                if (offset >= byteSize) {
+                    throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
+                }
             }
-            if (offset >= byteSize) {
-                throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_CHUNK_INVALID");
-            }
+            output.flush();
+            fileOutput.getFD().sync();
+        } catch (Exception error) {
+            deleteTemporaryFile(outputFile);
+            throw error;
         }
-        JSONObject envelope = new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
-        if (!payloadHash.equals(LocalHubDatabase.sha256(LocalHubDatabase.canonical(envelope)))) {
+        if (!payloadHash.equals(hex(digest.digest()))) {
+            deleteTemporaryFile(outputFile);
             throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INTEGRITY_INVALID");
         }
-        return envelope;
+        return outputFile;
+    }
+
+    private SnapshotEnvelopeMetadata readSnapshotEnvelopeMetadata(File file) throws Exception {
+        int version = 0;
+        String algorithm = "";
+        JSONObject aad = null;
+        String iv = "";
+        String authenticationTag = "";
+        try (JsonReader reader = new JsonReader(new InputStreamReader(
+            new BufferedInputStream(new FileInputStream(file)),
+            StandardCharsets.UTF_8
+        ))) {
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName();
+                switch (name) {
+                    case "version":
+                        version = reader.nextInt();
+                        break;
+                    case "algorithm":
+                        algorithm = reader.nextString();
+                        break;
+                    case "aad":
+                        aad = readJsonObject(reader);
+                        break;
+                    case "iv":
+                        iv = reader.nextString();
+                        break;
+                    case "authenticationTag":
+                        authenticationTag = reader.nextString();
+                        break;
+                    default:
+                        reader.skipValue();
+                }
+            }
+            reader.endObject();
+        }
+        if (version != 1 || !"A256GCM".equals(algorithm) || aad == null ||
+            iv.isEmpty() || authenticationTag.isEmpty()) {
+            throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
+        }
+        return new SnapshotEnvelopeMetadata(aad, iv, authenticationTag);
+    }
+
+    private File decryptSnapshotEnvelopeToFile(
+        File envelopeFile,
+        SnapshotEnvelopeMetadata envelope,
+        String encodedKey,
+        String snapshotId
+    ) throws Exception {
+        byte[] key = Base64.decode(encodedKey, Base64.DEFAULT);
+        byte[] iv = Base64.decode(envelope.iv, Base64.DEFAULT);
+        byte[] tag = Base64.decode(envelope.authenticationTag, Base64.DEFAULT);
+        if (key.length != 32 || iv.length != 12 || tag.length != 16) {
+            throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
+        }
+        File outputFile = blobStore.temporaryFile("snapshot-plaintext", snapshotId);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, iv));
+        cipher.updateAAD(LocalHubDatabase.canonical(envelope.aad).getBytes(StandardCharsets.UTF_8));
+        byte[] buffer = new byte[128 * 1024];
+        try (InputStream encoded = new SnapshotCiphertextInputStream(envelopeFile);
+             InputStream ciphertext = new Base64InputStream(encoded, Base64.DEFAULT);
+             FileOutputStream fileOutput = new FileOutputStream(outputFile, false);
+             BufferedOutputStream output = new BufferedOutputStream(fileOutput)) {
+            int read;
+            while ((read = ciphertext.read(buffer)) >= 0) {
+                if (read == 0) continue;
+                byte[] decrypted = cipher.update(buffer, 0, read);
+                if (decrypted != null && decrypted.length > 0) output.write(decrypted);
+            }
+            byte[] completed = cipher.doFinal(tag);
+            if (completed.length > 0) output.write(completed);
+            output.flush();
+            fileOutput.getFD().sync();
+        } catch (Exception error) {
+            deleteTemporaryFile(outputFile);
+            throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID", error);
+        }
+        return outputFile;
+    }
+
+    static JSONObject readJsonObject(InputStream input) throws Exception {
+        try (JsonReader reader = new JsonReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            return readJsonObject(reader);
+        }
+    }
+
+    private static JSONObject readJsonObject(JsonReader reader) throws Exception {
+        JSONObject result = new JSONObject();
+        reader.beginObject();
+        while (reader.hasNext()) result.put(reader.nextName(), readJsonValue(reader));
+        reader.endObject();
+        return result;
+    }
+
+    private static JSONArray readJsonArray(JsonReader reader) throws Exception {
+        JSONArray result = new JSONArray();
+        reader.beginArray();
+        while (reader.hasNext()) result.put(readJsonValue(reader));
+        reader.endArray();
+        return result;
+    }
+
+    private static Object readJsonValue(JsonReader reader) throws Exception {
+        JsonToken token = reader.peek();
+        if (token == JsonToken.BEGIN_OBJECT) return readJsonObject(reader);
+        if (token == JsonToken.BEGIN_ARRAY) return readJsonArray(reader);
+        if (token == JsonToken.STRING) return reader.nextString();
+        if (token == JsonToken.BOOLEAN) return reader.nextBoolean();
+        if (token == JsonToken.NULL) {
+            reader.nextNull();
+            return JSONObject.NULL;
+        }
+        if (token == JsonToken.NUMBER) {
+            String value = reader.nextString();
+            if (!value.contains(".") && !value.contains("e") && !value.contains("E")) {
+                try {
+                    return Long.parseLong(value);
+                } catch (NumberFormatException ignored) {
+                    // Fall through to a double for values outside the signed long range.
+                }
+            }
+            return Double.parseDouble(value);
+        }
+        throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
+    }
+
+    private static void deleteTemporaryFile(File file) {
+        if (file != null && file.exists() && !file.delete()) {
+            Log.w(TAG, "Unable to delete temporary snapshot file: " + file.getAbsolutePath());
+        }
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) result.append(String.format("%02x", value & 0xff));
+        return result.toString();
+    }
+
+    private static final class SnapshotEnvelopeMetadata {
+        final JSONObject aad;
+        final String iv;
+        final String authenticationTag;
+
+        SnapshotEnvelopeMetadata(JSONObject aad, String iv, String authenticationTag) {
+            this.aad = aad;
+            this.iv = iv;
+            this.authenticationTag = authenticationTag;
+        }
+    }
+
+    private static final class SnapshotCiphertextInputStream extends InputStream {
+        private static final byte[] MARKER = "\"ciphertext\":\"".getBytes(StandardCharsets.UTF_8);
+        private final InputStream input;
+        private boolean complete;
+
+        SnapshotCiphertextInputStream(File file) throws Exception {
+            input = new BufferedInputStream(new FileInputStream(file), 128 * 1024);
+            int matched = 0;
+            while (matched < MARKER.length) {
+                int value = input.read();
+                if (value < 0) throw new IllegalStateException("LOCAL_HUB_SNAPSHOT_INVALID");
+                if (value == (MARKER[matched] & 0xff)) {
+                    matched += 1;
+                } else {
+                    matched = value == (MARKER[0] & 0xff) ? 1 : 0;
+                }
+            }
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (complete) return -1;
+            int value = input.read();
+            if (value == '"') {
+                complete = true;
+                return -1;
+            }
+            if (value < 0) throw new IOException("Unexpected end of snapshot ciphertext");
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (length == 0) return 0;
+            int count = 0;
+            while (count < length) {
+                int value = read();
+                if (value < 0) break;
+                buffer[offset + count] = (byte) value;
+                count += 1;
+            }
+            return count == 0 ? -1 : count;
+        }
+
+        @Override
+        public void close() throws IOException {
+            input.close();
+        }
     }
 
     private JSONObject pushActiveOperations(JSONObject config) throws Exception {
@@ -1560,11 +1796,22 @@ public final class LocalHubPeerSync {
                     ? "LOCAL_HUB_PEER_REQUEST_FAILED"
                     : error.optString("code", "LOCAL_HUB_PEER_REQUEST_FAILED"));
             }
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            int contentLength = connection.getContentLength();
+            if (contentLength < 0 || contentLength > 1024 * 1024) {
+                throw new IllegalStateException("LOCAL_HUB_BLOB_CHUNK_INVALID");
+            }
+            ByteArrayOutputStream output = new ByteArrayOutputStream(contentLength);
             byte[] buffer = new byte[64 * 1024];
             try (InputStream input = connection.getInputStream()) {
-                int read;
-                while ((read = input.read(buffer)) >= 0) if (read > 0) output.write(buffer, 0, read);
+                while (output.size() < contentLength) {
+                    int read = input.read(
+                        buffer,
+                        0,
+                        Math.min(buffer.length, contentLength - output.size())
+                    );
+                    if (read < 0) throw new IllegalStateException("LOCAL_HUB_BLOB_CHUNK_INVALID");
+                    if (read > 0) output.write(buffer, 0, read);
+                }
             }
             return new BinaryResponse(connection, output.toByteArray());
         } finally {

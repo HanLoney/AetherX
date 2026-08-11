@@ -319,7 +319,6 @@ async function startSync() {
     syncCursor = status.cursor;
     sseConnected = status.connected;
     if (status.state === "online") syncState.value = "online";
-    else if (status.state === "retrying") syncState.value = "error";
     void reportMobileHealth();
   }, installationId, (command) => handleHubCommand(command));
   try {

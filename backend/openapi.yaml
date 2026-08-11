@@ -209,6 +209,17 @@ paths:
         "200": { description: 已进入待确认状态 }
         "409": { description: 协议、Schema、节点身份或状态不兼容 }
         "410": { description: 配对会话已过期 }
+  /hub-pairing/sessions/{id}/reuse:
+    post:
+      security: []
+      summary: 已登记的手机 Hub 使用一次性秘密复用本次一体化配对
+      description: 仅在节点仍属于同一 Space 且未撤销时标记 Hub 子任务完成，不签发新 Peer 凭据。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 已复用现有手机 Hub，等待客户端配对完成 }
+        "409": { description: 节点不存在、已撤销、Space 不匹配或会话状态冲突 }
+        "410": { description: 配对会话已过期 }
   /hub-pairing/sessions/{id}/approve:
     post:
       summary: 当前账号确认高权限 Hub 节点配对

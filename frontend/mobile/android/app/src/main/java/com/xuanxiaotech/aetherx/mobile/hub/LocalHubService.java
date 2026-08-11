@@ -74,13 +74,32 @@ public final class LocalHubService {
 
     public JSONObject startAndResumePendingSwitch() throws JSONException {
         JSONObject current = start();
-        if (!current.optBoolean("configured", false)) return current;
         JSONObject pending = database.pendingSwitchExchange();
-        if (pending == null &&
-            ("stable".equals(current.optString("state")) ||
-             "forced_active".equals(current.optString("state")))) return current;
+        if (!requiresRecovery(current, pending)) return current;
         scheduleRecovery();
         return current.put("recoveryPending", true);
+    }
+
+    static boolean requiresRecovery(JSONObject current, JSONObject pending) {
+        JSONObject bootstrap = current.optJSONObject("bootstrap");
+        return requiresRecovery(
+            current.optBoolean("configured", false),
+            current.optString("state"),
+            bootstrap == null ? "" : bootstrap.optString("status"),
+            pending != null
+        );
+    }
+
+    static boolean requiresRecovery(
+        boolean configured,
+        String state,
+        String bootstrapStatus,
+        boolean pending
+    ) {
+        if (!configured) return false;
+        if (pending) return true;
+        if (!("stable".equals(state) || "forced_active".equals(state))) return true;
+        return !"completed".equals(bootstrapStatus);
     }
 
     private void scheduleRecovery() {

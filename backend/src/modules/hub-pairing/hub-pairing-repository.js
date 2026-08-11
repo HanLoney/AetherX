@@ -87,6 +87,29 @@ class HubPairingRepository {
     ).run(redeemedAt, id, secretHash).changes > 0;
   }
 
+  markReused(input) {
+    return this.database.prepare(
+      `UPDATE hub_pairing_sessions
+       SET status = 'redeemed', requested_node_id = ?, node_name = ?,
+           platform = ?, public_identity = ?, protocol_version = ?,
+           schema_version = ?, claimed_at = ?, approved_at = ?, redeemed_at = ?,
+           encrypted_server_ephemeral_private_key = ''
+       WHERE id = ? AND secret_hash = ? AND status = 'created'`
+    ).run(
+      input.nodeId,
+      input.nodeName,
+      input.platform,
+      input.publicIdentity,
+      input.protocolVersion,
+      input.schemaVersion,
+      input.reusedAt,
+      input.reusedAt,
+      input.reusedAt,
+      input.id,
+      input.secretHash
+    ).changes > 0;
+  }
+
   deleteExpired(now) {
     return this.database.prepare(
       `DELETE FROM hub_pairing_sessions

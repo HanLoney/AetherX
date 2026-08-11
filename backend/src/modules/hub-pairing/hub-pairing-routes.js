@@ -60,6 +60,12 @@ function registerHubPairingRoutes(
     ({ params, body }) => ({ data: service.claim(params.id, body) }),
     { public: true }
   );
+  router.add(
+    "POST",
+    "/api/v1/hub-pairing/sessions/:id/reuse",
+    ({ params, body }) => ({ data: service.reuse(params.id, body) }),
+    { public: true }
+  );
   router.add("GET", "/api/v1/hub-pairing/sessions/:id", ({ userId, params }) => ({
     data: service.get(userId, params.id)
   }));
