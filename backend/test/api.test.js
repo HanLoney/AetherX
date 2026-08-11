@@ -778,6 +778,80 @@ test("Hub pairing requires owner approval and redeems encrypted node credentials
   });
 });
 
+test("integrated pairing reuses an existing mobile Hub without issuing new Peer credentials", async () => {
+  await withServer(async (baseUrl, _dataDir, app) => {
+    const created = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/hub-pairing/sessions",
+      { endpoints: [{ transport: "lan", address: "http://192.168.1.20:4318" }] }
+    );
+    const session = created.payload.data;
+    const nodeId = "mobile-hub-reuse-01";
+    const identity = generateClientIdentityKeyPair();
+    app.database.prepare(
+      `INSERT INTO hub_nodes(
+         id, space_id, node_name, platform, public_identity,
+         protocol_version, schema_version, status, last_seen_at, created_at, revoked_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'standby', ?, ?, NULL)`
+    ).run(
+      nodeId,
+      session.spaceId,
+      "已连接的手机 Hub",
+      "android",
+      identity.publicKey,
+      session.qrPayload.protocolVersion,
+      session.qrPayload.schemaVersion,
+      Date.now(),
+      Date.now()
+    );
+
+    const reused = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/hub-pairing/sessions/${session.id}/reuse`,
+      { secret: session.secret, nodeId }
+    );
+    assert.equal(reused.response.status, 200);
+    assert.equal(reused.payload.data.status, "redeemed");
+    assert.equal(reused.payload.data.reused, true);
+    assert.equal(reused.payload.data.nodeId, nodeId);
+    assert.equal(
+      app.database.prepare(
+        "SELECT COUNT(*) AS count FROM hub_peer_credentials WHERE space_id = ? AND peer_node_id = ?"
+      ).get(session.spaceId, nodeId).count,
+      0
+    );
+
+    const replayed = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/hub-pairing/sessions/${session.id}/reuse`,
+      { secret: session.secret, nodeId }
+    );
+    assert.equal(replayed.response.status, 200);
+    assert.equal(replayed.payload.data.reused, true);
+
+    const revokedSession = await request(
+      baseUrl,
+      "POST",
+      "/api/v1/hub-pairing/sessions",
+      { endpoints: [{ transport: "lan", address: "http://192.168.1.20:4318" }] }
+    );
+    app.database.prepare(
+      "UPDATE hub_nodes SET status = 'revoked', revoked_at = ? WHERE id = ?"
+    ).run(Date.now(), nodeId);
+    const rejected = await rawRequest(
+      baseUrl,
+      "POST",
+      `/api/v1/hub-pairing/sessions/${revokedSession.payload.data.id}/reuse`,
+      { secret: revokedSession.payload.data.secret, nodeId }
+    );
+    assert.equal(rejected.response.status, 409);
+    assert.equal(rejected.payload.error.code, "HUB_NODE_NOT_REUSABLE");
+  });
+});
+
 test("two Hubs import one Space and replicate operations through signed Peer APIs", async () => {
   await withUnregisteredServer(async (sourceUrl, sourceDataDir, sourceApp) => {
     await withUnregisteredServer(async (targetUrl, targetDataDir, targetApp) => {

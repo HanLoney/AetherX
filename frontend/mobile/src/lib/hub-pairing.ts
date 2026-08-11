@@ -31,9 +31,17 @@ interface ResolvedHubPairingReference {
   serverUrl: string;
 }
 
+interface LocalHubPairingStatus {
+  nodeId: string;
+  localNodeId?: string;
+  configured?: boolean;
+  spaceId?: string;
+  bootstrap?: null | { status?: string };
+}
+
 interface LocalHubBridge {
-  status: { value: { nodeId: string } | null };
-  refresh(): Promise<{ nodeId: string } | null>;
+  status: { value: LocalHubPairingStatus | null };
+  refresh(): Promise<LocalHubPairingStatus | null>;
   configure(input: Record<string, unknown>): Promise<unknown>;
   importSnapshot(input: {
     snapshotId: string;
@@ -46,6 +54,7 @@ interface LocalHubBridge {
     replication: Record<string, unknown>;
   }): Promise<unknown>;
   synchronize(): Promise<unknown>;
+  resume(): Promise<unknown>;
   bootstrapBlobs(): Promise<unknown>;
   finalizeBootstrap(): Promise<unknown>;
 }
@@ -258,8 +267,36 @@ export async function pairAndroidLocalHub(
   onState?.("正在自动检测 USB、局域网与 Anywhere…");
   const pairing = await resolveHubPairingCode(code);
   onState?.("正在创建手机 Hub 身份…");
-  const localStatus = localHub.status.value || await localHub.refresh();
+  // Pairing must use the native database state, not a startup-time Vue cache.
+  const localStatus = await localHub.refresh();
   if (!localStatus?.nodeId) throw new Error("Android Local Hub 还没有准备好。 ");
+  const localNodeId = localStatus.localNodeId || localStatus.nodeId;
+  if (localStatus.configured) {
+    if (localStatus.spaceId !== pairing.spaceId) {
+      throw new Error("这台手机的 Hub 已连接到另一个数据空间，请先在设置中重置手机 Hub。 ");
+    }
+    onState?.("手机 Hub 已连接，正在恢复手机客户端登录…");
+    await reuseThroughReachableEndpoint(pairing, {
+      secret: pairing.secret,
+      nodeId: localNodeId
+    });
+    if (localStatus.bootstrap?.status !== "completed") {
+      onState?.("手机 Hub 副本未完成，正在从电脑 Hub 继续恢复…");
+      await localHub.resume();
+      const recovered = await localHub.refresh();
+      if (recovered?.bootstrap?.status !== "completed") {
+        throw new Error("手机 Hub 副本恢复未完成，请保持电脑 Hub 在线后重试。");
+      }
+    }
+    return {
+      spaceId: pairing.spaceId,
+      localNodeId,
+      sourceNodeId: pairing.sourceNodeId,
+      snapshotId: "",
+      recordCount: 0,
+      reused: true
+    };
+  }
   const identity = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" },
     true,
@@ -353,6 +390,26 @@ async function claimThroughReachableEndpoint(
   pairing: HubPairingCode,
   claim: Record<string, unknown>
 ) {
+  return requestThroughReachableEndpoint(
+    pairing,
+    (candidate, signal) => candidate.claimHubPairingSession(pairing.sessionId, claim, signal)
+  );
+}
+
+async function reuseThroughReachableEndpoint(
+  pairing: HubPairingCode,
+  input: { secret: string; nodeId: string }
+) {
+  return requestThroughReachableEndpoint(
+    pairing,
+    (candidate, signal) => candidate.reuseHubPairingSession(pairing.sessionId, input, signal)
+  );
+}
+
+async function requestThroughReachableEndpoint(
+  pairing: HubPairingCode,
+  request: (candidate: AetherApi, signal: AbortSignal) => Promise<unknown>
+) {
   let lastError: unknown = null;
   const addresses = [
     pairing.resolverServerUrl,
@@ -370,7 +427,7 @@ async function claimThroughReachableEndpoint(
     }
     try {
       await withConnectionTimeout(
-        (signal) => candidate.claimHubPairingSession(pairing.sessionId, claim, signal),
+        (signal) => request(candidate, signal),
         15_000
       );
       return candidate;

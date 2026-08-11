@@ -115,6 +115,14 @@ async function validateStoredSession(
         saveServerUrl(recovered.api.serverUrl),
         saveSession({ token: recovered.api.accessToken || stored.token, user: recovered.user })
       ]);
+      window.dispatchEvent(new CustomEvent("aetherx:hub-routed", {
+        detail: {
+          spaceId: recovered.status.spaceId,
+          nodeId: recovered.status.localNodeId,
+          epoch: recovered.status.epoch,
+          recovered: true
+        }
+      }));
     } catch {
       // Keep cached data available while all saved Hub endpoints are unreachable.
     }
@@ -199,10 +207,26 @@ async function pair(code: string) {
     const payload = parsePairingCode(code);
     const candidate = createApi(payload.serverUrl, "", false);
     await candidate.health();
-    await candidate.claimPairingSession(payload.id, {
-      secret: payload.secret,
-      deviceName: androidDeviceName()
-    });
+    try {
+      await candidate.claimPairingSession(payload.id, {
+        secret: payload.secret,
+        deviceName: androidDeviceName()
+      });
+    } catch (cause) {
+      const alreadyRedeemed = cause instanceof Error &&
+        "code" in cause && cause.code === "PAIRING_STATE_CONFLICT";
+      if (
+        alreadyRedeemed &&
+        api?.accessToken &&
+        normalizeRouteUrl(api.serverUrl) === normalizeRouteUrl(payload.serverUrl)
+      ) {
+        const current = await api.session();
+        user.value = current.user;
+        serverUrl.value = api.serverUrl;
+        return current.user;
+      }
+      throw cause;
+    }
     const deadline = Math.min(payload.expiresAt || Date.now() + 120_000, Date.now() + 10 * 60_000);
     let redeemed: Awaited<ReturnType<AetherApi["redeemPairingSession"]>> | null = null;
     while (Date.now() < deadline) {

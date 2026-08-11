@@ -134,6 +134,8 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("同步到电脑 Hub");
     expect(settingsSource).toContain("同步到手机 Hub");
     expect(sessionSource).toContain("withConnectionTimeout");
+    expect(sessionSource).toContain("recovered.status.localNodeId");
+    expect(sessionSource).toContain("recovered: true");
     expect(sessionSource).toContain("createDesktopControlConnection");
     expect(dataSource).toContain("startControlSync(session, userId)");
     expect(dataSource).toContain("{ controlOnly: true }");
@@ -143,6 +145,7 @@ describe("adaptive mobile shell", () => {
     expect(sessionSource).toContain("timeoutMs = 12_000");
     expect(dataSource).toContain("void refreshAll().catch");
     expect(dataSource).toContain("void startSync().catch");
+    expect(dataSource).not.toContain('else if (status.state === "retrying") syncState.value = "error"');
     expect(settingsSource).toContain("退出这个账号");
   });
 
@@ -151,6 +154,15 @@ describe("adaptive mobile shell", () => {
     expect(loginSource).toContain("/^https?:\\/\\//i.test(code)");
     expect(loginSource).toContain('mode.value = "login"');
     expect(loginSource).toContain("await inspectServer()");
+    expect(loginSource).toContain("lastCompletedPairingCode");
+    expect(loginSource).toContain('await router.replace("/home")');
+    expect(sessionSource).toContain('cause.code === "PAIRING_STATE_CONFLICT"');
+    expect(sessionSource).toContain("normalizeRouteUrl(api.serverUrl) === normalizeRouteUrl(payload.serverUrl)");
+    expect(loginSource).toContain("overflow-y: auto");
+    expect(loginSource).toContain("-webkit-overflow-scrolling: touch");
+    expect(loginSource).not.toContain("PRIVATE DIGITAL SPACE");
+    expect(loginSource).not.toContain("WELCOME BACK");
+    expect(loginSource).not.toContain("回到只属于");
   });
 
   it("moves chat into focus layout without stacking it above the main navigation", () => {

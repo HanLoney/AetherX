@@ -134,6 +134,10 @@ public final class LocalHubBlobStore {
         }
     }
 
+    synchronized File temporaryFile(String purpose, String id) {
+        return new File(root, LocalHubDatabase.sha256(purpose + ":" + id) + ".tmp");
+    }
+
     private File partialFile(String mediaId) {
         return new File(root, LocalHubDatabase.sha256(mediaId) + ".part");
     }
