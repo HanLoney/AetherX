@@ -18,7 +18,7 @@
     "verify:signature": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/verify-windows-signature.ps1 \"dist/win-unpacked/AetherX 启动器.exe\" dist/AetherX-启动器-*.exe",
     "build:desktop": "npm --prefix ../desktop run dist:dir",
     "prepare:payload": "node scripts/prepare-payload.js",
-    "dist:package": "npm run prepare:payload && electron-builder --win nsis && npm run verify:backend && npm run smoke:hub",
+    "dist:package": "npm run prepare:payload && electron-builder --win nsis --publish never && npm run verify:backend && npm run smoke:hub",
     "dist": "npm run build:desktop && npm run dist:package",
     "dist:signed": "npm run dist && npm run verify:signature"
   },

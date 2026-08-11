@@ -46,7 +46,7 @@ if (result.status !== 0) process.exit(result.status || 1);
 const expectedFingerprintPath = path.resolve(__dirname, "..", "ANDROID_SIGNING_CERT_SHA256");
 const expectedFingerprint = fs.readFileSync(expectedFingerprintPath, "utf8").trim().toLowerCase();
 const actualFingerprint = result.stdout
-  .match(/Signer #1 certificate SHA-256 digest:\s*([a-f0-9]{64})/i)?.[1]
+  .match(/(?:Signer #1|V\d+(?:\.\d+)? Signer):?\s*certificate SHA-256 digest:\s*([a-f0-9]{64})/i)?.[1]
   ?.toLowerCase();
 const signerCount = Number(result.stdout.match(/Number of signers:\s*(\d+)/i)?.[1]);
 if (signerCount !== 1 || actualFingerprint !== expectedFingerprint) {
