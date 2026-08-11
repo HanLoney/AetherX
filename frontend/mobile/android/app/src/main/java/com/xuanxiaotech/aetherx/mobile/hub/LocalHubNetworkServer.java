@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import javax.crypto.Mac;
@@ -38,13 +39,15 @@ public final class LocalHubNetworkServer {
     private static final int MAX_BODY_BYTES = 4 * 1024 * 1024;
     private static final long PEER_ALLOWED_SKEW_MS = 5 * 60 * 1000;
     private static final int LAST_PORT = LocalHubService.DEFAULT_PORT + 10;
-    private static final int HTTP_WORKER_COUNT = 8;
+    private static final int HTTP_WORKER_COUNT = 16;
+    private static final int BRIDGE_WORKER_COUNT = 4;
 
     private final LocalHubService service;
     private final LocalHubSecretStore secretStore;
     private final LocalHubClientSessionStore sessionStore;
     private final ThreadPoolExecutor clients =
         (ThreadPoolExecutor) Executors.newFixedThreadPool(HTTP_WORKER_COUNT);
+    private final Semaphore bridgeWorkers = new Semaphore(BRIDGE_WORKER_COUNT);
     private final Map<String, Long> peerNonces = new ConcurrentHashMap<>();
     private volatile ServerSocket socket;
     private volatile Thread acceptThread;
@@ -143,7 +146,7 @@ public final class LocalHubNetworkServer {
             if (current == null || current.isClosed()) return;
             try {
                 Socket client = current.accept();
-                client.setSoTimeout(320_000);
+                client.setSoTimeout(15_000);
                 try {
                     clients.execute(() -> handle(client));
                 } catch (RuntimeException error) {
@@ -182,7 +185,7 @@ public final class LocalHubNetworkServer {
                         writeData(output, 200, nativeResponse);
                         return;
                     }
-                    JSONObject response = LocalHubNetworkBridge.dispatch(
+                    JSONObject response = dispatchBridge(
                         request.method,
                         request.path,
                         request.body
@@ -217,7 +220,7 @@ public final class LocalHubNetworkServer {
                     writeError(output, 404, "ROUTE_NOT_FOUND", "Local Hub 没有这个接口。");
                     return;
                 }
-                writeBridgeResponse(output, LocalHubNetworkBridge.dispatch(
+                writeBridgeResponse(output, dispatchBridge(
                     request.method,
                     request.path,
                     request.body
@@ -227,7 +230,8 @@ public final class LocalHubNetworkServer {
                 writeError(output, status, error.getMessage(), "Hub 间认证失败。");
             } catch (IllegalStateException error) {
                 String code = String.valueOf(error.getMessage());
-                int status = "LOCAL_HUB_RUNTIME_UNAVAILABLE".equals(code)
+                int status = "LOCAL_HUB_RUNTIME_UNAVAILABLE".equals(code) ||
+                    "LOCAL_HUB_BUSY".equals(code)
                     ? 503
                     : code.startsWith("SWITCH_") ? 409 : 500;
                 writeError(output, status, code, localErrorMessage(error));
@@ -237,7 +241,19 @@ public final class LocalHubNetworkServer {
         }
     }
 
+    private JSONObject dispatchBridge(String method, String path, JSONObject body) throws Exception {
+        if (!bridgeWorkers.tryAcquire()) throw new IllegalStateException("LOCAL_HUB_BUSY");
+        try {
+            return LocalHubNetworkBridge.dispatch(method, path, body);
+        } finally {
+            bridgeWorkers.release();
+        }
+    }
+
     private JSONObject dispatchNativePeer(Request request) throws Exception {
+        if ("GET".equals(request.method) && "/api/v1/peer/status".equals(request.pathname)) {
+            return service.status();
+        }
         if (!"POST".equals(request.method)) return null;
         if ("/api/v1/peer/switch/preflight".equals(request.pathname)) {
             return service.createPeerSwitchPreflightProof();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ArrowRight, Eye, EyeOff, Link2, LockKeyhole, ScanLine, Server, UserPlus, UserRound } from "@lucide/vue";
 import {
@@ -13,6 +13,10 @@ import type { AuthConfig } from "../lib/api";
 import { runCompletePairing } from "../lib/complete-pairing";
 import { pairAndroidLocalHub } from "../lib/hub-pairing";
 import { useLocalHub } from "../lib/local-hub";
+import {
+  PAIRING_DEEP_LINK_EVENT,
+  takePendingPairingCode
+} from "../lib/pairing-deep-link";
 import { useSessionStore } from "../stores/session";
 
 const router = useRouter();
@@ -140,7 +144,25 @@ async function scanPairingCode() {
   }
 }
 
-onMounted(() => void inspectServer());
+function handlePairingDeepLink(event: Event) {
+  const code = String((event as CustomEvent<{ code?: string }>).detail?.code || "").trim();
+  if (!code || completePairingBusy.value || session.busy.value) return;
+  takePendingPairingCode();
+  mode.value = "pair";
+  void connectWithPairingCode(code).catch(() => undefined);
+}
+
+onMounted(() => {
+  window.addEventListener(PAIRING_DEEP_LINK_EVENT, handlePairingDeepLink);
+  const code = takePendingPairingCode();
+  if (code) {
+    mode.value = "pair";
+    void connectWithPairingCode(code).catch(() => undefined);
+  } else {
+    void inspectServer();
+  }
+});
+onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handlePairingDeepLink));
 </script>
 
 <template>

@@ -12,6 +12,11 @@ import org.json.JSONObject;
 import android.util.Base64;
 
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 public final class LocalHubService {
     public static final int DEFAULT_PORT = 4319;
@@ -23,6 +28,9 @@ public final class LocalHubService {
     private final LocalHubSecretStore secretStore;
     private final LocalHubBlobStore blobStore;
     private final LocalHubNetworkServer networkServer;
+    private final ExecutorService recoveryExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean recoveryScheduled = new AtomicBoolean();
+    private final ReentrantLock replicationOperationLock = new ReentrantLock();
     private volatile boolean running;
     private volatile String syncState = "";
     private volatile String syncStage = "";
@@ -64,14 +72,28 @@ public final class LocalHubService {
         return status();
     }
 
-    public synchronized JSONObject startAndResumePendingSwitch() throws JSONException {
+    public JSONObject startAndResumePendingSwitch() throws JSONException {
         JSONObject current = start();
         if (!current.optBoolean("configured", false)) return current;
         JSONObject pending = database.pendingSwitchExchange();
         if (pending == null &&
             ("stable".equals(current.optString("state")) ||
              "forced_active".equals(current.optString("state")))) return current;
-        return resumeReplication();
+        scheduleRecovery();
+        return current.put("recoveryPending", true);
+    }
+
+    private void scheduleRecovery() {
+        if (!recoveryScheduled.compareAndSet(false, true)) return;
+        recoveryExecutor.execute(() -> {
+            try {
+                resumeReplication();
+            } catch (Exception error) {
+                Log.e(TAG, "Unable to resume pending Hub recovery", error);
+            } finally {
+                recoveryScheduled.set(false);
+            }
+        });
     }
 
     public synchronized JSONObject stop() throws JSONException {
@@ -218,26 +240,25 @@ public final class LocalHubService {
         return database.verifyIntegrity();
     }
 
-    public synchronized JSONObject synchronize() {
+    public JSONObject synchronize() {
         ensureRunning();
         try {
-            database.requireBootstrapCompleted();
-            String direction = "active".equals(database.replicationConfig().optString("role")) ? "push" : "pull";
-            beginSynchronization(direction);
-            JSONObject result = new LocalHubPeerSync(
-                database,
-                secretStore,
-                blobStore,
-                this::updateSynchronization
-            ).run();
-            completeSynchronization(result);
-            return result;
+            return runExclusive("LOCAL_HUB_SYNC_FAILED", () -> {
+                database.requireBootstrapCompleted();
+                String direction = "active".equals(database.replicationConfig().optString("role")) ? "push" : "pull";
+                beginSynchronization(direction);
+                JSONObject result = new LocalHubPeerSync(
+                    database,
+                    secretStore,
+                    blobStore,
+                    this::updateSynchronization
+                ).run();
+                completeSynchronization(result);
+                return result;
+            });
         } catch (IllegalStateException error) {
             failSynchronization(error);
             throw error;
-        } catch (Exception error) {
-            failSynchronization(error);
-            throw new IllegalStateException("LOCAL_HUB_SYNC_FAILED", error);
         }
     }
 
@@ -288,94 +309,101 @@ public final class LocalHubService {
         }
     }
 
-    public synchronized JSONObject switchToLocal() {
+    public JSONObject switchToLocal() {
         ensureRunning();
-        try {
-            return new LocalHubPeerSync(database, secretStore, blobStore).switchToLocal();
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_SWITCH_FAILED", error);
-        }
+        return runExclusive(
+            "LOCAL_HUB_SWITCH_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore).switchToLocal()
+        );
     }
 
-    public synchronized JSONObject switchToPeer() {
+    public JSONObject switchToPeer() {
         ensureRunning();
-        try {
-            return new LocalHubPeerSync(database, secretStore, blobStore).switchToPeer();
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_SWITCH_FAILED", error);
-        }
+        return runExclusive(
+            "LOCAL_HUB_SWITCH_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore).switchToPeer()
+        );
     }
 
-    public synchronized JSONObject createPeerSwitchPreflightProof() {
+    public JSONObject createPeerSwitchPreflightProof() {
         ensureRunning();
-        try {
-            return new LocalHubPeerSync(database, secretStore, blobStore)
-                .createSwitchPreflightProof();
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_SWITCH_PREFLIGHT_FAILED", error);
-        }
+        return runExclusive(
+            "LOCAL_HUB_SWITCH_PREFLIGHT_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore)
+                .createSwitchPreflightProof()
+        );
     }
 
-    public synchronized JSONObject applyPeerSwitchControl(JSONObject signedControl) {
+    public JSONObject applyPeerSwitchControl(JSONObject signedControl) {
         ensureRunning();
-        try {
-            return new LocalHubPeerSync(database, secretStore, blobStore)
-                .applyPeerSwitchControl(signedControl);
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_SWITCH_CONTROL_FAILED", error);
-        }
+        return runExclusive(
+            "LOCAL_HUB_SWITCH_CONTROL_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore)
+                .applyPeerSwitchControl(signedControl)
+        );
     }
 
-    public synchronized JSONObject runPeerFinalSync(JSONObject input) {
+    public JSONObject runPeerFinalSync(JSONObject input) {
         ensureRunning();
         try {
-            beginSynchronization("pull");
-            JSONObject result = new LocalHubPeerSync(
-                database,
-                secretStore,
-                blobStore,
-                this::updateSynchronization
-            ).runPeerFinalSync(input);
-            completeSynchronization(result);
-            return result;
+            return runExclusive("LOCAL_HUB_FINAL_SYNC_FAILED", () -> {
+                beginSynchronization("pull");
+                JSONObject result = new LocalHubPeerSync(
+                    database,
+                    secretStore,
+                    blobStore,
+                    this::updateSynchronization
+                ).runPeerFinalSync(input);
+                completeSynchronization(result);
+                return result;
+            });
         } catch (IllegalStateException error) {
             failSynchronization(error);
             throw error;
-        } catch (Exception error) {
-            failSynchronization(error);
-            throw new IllegalStateException("LOCAL_HUB_FINAL_SYNC_FAILED", error);
         }
     }
 
-    public synchronized JSONObject forceTakeover() {
+    public JSONObject forceTakeover() {
         ensureRunning();
+        return runExclusive(
+            "LOCAL_HUB_FORCE_TAKEOVER_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore).forceTakeover()
+        );
+    }
+
+    public JSONObject recoverDivergence(JSONObject input) {
+        ensureRunning();
+        return runExclusive(
+            "LOCAL_HUB_DIVERGENCE_RECOVERY_FAILED",
+            () -> new LocalHubPeerSync(database, secretStore, blobStore)
+                .recoverDivergence(input)
+        );
+    }
+
+    private JSONObject runExclusive(String failureCode, HubOperation operation) {
+        acquireReplicationOperation();
         try {
-            return new LocalHubPeerSync(database, secretStore, blobStore).forceTakeover();
+            return operation.run();
         } catch (IllegalStateException error) {
             throw error;
         } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_FORCE_TAKEOVER_FAILED", error);
+            throw new IllegalStateException(failureCode, error);
+        } finally {
+            replicationOperationLock.unlock();
         }
     }
 
-    public synchronized JSONObject recoverDivergence(JSONObject input) {
-        ensureRunning();
+    private void acquireReplicationOperation() {
         try {
-            return new LocalHubPeerSync(database, secretStore, blobStore)
-                .recoverDivergence(input);
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("LOCAL_HUB_DIVERGENCE_RECOVERY_FAILED", error);
+            if (replicationOperationLock.tryLock(5, TimeUnit.SECONDS)) return;
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
         }
+        throw new IllegalStateException("LOCAL_HUB_BUSY");
+    }
+
+    private interface HubOperation {
+        JSONObject run() throws Exception;
     }
 
     public JSONObject media(String mediaId) throws JSONException {
