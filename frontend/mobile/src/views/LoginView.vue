@@ -35,6 +35,7 @@ const localError = ref("");
 const scanning = ref(false);
 const completePairingBusy = ref(false);
 const completePairingState = ref("");
+const lastCompletedPairingCode = ref("");
 const registrationAvailable = computed(() => authConfig.value?.registrationAvailable !== false);
 const errorMessage = computed(() => localError.value || session.error.value);
 
@@ -86,11 +87,17 @@ async function submit() {
 }
 
 async function connectWithPairingCode(code: string) {
-  pairingCode.value = code.trim();
+  const normalizedCode = code.trim();
+  pairingCode.value = normalizedCode;
+  localError.value = "";
+  if (normalizedCode && normalizedCode === lastCompletedPairingCode.value) {
+    await router.replace("/home");
+    return;
+  }
   completePairingBusy.value = true;
   completePairingState.value = "";
   try {
-    const completed = await runCompletePairing(pairingCode.value, {
+    const completed = await runCompletePairing(normalizedCode, {
       pairClient: (clientCode) => session.pair(clientCode),
       pairHub: (hubCode) => pairAndroidLocalHub(
         hubCode,
@@ -99,8 +106,11 @@ async function connectWithPairingCode(code: string) {
       ),
       onState: (state) => { completePairingState.value = state; }
     });
-    if (!completed) await session.pair(pairingCode.value);
-    if (completed) await localHub.refresh();
+    if (!completed) await session.pair(normalizedCode);
+    if (completed) {
+      lastCompletedPairingCode.value = normalizedCode;
+      await localHub.refresh();
+    }
     await router.replace("/home");
   } catch (cause) {
     localError.value = cause instanceof Error ? cause.message : "没有完成一体化配对。";
@@ -167,17 +177,10 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
 
 <template>
   <main class="login-page">
-    <div class="login-orbit" aria-hidden="true"><i /><i /><b /></div>
-    <section class="login-story">
-      <span class="eyebrow">PRIVATE DIGITAL SPACE</span>
-      <h1>回到只属于<br />你们的空间</h1>
-      <p>电脑守护完整记忆，手机负责随时陪在你身边。</p>
-    </section>
     <form class="login-sheet" @submit.prevent="submit">
-      <header>
-        <span class="eyebrow">WELCOME BACK</span>
-        <h2>欢迎回来</h2>
-        <p>连接你的 AetherX Hub</p>
+      <header class="login-brand">
+        <span class="login-mark" aria-hidden="true"><i /><b /></span>
+        <h1>AetherX</h1>
       </header>
       <div class="mode-tabs">
         <button type="button" :class="{active:mode==='login'}" @click="selectMode('login')">账号登录</button>
@@ -229,28 +232,40 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
 </template>
 
 <style scoped>
-.login-page { position: relative; min-height: 100dvh; overflow: hidden; padding: max(44px, env(safe-area-inset-top)) 20px calc(22px + env(safe-area-inset-bottom)); background: radial-gradient(circle at 90% 15%, rgba(171,210,239,.3), transparent 34%), radial-gradient(circle at 0% 70%, rgba(239,184,214,.28), transparent 35%); }
-.login-story { max-width: 520px; margin: 70px auto 34px; }
-.login-story h1 { margin: 14px 0 18px; font-family: Georgia, "Noto Serif SC", serif; font-size: calc(clamp(38px, 12vw, 58px) * var(--font-scale, 1)); line-height: 1.14; letter-spacing: -.07em; }
-.login-story p { margin: 0; color: var(--soft-ink); font-size: calc(13px * var(--font-scale, 1)); line-height: 1.8; }
-.login-orbit { position: absolute; top: 42px; left: 28px; width: 68px; height: 68px; }
-.login-orbit i, .login-orbit b { position: absolute; border: 1px solid rgba(185,130,170,.32); border-radius: 44% 56% 58% 42%; transform: rotate(28deg); }
-.login-orbit i:first-child { inset: 0; background: linear-gradient(145deg,rgba(235,180,211,.25),rgba(153,197,232,.22)); }
-.login-orbit i:nth-child(2) { inset: 13px; transform: rotate(60deg); }
-.login-orbit b { inset: 25px; border: 0; border-radius: 50%; background: linear-gradient(135deg,var(--pink),var(--blue)); box-shadow: 0 8px 24px rgba(164,127,176,.32); }
-.login-sheet { max-width: 520px; margin: 0 auto; padding: 30px 24px 23px; border: 1px solid rgba(255,255,255,.82); border-radius: 32px; background: rgba(255,255,255,.76); box-shadow: 0 32px 80px rgba(81,74,111,.15); backdrop-filter: blur(26px) saturate(130%); }
-.login-sheet header h2 { margin: 7px 0 5px; font-size: calc(28px * var(--font-scale, 1)); letter-spacing: -.05em; }
-.login-sheet header p { margin: 0; color: var(--muted); font-size: calc(12px * var(--font-scale, 1)); }
-.mode-tabs{display:grid;grid-template-columns:repeat(3,1fr);margin:24px 0 0;padding:4px;border-radius:15px;background:rgba(118,110,141,.07)}.mode-tabs button{height:38px;border:0;border-radius:11px;color:#8b8597;background:transparent;font-size: calc(10px * var(--font-scale, 1));font-weight:700}.mode-tabs button.active{color:#544f6c;background:rgba(255,255,255,.92);box-shadow:0 7px 18px rgba(86,79,112,.1)}.mode-tabs button:disabled{opacity:.38}
-.login-fields { display: grid; gap: 15px; margin: 27px 0 17px; }
+.login-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(171,210,239,.34), transparent 34%),
+    radial-gradient(circle at 2% 88%, rgba(239,184,214,.3), transparent 38%),
+    linear-gradient(155deg, #fdfafd, #f5f8fc);
+}
+.login-sheet { width: min(100%, 460px); margin: min(7vh, 56px) auto 0; padding: 23px 20px 20px; border: 1px solid rgba(255,255,255,.86); border-radius: 28px; background: rgba(255,255,255,.78); box-shadow: 0 24px 64px rgba(81,74,111,.14); backdrop-filter: blur(26px) saturate(130%); }
+.login-brand { display: flex; align-items: center; justify-content: center; gap: 11px; }
+.login-brand h1 { margin: 0; color: #4f4a5f; font-size: calc(27px * var(--font-scale, 1)); line-height: 1; letter-spacing: -.045em; }
+.login-mark { position: relative; width: 34px; height: 34px; flex: 0 0 auto; transform: rotate(-8deg); }
+.login-mark i, .login-mark b { position: absolute; border-radius: 43% 57% 55% 45%; }
+.login-mark i { inset: 0; border: 1px solid rgba(157,132,174,.28); background: linear-gradient(145deg,rgba(235,180,211,.38),rgba(153,197,232,.34)); transform: rotate(28deg); }
+.login-mark b { inset: 10px; background: linear-gradient(135deg,var(--pink),var(--blue)); box-shadow: 0 5px 14px rgba(145,118,171,.25); }
+.mode-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:20px 0 0;padding:4px;border-radius:15px;background:rgba(118,110,141,.07)}.mode-tabs button{min-width:0;height:38px;padding:0 4px;border:0;border-radius:11px;color:#8b8597;background:transparent;font-size:calc(10px * var(--font-scale,1));font-weight:700;white-space:nowrap}.mode-tabs button.active{color:#544f6c;background:rgba(255,255,255,.92);box-shadow:0 7px 18px rgba(86,79,112,.1)}.mode-tabs button:disabled{opacity:.38}
+.login-fields { display: grid; gap: 13px; margin: 21px 0 15px; }
 .icon-field > div { min-height: 51px; display: flex; align-items: center; gap: 11px; padding: 0 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(250,249,252,.74); }
 .icon-field > div:focus-within { border-color: rgba(var(--pink-rgb),.48); background: white; box-shadow: 0 0 0 4px rgba(var(--pink-rgb),.09); }
 .icon-field svg { flex: 0 0 auto; color: #a29bad; }
 .icon-field input { min-width: 0; min-height: auto; flex: 1; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .icon-field button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; color: #9b7597; background: none; }
 .login-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 11px; margin-top: 16px; }
-.login-sheet footer { margin-top: 17px; color: #a29cac; font-size: calc(9px * var(--font-scale, 1)); text-align: center; }
+.login-sheet footer { margin-top: 15px; color: #a29cac; font-size: calc(9px * var(--font-scale, 1)); text-align: center; }
 .pairing-fields{margin-bottom:17px}.pairing-note{display:flex;align-items:center;gap:11px;padding:12px 13px;border:1px solid rgba(var(--blue-rgb),.18);border-radius:14px;color:#7c7191;background:linear-gradient(120deg,rgba(235,244,252,.75),rgba(252,239,247,.68))}.pairing-note>span{display:grid;gap:3px}.pairing-note strong{font-size: calc(10px * var(--font-scale, 1))}.pairing-note small{color:#9791a1;font-size: calc(9px * var(--font-scale, 1))}.pairing-fields textarea{min-height:94px;font-size: calc(10px * var(--font-scale, 1));line-height:1.55}
 .scan-pairing-button{min-height:70px;display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid rgba(var(--pink-rgb),.22);border-radius:17px;color:#fff;background:linear-gradient(135deg,rgba(197,130,178,.96),rgba(113,167,217,.96));box-shadow:0 14px 30px rgba(126,126,181,.2);text-align:left}.scan-pairing-button>svg{flex:0 0 auto}.scan-pairing-button>span{display:grid;gap:4px}.scan-pairing-button strong{font-size: calc(12px * var(--font-scale, 1))}.scan-pairing-button small{color:rgba(255,255,255,.78);font-size: calc(9px * var(--font-scale, 1))}.scan-pairing-button:disabled{opacity:.58}.pairing-divider{display:flex;align-items:center;gap:10px;color:#aaa4b1;font-size: calc(8px * var(--font-scale, 1))}.pairing-divider::before,.pairing-divider::after{height:1px;flex:1;background:rgba(122,115,143,.12);content:""}
-@media (min-width: 760px) { .login-page { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 60px; padding-left: 8vw; padding-right: 8vw; } .login-story { margin: 0; } .login-sheet { width: 100%; margin: 0; } }
+@media (max-height: 620px) { .login-sheet { margin-top: 0; } }
+@media (min-width: 760px) { .login-sheet { margin-top: min(10vh, 82px); } }
 </style>
