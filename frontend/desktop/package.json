@@ -17,11 +17,11 @@
     "test": "node --test",
     "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
     "verify:signature": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/verify-windows-signature.ps1 dist/win-unpacked/AetherX.exe dist/AetherX-*.exe",
-    "dist:dir": "electron-builder --win dir && npm run verify:backend",
+    "dist:dir": "electron-builder --win dir --publish never && npm run verify:backend",
     "dist": "npm run dist:installer && npm run dist:portable",
     "dist:signed": "npm run dist && npm run verify:signature",
-    "dist:installer": "electron-builder --win nsis --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
-    "dist:portable": "electron-builder --win portable --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
+    "dist:installer": "electron-builder --win nsis --publish never --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
+    "dist:portable": "electron-builder --win portable --publish never --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
   },
   "devDependencies": {
     "electron": "^43.3.0",
