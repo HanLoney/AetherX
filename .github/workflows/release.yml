@@ -86,13 +86,18 @@ jobs:
           node scripts/verify-android-signature.js frontend/mobile/android/app/build/outputs/apk/release/app-release.apk
           node scripts/verify-android-signature.js frontend/mobile/android/app/build/outputs/apk/lanRelease/app-lanRelease.apk
           node scripts/verify-android-bundle.js frontend/mobile/android/app/build/outputs/bundle/release/app-release.aab
+      - name: Stage Android release assets
+        shell: bash
+        run: |
+          version="$(cat VERSION)"
+          mkdir release-assets
+          cp frontend/mobile/android/app/build/outputs/apk/release/app-release.apk "release-assets/AetherX-Android-${version}.apk"
+          cp frontend/mobile/android/app/build/outputs/apk/lanRelease/app-lanRelease.apk "release-assets/AetherX-Android-LAN-${version}.apk"
+          cp frontend/mobile/android/app/build/outputs/bundle/release/app-release.aab "release-assets/AetherX-Android-${version}.aab"
       - uses: actions/upload-artifact@v4
         with:
           name: android-release
-          path: |
-            frontend/mobile/android/app/build/outputs/apk/release/app-release.apk
-            frontend/mobile/android/app/build/outputs/apk/lanRelease/app-lanRelease.apk
-            frontend/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          path: release-assets/*
           if-no-files-found: error
 
   windows:
@@ -112,34 +117,40 @@ jobs:
             backend/package-lock.json
             frontend/desktop/package-lock.json
             frontend/launcher/package-lock.json
-      - name: Require Windows signing credentials
-        shell: pwsh
-        run: |
-          if (-not $env:CSC_LINK) { throw "WINDOWS_CSC_LINK is required" }
-          if (-not $env:CSC_KEY_PASSWORD) { throw "WINDOWS_CSC_KEY_PASSWORD is required" }
       - name: Install packaging dependencies
         shell: pwsh
         run: |
           npm --prefix backend ci
           npm --prefix frontend/desktop ci
           npm --prefix frontend/launcher ci
-      - name: Build and verify signed desktop artifacts
+      - name: Build desktop artifacts
         shell: pwsh
         run: |
           npm --prefix frontend/desktop run dist
           npm --prefix frontend/desktop run verify:backend
-          npm --prefix frontend/desktop run verify:signature
-      - name: Build and verify signed launcher
+          if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) {
+            npm --prefix frontend/desktop run verify:signature
+          }
+      - name: Build launcher
         shell: pwsh
         run: |
           npm --prefix frontend/launcher run dist:package
-          npm --prefix frontend/launcher run verify:signature
+          if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) {
+            npm --prefix frontend/launcher run verify:signature
+          }
+      - name: Stage Windows release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $suffix = if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) { "" } else { "-UNSIGNED" }
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          Copy-Item "frontend/desktop/dist/AetherX-安装版-$version-x64.exe" "release-assets/AetherX-Windows-Setup-$version-x64$suffix.exe"
+          Copy-Item "frontend/desktop/dist/AetherX-免安装版-$version-x64.exe" "release-assets/AetherX-Windows-Portable-$version-x64$suffix.exe"
+          Copy-Item "frontend/launcher/dist/AetherX-启动器-$version-x64.exe" "release-assets/AetherX-Windows-Launcher-$version-x64$suffix.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: |
-            frontend/desktop/dist/AetherX-*.exe
-            frontend/launcher/dist/AetherX-启动器-*.exe
+          path: release-assets/*
           if-no-files-found: error
 
   publish:
@@ -161,4 +172,11 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --verify-tag --generate-notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          (cd release-assets && sha256sum * > "AetherX-${version}-SHA256SUMS.txt")
+          gh release create "${GITHUB_REF_NAME}" release-assets/* \
+            --verify-tag \
+            --prerelease \
+            --title "AetherX ${version} 公共测试版" \
+            --notes "Android APK/AAB 已使用生产证书签名。文件名包含 UNSIGNED 的 Windows 包未使用 CA 代码签名，系统可能显示 SmartScreen 警告；可使用随附 SHA-256 清单校验下载文件。"
