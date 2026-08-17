@@ -4,6 +4,7 @@ const ABORTABLE_STATES = new Set([
   "final_sync",
   "integrity_check"
 ]);
+const DEFAULT_RECOVERY_GRACE_MS = 30_000;
 
 class SwitchRecoveryService {
   constructor({
@@ -12,6 +13,7 @@ class SwitchRecoveryService {
     switchStateMachineService,
     pollIntervalMs = 5000,
     maxBackoffMs = 300000,
+    recoveryGraceMs = DEFAULT_RECOVERY_GRACE_MS,
     now = () => Date.now()
   }) {
     this.clusterService = clusterService;
@@ -23,6 +25,7 @@ class SwitchRecoveryService {
       normalizeInterval(maxBackoffMs, 300000)
     );
     this.now = now;
+    this.recoveryGraceMs = Math.max(0, Number(recoveryGraceMs) || 0);
     this.running = false;
     this.timer = null;
     this.inFlight = null;
@@ -59,8 +62,10 @@ class SwitchRecoveryService {
 
   async tick() {
     for (const userId of this.clusterRepository.listSpaceUserIds()) {
+      if (this.switchStateMachineService.isBusy?.(userId)) continue;
       const context = this.clusterService.ensureSpace(userId);
       if (!shouldRecoverLocally(context)) continue;
+      if (!isRecoveryStale(context, this.now(), this.recoveryGraceMs)) continue;
       const attempt = this.attempts.get(userId);
       if (attempt?.nextAttemptAt > this.now()) continue;
       try {
@@ -70,6 +75,12 @@ class SwitchRecoveryService {
   }
 
   async runNow(userId) {
+    if (this.switchStateMachineService.isBusy?.(userId)) {
+      const error = new Error("当前 Hub 切换仍在正常执行，暂不启动恢复。");
+      error.status = 409;
+      error.code = "SWITCH_RECOVERY_BUSY";
+      throw error;
+    }
     if (this.recoveringUsers.has(userId)) {
       const error = new Error("当前账号正在恢复未完成的 Hub 切换。");
       error.status = 409;
@@ -172,9 +183,20 @@ function shouldRecoverLocally(context) {
     (context.state === "committing_switch" || ABORTABLE_STATES.has(context.state));
 }
 
+function isRecoveryStale(context, now, graceMs = DEFAULT_RECOVERY_GRACE_MS) {
+  const updatedAt = Number(context.state_updated_at || 0);
+  return updatedAt <= 0 || Number(now) - updatedAt >= Math.max(0, Number(graceMs) || 0);
+}
+
 function normalizeInterval(value, fallback) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 250 ? number : fallback;
 }
 
-module.exports = { ABORTABLE_STATES, SwitchRecoveryService, shouldRecoverLocally };
+module.exports = {
+  ABORTABLE_STATES,
+  DEFAULT_RECOVERY_GRACE_MS,
+  isRecoveryStale,
+  SwitchRecoveryService,
+  shouldRecoverLocally
+};

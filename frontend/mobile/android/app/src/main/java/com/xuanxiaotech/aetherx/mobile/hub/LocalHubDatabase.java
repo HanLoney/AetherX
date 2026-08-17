@@ -1248,12 +1248,16 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
         String transitionId = required(control, "transitionId");
         String nextState = required(control, "state");
         long nextEpoch = control.optLong("epoch", -1);
+        boolean retryAfterCommit = "commit".equals(action) &&
+            "stable".equals(cluster.getString("state")) &&
+            cluster.getString("activeNodeId").equals(targetNodeId) &&
+            cluster.getLong("epoch") == nextEpoch;
         boolean validActor = localInitiator
             ? localNodeId.equals(activeNodeId) && !localNodeId.equals(targetNodeId)
             : localNodeId.equals(targetNodeId) && !localNodeId.equals(activeNodeId);
         if (!cluster.getString("spaceId").equals(control.optString("spaceId")) ||
             !validActor ||
-            !cluster.getString("activeNodeId").equals(activeNodeId) ||
+            (!cluster.getString("activeNodeId").equals(activeNodeId) && !retryAfterCommit) ||
             nextEpoch < 1) {
             throw new IllegalStateException("SWITCH_CONTROL_CONTEXT_MISMATCH");
         }
@@ -1847,6 +1851,10 @@ public final class LocalHubDatabase extends SQLiteOpenHelper {
             "committing_switch".equals(currentState) &&
             currentTransitionId.equals(transitionId) &&
             controlEpoch == currentEpoch + 1) return;
+        if ("commit".equals(action) &&
+            "stable".equals(currentState) &&
+            cluster.getString("activeNodeId").equals(control.getString("targetNodeId")) &&
+            controlEpoch == currentEpoch) return;
         if ("abort".equals(action) &&
             !"stable".equals(currentState) &&
             currentTransitionId.equals(transitionId) &&

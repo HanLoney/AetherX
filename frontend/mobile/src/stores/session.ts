@@ -1,4 +1,5 @@
 import { computed, readonly, ref } from "vue";
+import { Capacitor } from "@capacitor/core";
 import {
   AetherApi,
   type AuthConfig,
@@ -34,6 +35,8 @@ const routing = ref<StoredHubRouting | null>(null);
 const error = ref("");
 let api: AetherApi | null = null;
 let bootstrapPromise: Promise<void> | null = null;
+let discoveredHubRecovery: Promise<void> | null = null;
+let discoveryListenerRegistered = false;
 
 function createApi(url: string, token = "", invalidateOnUnauthorized = true) {
   let instance: AetherApi;
@@ -47,6 +50,7 @@ function createApi(url: string, token = "", invalidateOnUnauthorized = true) {
 }
 
 async function bootstrap() {
+  registerDiscoveredHubRecovery();
   if (ready.value) return;
   if (bootstrapPromise) return bootstrapPromise;
   bootstrapPromise = (async () => {
@@ -78,7 +82,7 @@ async function bootstrap() {
     if (stored?.token) {
       api = createApi(serverUrl.value, preferred?.token || stored.token);
       user.value = stored.user;
-      void validateStoredSession(api, stored, preferred || {
+      await validateStoredSession(api, stored, preferred || {
         nodeId: routing.value?.activeNodeId || "",
         serverUrl: serverUrl.value,
         token: stored.token,
@@ -92,12 +96,47 @@ async function bootstrap() {
   return bootstrapPromise;
 }
 
+function registerDiscoveredHubRecovery() {
+  if (discoveryListenerRegistered) return;
+  discoveryListenerRegistered = true;
+  window.addEventListener("aetherx:peer-endpoint-discovered", (event) => {
+    const detail = (event as CustomEvent<{ nodeId?: string; address?: string }>).detail;
+    if (!detail?.nodeId || !detail.address || discoveredHubRecovery) return;
+    discoveredHubRecovery = recoverDiscoveredHub(detail.nodeId, detail.address)
+      .catch(() => undefined)
+      .finally(() => { discoveredHubRecovery = null; });
+  });
+}
+
+async function recoverDiscoveredHub(nodeId: string, address: string) {
+  if (shouldAvoidInsecureAndroidRoute(address)) return;
+  if (api && normalizeRouteUrl(api.serverUrl) === normalizeRouteUrl(address)) return;
+  const route = routing.value?.nodes.find((item) => item.nodeId === nodeId);
+  if (!route?.token || !user.value) return;
+  const candidate = createApi(address, route.token, false);
+  const connection = await validateHubConnection(candidate, user.value);
+  if (connection.status.localNodeId !== nodeId) return;
+  await applyRoutedConnection(candidate, {
+    baseUrl: candidate.serverUrl,
+    token: route.token,
+    user: connection.user,
+    spaceId: connection.status.spaceId,
+    nodeId: connection.status.localNodeId,
+    activeNodeId: connection.status.activeNodeId,
+    epoch: connection.status.epoch
+  });
+}
+
 async function validateStoredSession(
   candidate: AetherApi,
   stored: { token: string; user: AuthUser },
   route: StoredHubRouting["nodes"][number]
 ) {
+  const insecureAndroidRoute = shouldAvoidInsecureAndroidRoute(candidate.serverUrl);
   try {
+    if (insecureAndroidRoute) {
+      throw new Error("Waiting for a secure discovered Hub endpoint.");
+    }
     const connection = await validateHubConnection(candidate, stored.user);
     await rememberCluster(candidate, connection.status);
     if (api !== candidate) return;
@@ -125,6 +164,10 @@ async function validateStoredSession(
       }));
     } catch {
       // Keep cached data available while all saved Hub endpoints are unreachable.
+    }
+    if (insecureAndroidRoute && api === candidate) {
+      api = null;
+      serverUrl.value = "";
     }
     // 网络中断时继续使用本地缓存；真正的 401 会由 API 统一触发退出。
   }
@@ -311,9 +354,14 @@ async function activateLocalHubMode(force: boolean) {
   error.value = "";
   try {
     const localHub = useLocalHub();
-    if (force) await localHub.forceTakeover();
-    else await localHub.switchToLocal();
-    const local = localHub.status.value;
+    let local = await localHub.refresh();
+    if (force) {
+      await localHub.forceTakeover();
+      local = localHub.status.value;
+    } else if (local?.role !== "active" || local.state !== "stable") {
+      await localHub.switchToLocal();
+      local = localHub.status.value;
+    }
     if (!local || local.role !== "active" || !["stable", "forced_active"].includes(local.state)) {
       throw new Error("手机 Hub 尚未完成安全切换。 ");
     }
@@ -357,7 +405,10 @@ async function activateDesktopHub() {
   error.value = "";
   try {
     const localHub = useLocalHub();
-    const switched = await localHub.switchToPeer();
+    const local = await localHub.refresh();
+    const switched = local?.role === "standby" && local.state === "stable"
+      ? { completed: true, activeNodeId: local.activeNodeId, epoch: local.epoch, state: local.state }
+      : await localHub.switchToPeer();
     const route = routing.value?.nodes.find((node) => node.nodeId === switched.activeNodeId);
     if (!route?.serverUrl || !route.token) {
       throw new Error("电脑 Hub 已接管，但手机缺少可用的登录凭证，请重新配对连接。 ");
@@ -518,15 +569,46 @@ async function connectStoredHub(
   expectedUser: AuthUser | null,
   excludedUrl = ""
 ) {
-  const peerEndpoints = useLocalHub().status.value?.peerEndpoints || [];
+  const localHub = useLocalHub();
+  const localStatus = await discoverPeerEndpoints(localHub, route.nodeId);
+  const peerEndpoints = localStatus?.peerEndpoints || [];
   const candidates = hubRouteCandidates(route, peerEndpoints)
     .filter((url) => normalizeRouteUrl(url) !== normalizeRouteUrl(excludedUrl));
-  if (!candidates.length) throw new Error("No reachable Hub endpoint is available.");
-  return Promise.any(candidates.map(async (url) => {
+  const secureCandidates = localHub.available && typeof location !== "undefined" && location.protocol === "https:"
+    ? candidates.filter((url) => new URL(url).protocol === "https:")
+    : candidates;
+  if (!secureCandidates.length) throw new Error("No secure Hub endpoint is available.");
+  return Promise.any(secureCandidates.map(async (url) => {
     const candidate = createApi(url, route.token, false);
     const validated = await validateHubConnection(candidate, expectedUser);
     return { api: candidate, ...validated };
   }));
+}
+
+async function discoverPeerEndpoints(
+  localHub: ReturnType<typeof useLocalHub>,
+  nodeId: string
+) {
+  const shouldWait = localHub.available && typeof location !== "undefined" && location.protocol === "https:";
+  const deadline = Date.now() + (shouldWait ? 20_000 : 0);
+  let current = await localHub.refresh().catch(() => localHub.status.value);
+  while (
+    shouldWait &&
+    Date.now() < deadline &&
+    !current?.peerEndpoints.some((endpoint) => !endpoint.nodeId || endpoint.nodeId === nodeId)
+  ) {
+    await delay(500);
+    current = await localHub.refresh().catch(() => current);
+  }
+  return current;
+}
+
+function shouldAvoidInsecureAndroidRoute(url: string) {
+  return Capacitor.getPlatform() === "android" &&
+    useLocalHub().status.value?.allowInsecureLan !== true &&
+    typeof location !== "undefined" &&
+    location.protocol === "https:" &&
+    /^http:\/\//i.test(url);
 }
 
 async function validateHubConnection(candidate: AetherApi, expectedUser: AuthUser | null) {

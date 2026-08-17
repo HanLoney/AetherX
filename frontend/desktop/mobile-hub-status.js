@@ -1,6 +1,6 @@
 const MOBILE_PLATFORMS = new Set(["android", "ios"]);
 
-async function loadMobileHubStatus({ api, cachedCluster = null, timeoutMs = 1200 }) {
+async function loadMobileHubStatus({ api, cachedCluster = null, timeoutMs = 4000 }) {
   const [cluster, detail] = await Promise.all([
     settleWithin(api.getClusterStatus(), timeoutMs, cachedCluster),
     settleWithin(api.listMobileHubs(), timeoutMs, { hubs: [] })
@@ -16,14 +16,18 @@ function mergeMobileHubStatus(cluster, detailedHubs = []) {
   const detailById = new Map(details.map((hub) => [String(hub.id || ""), hub]));
   const nodes = Array.isArray(cluster?.nodes) ? cluster.nodes : [];
   const merged = nodes
-    .filter((node) => isMobileHubNode(node))
+    .filter((node) => isMobileHubNode(node) && !isRevokedHub(node))
     .map((node) => mergeHubNode(cluster, node, detailById.get(String(node.id || ""))));
   const knownIds = new Set(merged.map((hub) => String(hub.id || "")));
   for (const detail of details) {
-    if (!detail?.id || knownIds.has(String(detail.id))) continue;
+    if (!detail?.id || isRevokedHub(detail) || knownIds.has(String(detail.id))) continue;
     merged.push(mergeHubNode(cluster, detail, detail));
   }
   return merged;
+}
+
+function isRevokedHub(hub) {
+  return hub?.revokedAt !== null && hub?.revokedAt !== undefined;
 }
 
 function mergeHubNode(cluster, node, detail = null) {

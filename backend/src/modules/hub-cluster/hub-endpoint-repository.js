@@ -6,18 +6,20 @@ class HubEndpointRepository {
   }
 
   replaceNodeEndpoints(spaceId, nodeId, endpoints, now = Date.now()) {
-    this.database.prepare(
-      "DELETE FROM hub_endpoints WHERE space_id = ? AND node_id = ?"
-    ).run(spaceId, nodeId);
-    const insert = this.database.prepare(
+    const upsert = this.database.prepare(
       `INSERT INTO hub_endpoints(
          id, space_id, node_id, transport, address, priority,
          certificate_fingerprint, last_success_at, created_at, updated_at,
          last_failure_at, failure_count
        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0)`
+      + ` ON CONFLICT(space_id, node_id, transport, address) DO UPDATE SET
+            priority = excluded.priority,
+            certificate_fingerprint = excluded.certificate_fingerprint,
+            updated_at = excluded.updated_at`
     );
+    const retained = [];
     for (const endpoint of endpoints) {
-      insert.run(
+      upsert.run(
         randomUUID(),
         spaceId,
         nodeId,
@@ -28,6 +30,18 @@ class HubEndpointRepository {
         now,
         now
       );
+      retained.push([endpoint.transport, endpoint.address]);
+    }
+    if (!retained.length) {
+      this.database.prepare(
+        "DELETE FROM hub_endpoints WHERE space_id = ? AND node_id = ?"
+      ).run(spaceId, nodeId);
+    } else {
+      const retainedSql = retained.map(() => "(transport = ? AND address = ?)").join(" OR ");
+      this.database.prepare(
+        `DELETE FROM hub_endpoints
+         WHERE space_id = ? AND node_id = ? AND NOT (${retainedSql})`
+      ).run(spaceId, nodeId, ...retained.flat());
     }
     return this.listForNode(spaceId, nodeId);
   }
@@ -39,9 +53,14 @@ class HubEndpointRepository {
               failure_count, created_at, updated_at
        FROM hub_endpoints
        WHERE space_id = ? AND node_id = ?
-       ORDER BY priority DESC,
-                CASE WHEN last_success_at IS NULL THEN 1 ELSE 0 END,
+       ORDER BY CASE
+                  WHEN last_success_at IS NOT NULL AND
+                       (last_failure_at IS NULL OR last_success_at >= last_failure_at) THEN 0
+                  WHEN last_success_at IS NULL AND last_failure_at IS NULL THEN 1
+                  ELSE 2
+                END,
                 last_success_at DESC,
+                priority DESC,
                 address`
     ).all(spaceId, nodeId).map(presentEndpoint);
   }

@@ -165,6 +165,9 @@ const {
 } = require("./modules/hub-cluster/divergence-recovery-service");
 const { ClusterService } = require("./modules/hub-cluster/cluster-service");
 const {
+  MobileHubProbeService
+} = require("./modules/hub-cluster/mobile-hub-probe-service");
+const {
   HubEndpointRepository
 } = require("./modules/hub-cluster/hub-endpoint-repository");
 const {
@@ -282,8 +285,10 @@ const {
 const {
   registerModuleActivityRoutes
 } = require("./modules/module-activity/module-activity-routes");
+const { LanHubAnnouncer } = require("./infrastructure/lan-hub-announcer");
 
 function createApp(config) {
+  const lanHubAnnouncer = new LanHubAnnouncer({ hubPort: config.port });
   const releaseDataDirLock = acquireDataDirLock(config.dataDir);
   let database;
   try {
@@ -359,6 +364,10 @@ function createApp(config) {
     clusterService,
     clusterRepository,
     peerAuthenticationService
+  });
+  const mobileHubProbeService = new MobileHubProbeService({
+    clusterService,
+    peerTransport
   });
   const replicationApplyService = new ReplicationApplyService({
     repository: replicationRepository,
@@ -648,7 +657,8 @@ function createApp(config) {
     clientSessionHandoffService,
     syncEventBroker,
     divergenceRecoveryService,
-    peerTransport
+    peerTransport,
+    mobileHubProbeService
   );
   registerHubPairingRoutes(
     router,
@@ -714,6 +724,7 @@ function createApp(config) {
     hubImportService,
     peerAuthenticationService,
     peerTransport,
+    mobileHubProbeService,
     bootstrapCoordinator,
     mediaReplicationService,
     replicationScheduler,
@@ -733,6 +744,9 @@ function createApp(config) {
     listen() {
       return new Promise((resolve) => {
         server.listen(config.port, config.host, () => {
+          if (!["127.0.0.1", "::1", "localhost"].includes(String(config.host).toLowerCase())) {
+            lanHubAnnouncer.start();
+          }
           if (config.replicationSchedulerEnabled === true) replicationScheduler.start();
           if (config.switchRecoveryEnabled === true) switchRecoveryService.start();
           resolve(server.address());
@@ -741,6 +755,7 @@ function createApp(config) {
     },
     async close() {
       try {
+        lanHubAnnouncer.close();
         await switchRecoveryService.stop();
         await replicationScheduler.stop();
         mobileHubSyncNotifier.close();

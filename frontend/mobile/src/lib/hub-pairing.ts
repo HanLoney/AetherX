@@ -181,7 +181,7 @@ async function resolveHubPairingReference(reference: HubPairingReference) {
           failures += 1;
           if (!settled && failures === reference.serverUrls.length) {
             settled = true;
-            reject(new Error("无法自动连接电脑 AetherX。已尝试 USB、局域网和 Anywhere，请确认电脑端仍在运行。"));
+            reject(new Error("无法自动连接电脑 AetherX。已尝试局域网和 Anywhere，请确认电脑端仍在运行。"));
           }
         });
     });
@@ -264,7 +264,7 @@ export async function pairAndroidLocalHub(
   localHub: LocalHubBridge,
   onState?: (state: string) => void
 ) {
-  onState?.("正在自动检测 USB、局域网与 Anywhere…");
+  onState?.("正在自动检测局域网与 Anywhere…");
   const pairing = await resolveHubPairingCode(code);
   onState?.("正在创建手机 Hub 身份…");
   // Pairing must use the native database state, not a startup-time Vue cache.
@@ -441,7 +441,7 @@ async function requestThroughReachableEndpoint(
       ) throw cause;
     }
   }
-  throw lastError || new Error("无法自动连接电脑 Hub，已尝试 USB、局域网和 Anywhere。 ");
+  throw lastError || new Error("无法自动连接电脑 Hub，已尝试局域网和 Anywhere。 ");
 }
 
 function includeResolvedPeerEndpoint(value: unknown, nodeId: string, serverUrl: string) {

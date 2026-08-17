@@ -12,7 +12,7 @@ AetherX 的 Android 客户端，使用 Vue 3、Vite 和 Capacitor。在线业务
 - SSE 变化通知、增量游标补拉和指数退避重连；
 - Android Keystore 长期凭证保护；
 - Android Local Hub 原生 SQLite、Operation/Watermark、幂等写入与完整性根；
-- 一体化配对 v2 短码同时引用客户端登录与独立 Hub 配对，并携带 USB、局域网和 Anywhere 候选入口；手机并发探测后自动选择可用地址，再用一次性密钥解析公开配对资料，Hub 部分继续使用 X25519 密钥协商、Peer HMAC 和完整快照首轮复制；
+- 一体化配对 v2 短码同时引用客户端登录与独立 Hub 配对，并携带局域网和 Anywhere 候选入口；手机并发探测后自动选择可用地址，再用一次性密钥解析公开配对资料，Hub 部分继续使用 X25519 密钥协商、Peer HMAC 和完整快照首轮复制；
 - 原图分块下载、断点续传、分块/整文件 SHA-256 校验和本地媒体 URI；
 - records root、blobs root、Operation heads 完成证明与 `standby_pending → standby` 双端确认；
 - Provider Key 由 Android Keystore 重加密保存，SQLite 只保留不可逆摘要；
@@ -86,7 +86,7 @@ http://127.0.0.1:4318
 
 ## 配对电脑
 
-登录页选择“配对电脑”，优先点击“扫描电脑二维码”；推荐扫描桌面端生成的 `aetherx://complete-pair?...` 一体化短码，一次建立手机客户端登录与 Android Local Hub 身份。短码只含候选地址、会话引用、高熵一次性密钥和过期时间；应用会并发检测 USB、局域网与 Anywhere，自动选择当前可用入口，再从电脑 Hub 解析临时公钥并完成两项申请，电脑端只需批准一次。用户不需要输入 Hub 地址；无法使用相机时，也可以粘贴完整短码。
+登录页选择“配对电脑”，优先点击“扫描电脑二维码”；推荐扫描桌面端生成的 `aetherx://complete-pair?...` 一体化短码，一次建立手机客户端登录与 Android Local Hub 身份。短码只含候选地址、会话引用、高熵一次性密钥和过期时间；应用会并发检测局域网与 Anywhere，自动选择当前可用入口，再从电脑 Hub 解析临时公钥并完成两项申请，电脑端只需批准一次。用户不需要输入 Hub 地址；无法使用相机时，也可以粘贴完整短码。
 
 旧的 `aetherx://pair?...` 客户端连接码和 `aetherx://hub-pair?...` Hub 配对码继续兼容，仅用于旧版本滚动升级；新版桌面端不再提供单项生成入口。两套长期凭据仍分别进入安全存储，不会相互替代。
 

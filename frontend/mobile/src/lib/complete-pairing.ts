@@ -84,7 +84,7 @@ export async function detectReachablePairingServer(
         failures += 1;
         if (!settled && failures === serverUrls.length) {
           settled = true;
-          reject(new Error("无法自动连接电脑 AetherX。已尝试 USB、局域网和 Anywhere，请确认电脑端仍在运行。"));
+          reject(new Error("无法自动连接电脑 AetherX。已尝试局域网和 Anywhere，请确认电脑端仍在运行。"));
         }
       });
     });
@@ -106,7 +106,7 @@ export async function runCompletePairing(
   let clientCode = bundle.clientCode;
   let hubCode = bundle.hubCode;
   if (bundle.serverUrls.length) {
-    tasks.onState?.("正在自动检测 USB、局域网与 Anywhere…");
+    tasks.onState?.("正在自动检测局域网与 Anywhere…");
     const selected = await detectReachablePairingServer(bundle.serverUrls, tasks.probeServer);
     const ordered = [selected, ...bundle.serverUrls.filter((serverUrl) => serverUrl !== selected)];
     clientCode = JSON.stringify({ ...JSON.parse(clientCode), serverUrl: selected });

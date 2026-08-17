@@ -83,6 +83,22 @@ public class SecureSessionPlugin extends Plugin {
         }
     }
 
+    public static JSONObject loadStoredSession(Context context) throws Exception {
+        SharedPreferences preferences = context.getApplicationContext()
+            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String ivValue = preferences.getString("aetherx.session.iv", null);
+        String dataValue = preferences.getString("aetherx.session.data", null);
+        if (ivValue == null || dataValue == null) return null;
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            getOrCreateKey(),
+            new GCMParameterSpec(GCM_TAG_BITS, Base64.decode(ivValue, Base64.NO_WRAP))
+        );
+        byte[] decrypted = cipher.doFinal(Base64.decode(dataValue, Base64.NO_WRAP));
+        return new JSONObject(new String(decrypted, StandardCharsets.UTF_8));
+    }
+
     @PluginMethod
     public void remove(PluginCall call) {
         String key = call.getString("key");
@@ -106,7 +122,7 @@ public class SecureSessionPlugin extends Plugin {
         return key != null && !key.trim().isEmpty() && key.length() <= 128;
     }
 
-    private SecretKey getOrCreateKey() throws Exception {
+    private static SecretKey getOrCreateKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
         keyStore.load(null);
         SecretKey existing = (SecretKey) keyStore.getKey(KEY_ALIAS, null);

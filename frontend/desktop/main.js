@@ -17,7 +17,8 @@ const { XuanApiClient } = require("./api-client");
 const {
   AuthStore,
   isDirectMobileHubUrl,
-  selectAuthenticationSession
+  selectAuthenticationSession,
+  shouldKeepRoutedConnection
 } = require("./auth-store");
 const { startLocalHub } = require("./hub-runtime");
 const {
@@ -28,6 +29,7 @@ const { generatePairingQrDataUrl } = require("./qr-code");
 const { createDesktopControlServer } = require("./desktop-control");
 const { discoverHubPairingEndpoints } = require("./pairing-endpoints");
 const { loadMobileHubStatus } = require("./mobile-hub-status");
+const { inspectWindowsNetworkProfiles } = require("./windows-network-profile");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const localHubServerUrl = "http://127.0.0.1:4318";
@@ -141,6 +143,10 @@ function upsertRoutingNode(routing, node) {
 
 function applyClusterStatus(status) {
   if (!status?.spaceId || !status.localNodeId) return;
+  if (
+    hubRouting?.spaceId === status.spaceId &&
+    Number(status.epoch) < Number(hubRouting.epoch)
+  ) return;
   latestClusterStatus = status;
   hubRouting = {
     spaceId: status.spaceId,
@@ -196,15 +202,17 @@ async function probeLocalHub() {
 
 async function loadConnectionStatus() {
   const authenticated = Boolean(currentUser && api.token);
-  const [hubHealth, cluster, localCluster, mobileDetail, devices, endpoints] = await Promise.all([
+  const localApi = authenticated ? authenticatedLocalHubApi() : null;
+  const [hubHealth, cluster, localCluster, mobileDetail, devices, endpoints, lanAccess] = await Promise.all([
     probeLocalHub(),
     authenticated ? settleStatus(api.getClusterStatus(), latestClusterStatus) : null,
-    authenticated
-      ? settleStatus(authenticatedLocalHubApi().getClusterStatus(), null)
-      : null,
-    authenticated ? settleStatus(api.listMobileHubs(), { hubs: [] }) : { hubs: [] },
+    localApi ? settleStatus(localApi.getClusterStatus(), null) : null,
+    localApi ? settleStatus(localApi.listMobileHubs(), { hubs: [] }) : { hubs: [] },
     authenticated ? settleStatus(api.listDevices(), []) : [],
-    settleStatus(discoverHubPairingEndpoints({ serverUrl: localHubServerUrl }), [])
+    settleStatus(discoverHubPairingEndpoints({ serverUrl: localHubServerUrl }), []),
+    settleStatus(inspectWindowsNetworkProfiles(), {
+      status: "unavailable", private: false, public: false, profiles: []
+    })
   ]);
   const network = await settleStatus(
     getTailscaleManager().getStatus({ hubHealthy: hubHealth.online }),
@@ -240,6 +248,7 @@ async function loadConnectionStatus() {
     devices: deviceList,
     network: {
       ...network,
+      lanAccess,
       endpoints: Array.isArray(endpoints) ? endpoints : []
     }
   };
@@ -300,10 +309,15 @@ async function recoverHubRoutingFromAuthority() {
     }
     return status;
   } catch (error) {
-    api.setBaseUrl(previousBaseUrl);
-    api.setToken(previousToken);
-    hubRouting = previousRouting;
-    saveAuthenticatedState();
+    if (shouldKeepRoutedConnection(hubRouting, previousRouting)) {
+      saveAuthenticatedState();
+      setTimeout(() => void recoverHubRoutingAfterControlEvent(), 3_000);
+    } else {
+      api.setBaseUrl(previousBaseUrl);
+      api.setToken(previousToken);
+      hubRouting = previousRouting;
+      saveAuthenticatedState();
+    }
     throw error;
   }
 }
@@ -318,7 +332,7 @@ async function ensureActiveHub() {
 
 async function handleHubConnectionChanged(connection) {
   currentUser = connection.user;
-  hubRouting = {
+  const nextRouting = {
     spaceId: connection.spaceId,
     activeNodeId: connection.activeNodeId,
     localNodeId: connection.nodeId,
@@ -329,6 +343,10 @@ async function handleHubConnectionChanged(connection) {
       token: connection.token
     })
   };
+  if (!shouldKeepRoutedConnection(nextRouting, hubRouting)) {
+    throw new Error("活动 Hub 返回了过期的路由代次。");
+  }
+  hubRouting = nextRouting;
   saveAuthenticatedState();
   await startAuthenticatedSync();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -875,7 +893,7 @@ async function startDesktopControl() {
     if (command?.type === "mobile-hubs-status") {
       if (!currentUser || !api.token) return { authenticated: false, hubs: [] };
       const result = await loadMobileHubStatus({
-        api,
+        api: authenticatedLocalHubApi(),
         cachedCluster: latestClusterStatus
       });
       if (result.cluster) latestClusterStatus = result.cluster;
@@ -970,7 +988,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     localHub = await startLocalHub({
       electronApp: app,
       baseUrl: localHubServerUrl,
-      enableAdbReverse: true,
+      enableAdbReverse:
+        !app.isPackaged && /^(1|true|on)$/i.test(process.env.AETHERX_ADB_REVERSE || ""),
       requestQuit: () => app.quit()
     });
   } catch (error) {

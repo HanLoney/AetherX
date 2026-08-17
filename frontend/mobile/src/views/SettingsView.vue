@@ -936,7 +936,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
             <div><span>HUB CONNECTION</span><h2>重新连接 Hub</h2></div>
             <button type="button" aria-label="关闭连接设置" :disabled="reconnecting || scanning" @click="closeConnectionSettings"><X :size="18" /></button>
           </header>
-          <p class="connection-intro">扫描电脑端二维码后会自动检测 USB、局域网与 Anywhere，并选择当前可用的连接。</p>
+          <p class="connection-intro">扫描电脑端二维码后会自动检测局域网与 Anywhere，并选择当前可用的连接。</p>
           <div class="connection-tabs">
             <button type="button" :class="{ active: connectionMode === 'pair' }" @click="connectionMode = 'pair'; connectionError = ''">扫码自动连接</button>
             <button type="button" :class="{ active: connectionMode === 'address' }" @click="connectionMode = 'address'; connectionError = ''">手动地址（高级）</button>

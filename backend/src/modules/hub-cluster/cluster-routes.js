@@ -10,13 +10,18 @@ function registerClusterRoutes(
   clientSessionHandoffService = null,
   syncEventBroker = null,
   divergenceRecoveryService = null,
-  peerTransport = null
+  peerTransport = null,
+  mobileHubProbeService = null
 ) {
   router.add("GET", "/api/v1/cluster/status", ({ userId }) => ({
     data: service.status(userId)
   }));
-  router.add("GET", "/api/v1/cluster/mobile-hubs", ({ userId }) => ({
-    data: { hubs: service.mobileHubs(userId) }
+  router.add("GET", "/api/v1/cluster/mobile-hubs", async ({ userId }) => ({
+    data: {
+      hubs: mobileHubProbeService
+        ? await mobileHubProbeService.list(userId)
+        : service.mobileHubs(userId)
+    }
   }));
   if (syncEventBroker) {
     router.add(

@@ -44,9 +44,14 @@ class SwitchStateMachineService {
     this.replicationScheduler = replicationScheduler;
     this.onClusterChanged = onClusterChanged;
     this.now = now;
+    this.inFlightUsers = new Set();
   }
 
   async prepare(userId, input = {}) {
+    return this.runTracked(userId, () => this.prepareUnlocked(userId, input));
+  }
+
+  async prepareUnlocked(userId, input = {}) {
     const initial = this.clusterService.ensureSpace(userId);
     assertLocalActive(initial);
     if (initial.state !== "stable") {
@@ -115,6 +120,10 @@ class SwitchStateMachineService {
   }
 
   async commit(userId, input = {}) {
+    return this.runTracked(userId, () => this.commitUnlocked(userId, input));
+  }
+
+  async commitUnlocked(userId, input = {}) {
     const context = this.clusterService.ensureSpace(userId);
     assertLocalActive(context);
     const transitionId = requireTransitionId(input.transitionId);
@@ -140,6 +149,7 @@ class SwitchStateMachineService {
       });
     }
     const current = this.clusterService.ensureSpace(userId);
+    await this.alignPeerForCommit(userId, current, targetNodeId, transitionId);
     const signed = this.signedControl(current, {
       action: "commit",
       state: "stable",
@@ -148,17 +158,18 @@ class SwitchStateMachineService {
       targetNodeId,
       transitionStartedAt: Number(current.transition_started_at)
     });
-    const remote = await this.peerTransport.requestJson(userId, targetNodeId, {
-      method: "POST",
-      path: "/api/v1/peer/switch/control",
-      body: signed,
-      timeoutMs: SWITCH_PEER_TIMEOUT_MS
-    });
-    this.verifyAck(current.space_id, targetNodeId, signed, remote.data, {
+    const commit = await this.sendCommitControl(
+      userId,
+      current,
+      targetNodeId,
+      transitionId,
+      signed
+    );
+    this.verifyAck(current.space_id, targetNodeId, commit.signedControl, commit.response.data, {
       state: "stable",
       epoch: Number(current.epoch) + 1
     });
-    this.applySignedControl(userId, current.local_node_id, signed, {
+    this.applySignedControl(userId, current.local_node_id, commit.signedControl, {
       localInitiator: true
     });
     return {
@@ -171,9 +182,95 @@ class SwitchStateMachineService {
     };
   }
 
+  async alignPeerForCommit(userId, context, targetNodeId, transitionId) {
+    let peerStatus = null;
+    try {
+      peerStatus = (await this.peerTransport.requestJson(userId, targetNodeId, {
+        method: "GET",
+        path: "/api/v1/peer/status",
+        timeoutMs: SWITCH_PEER_TIMEOUT_MS
+      })).data;
+    } catch (error) {
+      if (![404, 501].includes(Number(error?.status))) throw error;
+    }
+    if (peerStatus && peerCommitApplied(peerStatus, context, targetNodeId)) return;
+    if (peerStatus && !peerCanEnterCommit(peerStatus, context, targetNodeId, transitionId)) {
+      throw peerStateConflict(peerStatus);
+    }
+    if (peerStatus?.state === "committing_switch") return;
+
+    const phase = this.signedControl(context, {
+      action: "phase",
+      state: "committing_switch",
+      epoch: Number(context.epoch),
+      transitionId,
+      targetNodeId,
+      transitionStartedAt: Number(context.transition_started_at)
+    });
+    const remote = await this.peerTransport.requestJson(userId, targetNodeId, {
+      method: "POST",
+      path: "/api/v1/peer/switch/control",
+      body: phase,
+      timeoutMs: SWITCH_PEER_TIMEOUT_MS
+    });
+    this.verifyAck(context.space_id, targetNodeId, phase, remote.data, {
+      state: "committing_switch",
+      epoch: Number(context.epoch)
+    });
+  }
+
+  async sendCommitControl(userId, context, targetNodeId, transitionId, signed) {
+    const requestCommit = (body) => this.peerTransport.requestJson(userId, targetNodeId, {
+      method: "POST",
+      path: "/api/v1/peer/switch/control",
+      body,
+      timeoutMs: SWITCH_PEER_TIMEOUT_MS
+    });
+    try {
+      return { response: await requestCommit(signed), signedControl: signed };
+    } catch (error) {
+      let peerStatus;
+      try {
+        peerStatus = (await this.peerTransport.requestJson(userId, targetNodeId, {
+          method: "GET",
+          path: "/api/v1/peer/status",
+          timeoutMs: SWITCH_PEER_TIMEOUT_MS
+        })).data;
+      } catch {
+        throw error;
+      }
+      if (!peerCommitApplied(peerStatus, context, targetNodeId)) throw error;
+      const retry = this.signedControl(context, {
+        action: "commit",
+        state: "stable",
+        epoch: Number(context.epoch) + 1,
+        transitionId,
+        targetNodeId,
+        transitionStartedAt: Number(context.transition_started_at)
+      });
+      return { response: await requestCommit(retry), signedControl: retry };
+    }
+  }
+
   async abort(userId, input = {}) {
-    const transitionId = requireTransitionId(input.transitionId);
-    return this.abortUnlocked(userId, transitionId, { bestEffort: false });
+    return this.runTracked(userId, () => {
+      const transitionId = requireTransitionId(input.transitionId);
+      return this.abortUnlocked(userId, transitionId, { bestEffort: false });
+    });
+  }
+
+  isBusy(userId) {
+    return this.inFlightUsers.has(String(userId || ""));
+  }
+
+  async runTracked(userId, operation) {
+    const key = String(userId || "");
+    this.inFlightUsers.add(key);
+    try {
+      return await operation();
+    } finally {
+      this.inFlightUsers.delete(key);
+    }
   }
 
   async startMobileSwitch(userId, peerNodeId, input = {}) {
@@ -621,6 +718,37 @@ function transitionConflict(context) {
       epoch: Number(context.epoch),
       transitionId: context.transition_id,
       targetNodeId: context.transition_target_node_id || ""
+    }
+  );
+}
+
+function peerCanEnterCommit(status, context, targetNodeId, transitionId) {
+  return status?.spaceId === context.space_id &&
+    status?.activeNodeId === context.active_node_id &&
+    Number(status?.epoch) === Number(context.epoch) &&
+    status?.transitionId === transitionId &&
+    status?.transitionTargetNodeId === targetNodeId &&
+    ["integrity_check", "committing_switch"].includes(status?.state);
+}
+
+function peerCommitApplied(status, context, targetNodeId) {
+  return status?.spaceId === context.space_id &&
+    status?.state === "stable" &&
+    status?.activeNodeId === targetNodeId &&
+    Number(status?.epoch) === Number(context.epoch) + 1;
+}
+
+function peerStateConflict(status) {
+  return new HttpError(
+    409,
+    "SWITCH_PEER_STATE_CONFLICT",
+    "对端 Hub 的切换状态与本地提交事务不一致。",
+    {
+      state: String(status?.state || "unknown"),
+      epoch: Number(status?.epoch || 0),
+      activeNodeId: String(status?.activeNodeId || ""),
+      transitionId: String(status?.transitionId || ""),
+      targetNodeId: String(status?.transitionTargetNodeId || "")
     }
   );
 }

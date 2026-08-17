@@ -5,6 +5,7 @@ import type { AetherApi, DeviceHeartbeatInput } from "./api";
 import { loadInstallationId } from "./storage";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const SNAPSHOT_TIMEOUT_MS = 5_000;
 
 export interface MobileHealthSnapshot {
   syncStatus: DeviceHeartbeatInput["syncStatus"];
@@ -28,12 +29,17 @@ export class MobileHealthReporter {
   private running = false;
   private sending: Promise<void> | null = null;
   private latencyMs: number | null = null;
+  private lastSnapshot: MobileHealthSnapshot = {
+    syncStatus: "idle",
+    syncCursor: 0,
+    sseConnected: false
+  };
   private identity: Promise<Pick<DeviceHeartbeatInput,
     "installationId" | "name" | "platform" | "model" | "osVersion" | "appVersion">> | null = null;
 
   constructor(
     private readonly api: AetherApi,
-    private readonly snapshot: () => MobileHealthSnapshot
+    private readonly snapshot: () => MobileHealthSnapshot | Promise<MobileHealthSnapshot>
   ) {}
 
   start() {
@@ -66,7 +72,7 @@ export class MobileHealthReporter {
 
   private async send() {
     const identity = await this.getIdentity();
-    const state = this.snapshot();
+    const state = await this.readSnapshot();
     const startedAt = performance.now();
     await this.api.deviceHeartbeat({
       ...identity,
@@ -76,6 +82,27 @@ export class MobileHealthReporter {
       latencyMs: this.latencyMs
     });
     this.latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+  }
+
+  private async readSnapshot() {
+    let timeout: number | null = null;
+    try {
+      const state = await Promise.race([
+        Promise.resolve(this.snapshot()),
+        new Promise<never>((_, reject) => {
+          timeout = window.setTimeout(
+            () => reject(new Error("Mobile health snapshot timed out.")),
+            SNAPSHOT_TIMEOUT_MS
+          );
+        })
+      ]);
+      this.lastSnapshot = state;
+    } catch {
+      // A stalled native Hub status call must not stop client liveness reporting.
+    } finally {
+      if (timeout !== null) window.clearTimeout(timeout);
+    }
+    return this.lastSnapshot;
   }
 
   private getIdentity() {

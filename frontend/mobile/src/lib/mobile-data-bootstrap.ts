@@ -1,5 +1,6 @@
 import { useDataStore } from "../stores/data";
 import { useModuleStore } from "../stores/modules";
+import { useSessionStore } from "../stores/session";
 
 let startPromise: Promise<void> | null = null;
 let started = false;
@@ -9,6 +10,9 @@ export function ensureMobileDataStarted() {
   if (!startPromise) {
     const data = useDataStore();
     startPromise = (async () => {
+      const session = useSessionStore();
+      await session.bootstrap();
+      if (!session.authenticated.value) return;
       await useModuleStore().hydrate().catch(() => undefined);
       const restored = await data.restoreCache();
       if (restored) {

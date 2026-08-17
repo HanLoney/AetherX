@@ -29,6 +29,7 @@ public final class LocalHubForegroundService extends Service {
     private final ScheduledExecutorService maintenanceExecutor =
         Executors.newSingleThreadScheduledExecutor();
     private PowerManager.WakeLock wakeLock;
+    private LocalHubLanDiscovery lanDiscovery;
     private long lastKeepAliveWarningAt;
 
     @Override
@@ -43,6 +44,8 @@ public final class LocalHubForegroundService extends Service {
         );
         wakeLock.setReferenceCounted(false);
         wakeLock.acquire();
+        lanDiscovery = new LocalHubLanDiscovery(LocalHubService.get(getApplicationContext()));
+        lanDiscovery.start();
         maintenanceExecutor.scheduleWithFixedDelay(
             this::keepPeerOnline,
             KEEPALIVE_INTERVAL_SECONDS,
@@ -65,6 +68,8 @@ public final class LocalHubForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        if (lanDiscovery != null) lanDiscovery.stop();
+        lanDiscovery = null;
         bootstrapExecutor.shutdownNow();
         maintenanceExecutor.shutdownNow();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
@@ -79,6 +84,7 @@ public final class LocalHubForegroundService extends Service {
     private void keepPeerOnline() {
         try {
             LocalHubService service = LocalHubService.get(getApplicationContext());
+            service.ensureNetworkReachable();
             JSONObject status = service.status();
             String state = status.optString("state");
             if (!status.optBoolean("configured", false) ||

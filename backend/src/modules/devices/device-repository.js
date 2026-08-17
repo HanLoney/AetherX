@@ -110,6 +110,42 @@ class DeviceRepository {
     );
   }
 
+  listLinkedHubNodes(userId, deviceId) {
+    return this.database.prepare(
+      `SELECT DISTINCT node.id, node.status, node.revoked_at,
+              CASE WHEN state.active_node_id = node.id THEN 1 ELSE 0 END AS is_active
+       FROM mobile_client_health AS health
+       JOIN aetherx_spaces AS space ON space.local_user_id = health.user_id
+       JOIN hub_nodes AS node
+         ON node.space_id = space.id
+        AND node.id = health.local_hub_node_id
+       JOIN hub_cluster_state AS state ON state.space_id = space.id
+       WHERE health.user_id = ?
+         AND health.paired_device_id = ?
+         AND node.revoked_at IS NULL`
+    ).all(userId, deviceId);
+  }
+
+  revokeLinkedHubNodes(userId, deviceId, now) {
+    const linked = this.listLinkedHubNodes(userId, deviceId);
+    for (const node of linked) {
+      this.database.prepare(
+        `UPDATE hub_peer_credentials
+         SET revoked_at = COALESCE(revoked_at, ?)
+         WHERE peer_node_id = ?
+           AND space_id IN (SELECT id FROM aetherx_spaces WHERE local_user_id = ?)`
+      ).run(now, node.id, userId);
+      this.database.prepare(
+        `UPDATE hub_nodes
+         SET status = 'revoked', revoked_at = ?
+         WHERE id = ?
+           AND space_id IN (SELECT id FROM aetherx_spaces WHERE local_user_id = ?)
+           AND revoked_at IS NULL`
+      ).run(now, node.id, userId);
+    }
+    return linked.length;
+  }
+
   deleteRevokedDevice(userId, id) {
     return (
       this.database
@@ -203,7 +239,13 @@ class DeviceRepository {
 
   listAllMobileHealth() {
     return this.database.prepare(
-      `SELECT * FROM mobile_client_health ORDER BY last_heartbeat_at DESC`
+      `SELECT health.*
+       FROM mobile_client_health AS health
+       LEFT JOIN paired_devices AS device
+         ON device.id = health.paired_device_id
+        AND device.user_id = health.user_id
+       WHERE health.paired_device_id IS NULL OR device.status = 'active'
+       ORDER BY health.last_heartbeat_at DESC`
     ).all();
   }
 

@@ -15,6 +15,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.xuanxiaotech.aetherx.mobile.hub.LocalHubService;
 import com.xuanxiaotech.aetherx.mobile.hub.LocalHubNetworkBridge;
+import com.xuanxiaotech.aetherx.mobile.hub.LocalHubDiscoveryBridge;
 import com.xuanxiaotech.aetherx.mobile.hub.LocalHubSyncWorker;
 
 import org.json.JSONArray;
@@ -39,15 +40,32 @@ public class LocalHubPlugin extends Plugin {
             // Xiaomi and other Android variants may pause the WebView as soon as the
             // activity leaves the foreground. A paired desktop request is useful work for
             // the foreground Hub service, so wake the existing page runtime before routing it.
-            getBridge().getWebView().onResume();
-            getBridge().getWebView().resumeTimers();
-            notifyListeners("networkRequest", payload, true);
+            try {
+                getBridge().getWebView().onResume();
+                getBridge().getWebView().resumeTimers();
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Unable to wake Local Hub WebView before request dispatch", error);
+            } finally {
+                notifyListeners("networkRequest", payload, true);
+            }
         });
+    };
+    private final LocalHubDiscoveryBridge.Listener discoveryListener = payload -> {
+        if (getActivity() == null) return;
+        try {
+            JSObject event = JSObject.fromJSONObject(payload);
+            getActivity().runOnUiThread(() ->
+                notifyListeners("peerEndpointDiscovered", event, true)
+            );
+        } catch (Exception error) {
+            Log.w(TAG, "Unable to publish a discovered Hub endpoint", error);
+        }
     };
 
     @Override
     public void load() {
         LocalHubNetworkBridge.setListener(networkRequestListener);
+        LocalHubDiscoveryBridge.setListener(discoveryListener);
         getBridge().getWebView().setRendererPriorityPolicy(
             android.webkit.WebView.RENDERER_PRIORITY_IMPORTANT,
             false
@@ -255,6 +273,7 @@ public class LocalHubPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         LocalHubNetworkBridge.clearListener(networkRequestListener);
+        LocalHubDiscoveryBridge.clearListener(discoveryListener);
         for (PowerManager.WakeLock wakeLock : networkWakeLocks.values()) {
             if (wakeLock.isHeld()) wakeLock.release();
         }

@@ -2379,19 +2379,58 @@ test("Bootstrap coordinator automatically restores records and original media", 
       );
       assert.equal(preparedForRecoveryCommit.response.status, 200);
       const recoveryContext = targetApp.clusterService.ensureSpace(targetUserId);
-      await targetApp.switchStateMachineService.advancePhase(targetUserId, {
-        transitionId: preparedForRecoveryCommit.payload.data.transitionId,
-        targetNodeId: imported.payload.data.activeNodeId,
-        transitionStartedAt: Number(recoveryContext.transition_started_at),
-        state: "committing_switch"
-      });
-      const recoveredCommit = await rawRequest(
-        targetUrl,
-        "POST",
-        "/api/v1/cluster/switch/recover",
-        {},
-        targetToken
+      const committingControl = targetApp.switchStateMachineService.signedControl(
+        recoveryContext,
+        {
+          action: "phase",
+          epoch: Number(recoveryContext.epoch),
+          state: "committing_switch",
+          issuedAt: Date.now(),
+          transitionId: preparedForRecoveryCommit.payload.data.transitionId,
+          targetNodeId: imported.payload.data.activeNodeId,
+          transitionStartedAt: Number(recoveryContext.transition_started_at)
+        }
       );
+      targetApp.switchStateMachineService.applySignedControl(
+        targetUserId,
+        recoveryContext.local_node_id,
+        committingControl,
+        { localInitiator: true }
+      );
+      assert.equal(targetApp.clusterService.status(targetUserId).state, "committing_switch");
+      assert.equal(
+        sourceApp.clusterService.status(sourceRegistration.payload.data.user.id).state,
+        "integrity_check"
+      );
+
+      const originalFetch = targetApp.peerTransport.fetchImpl;
+      let droppedCommitResponse = false;
+      targetApp.peerTransport.fetchImpl = async (url, options) => {
+        const response = await originalFetch(url, options);
+        const control = options?.body ? JSON.parse(options.body)?.control : null;
+        if (!droppedCommitResponse &&
+            new URL(url).pathname === "/api/v1/peer/switch/control" &&
+            control?.action === "commit") {
+          droppedCommitResponse = true;
+          const error = new Error("simulated lost commit response");
+          error.code = "TEST_COMMIT_RESPONSE_LOST";
+          throw error;
+        }
+        return response;
+      };
+      let recoveredCommit;
+      try {
+        recoveredCommit = await rawRequest(
+          targetUrl,
+          "POST",
+          "/api/v1/cluster/switch/recover",
+          {},
+          targetToken
+        );
+      } finally {
+        targetApp.peerTransport.fetchImpl = originalFetch;
+      }
+      assert.equal(droppedCommitResponse, true);
       assert.equal(recoveredCommit.response.status, 200);
       assert.equal(recoveredCommit.payload.data.recovered, true);
       assert.equal(recoveredCommit.payload.data.action, "commit");
@@ -2780,6 +2819,37 @@ test("mobile heartbeat reports app and sync health to the local launcher", async
       "SELECT COUNT(*) AS count FROM sync_changes WHERE entity_type = 'mobile_client_health'"
     ).get();
     assert.equal(syncRows.count, 0);
+  });
+});
+
+test("public mobile health summary excludes revoked paired devices", async () => {
+  await withServer(async (baseUrl, _dataDir, app) => {
+    const userId = app.database.prepare("SELECT id FROM users ORDER BY created_at LIMIT 1").get().id;
+    const now = Date.now();
+    app.database.prepare(
+      `INSERT INTO paired_devices(
+        id, user_id, name, public_key, token_hash, status,
+        created_at, last_seen_at, revoked_at
+      ) VALUES (?, ?, ?, '', ?, 'revoked', ?, ?, ?)`
+    ).run("revoked-mobile-device", userId, "Old phone", "revoked-token", now, now, now);
+    app.database.prepare(
+      `INSERT INTO mobile_client_health(
+        id, user_id, paired_device_id, name, platform, model, os_version,
+        app_version, protocol_version, sync_status, sync_cursor, sse_connected,
+        foreground, latency_ms, last_error, last_heartbeat_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'android', '', '', '1.2.6', 1, 'online', 1, 1, 1, 1, '', ?, ?, ?)`
+    ).run(
+      "revoked-mobile-installation",
+      userId,
+      "revoked-mobile-device",
+      "Old phone",
+      now,
+      now,
+      now
+    );
+
+    const publicHealth = await rawRequest(baseUrl, "GET", "/health");
+    assert.equal(publicHealth.payload.data.mobile.tracked, 0);
   });
 });
 
@@ -5651,6 +5721,43 @@ test("registration is open by default for more than one account", async () => {
   });
 });
 
+test("new accounts initialize profiles with their own display name", async () => {
+  await withUnregisteredServer(async (baseUrl) => {
+    const registered = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
+      username: "release-new-user",
+      displayName: "发布验收用户",
+      password: "release-new-user-password"
+    });
+    assert.equal(registered.response.status, 200);
+
+    const token = registered.payload.data.token;
+    const profile = await rawRequest(baseUrl, "GET", "/api/v1/profile", undefined, token);
+    const assistant = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/assistant/profile",
+      undefined,
+      token
+    );
+    const prompt = await rawRequest(
+      baseUrl,
+      "GET",
+      "/api/v1/prompt-settings",
+      undefined,
+      token
+    );
+
+    assert.equal(profile.payload.data.displayName, "发布验收用户");
+    assert.equal(profile.payload.data.preferredName, "发布验收用户");
+    assert.equal(
+      assistant.payload.data.relationshipSummary,
+      "发布验收用户亲密可靠的数字伙伴"
+    );
+    assert.match(prompt.payload.data.compiledPrompt, /发布验收用户亲密可靠的数字伙伴/);
+    assert.doesNotMatch(prompt.payload.data.compiledPrompt, /洛尼/);
+  });
+});
+
 test("invite registration requires the configured secret", async () => {
   await withUnregisteredServer(async (baseUrl) => {
     const rejected = await rawRequest(baseUrl, "POST", "/api/v1/auth/register", {
@@ -5759,7 +5866,8 @@ test("authenticated users cannot read or mutate each other's data", async () => 
         undefined,
         second.payload.data.token
       );
-      assert.equal(secondProfile.payload.data.displayName, "");
+      assert.equal(secondProfile.payload.data.displayName, "second-user");
+      assert.notEqual(secondProfile.payload.data.displayName, "第一个账号");
 
       const privateConversation = await rawRequest(
         baseUrl,

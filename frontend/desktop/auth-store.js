@@ -125,10 +125,24 @@ function selectAuthenticationSession(stored, fallbackServerUrl) {
   return { serverUrl: fallback, token: "" };
 }
 
+function shouldKeepRoutedConnection(candidate, previous) {
+  if (
+    !candidate?.spaceId ||
+    !candidate.localNodeId ||
+    candidate.localNodeId !== candidate.activeNodeId
+  ) {
+    return false;
+  }
+  if (!previous?.spaceId) return true;
+  return candidate.spaceId === previous.spaceId &&
+    Number(candidate.epoch) >= Number(previous.epoch);
+}
+
 module.exports = {
   AuthStore,
   isDirectMobileHubUrl,
   normalizeServerUrl,
   sanitizeRouting,
-  selectAuthenticationSession
+  selectAuthenticationSession,
+  shouldKeepRoutedConnection
 };

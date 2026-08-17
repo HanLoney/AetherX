@@ -14,6 +14,13 @@ function registerPeerRoutes(
     replicationScheduler
   }
 ) {
+  router.add(
+    "GET",
+    "/api/v1/peer/status",
+    ({ userId }) => ({ data: clusterService.status(userId) }),
+    { peer: true, parseBody: false, allowDuringClusterTransition: true }
+  );
+
   if (replicationScheduler) {
     router.add(
       "POST",

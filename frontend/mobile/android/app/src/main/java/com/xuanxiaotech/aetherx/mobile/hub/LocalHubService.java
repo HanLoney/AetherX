@@ -11,6 +11,9 @@ import org.json.JSONObject;
 
 import android.util.Base64;
 
+import com.xuanxiaotech.aetherx.mobile.BuildConfig;
+import com.xuanxiaotech.aetherx.mobile.SecureSessionPlugin;
+
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -72,6 +75,12 @@ public final class LocalHubService {
         return status();
     }
 
+    public synchronized int ensureNetworkReachable() {
+        int port = networkServer.ensureReachable();
+        running = true;
+        return port;
+    }
+
     public JSONObject startAndResumePendingSwitch() throws JSONException {
         JSONObject current = start();
         JSONObject pending = database.pendingSwitchExchange();
@@ -98,7 +107,10 @@ public final class LocalHubService {
     ) {
         if (!configured) return false;
         if (pending) return true;
-        if (!("stable".equals(state) || "forced_active".equals(state))) return true;
+        // A peer-initiated switch is recovered by the active Hub. Without a
+        // locally persisted exchange, this standby must wait instead of
+        // starting an unrelated mobile-initiated handback.
+        if (!("stable".equals(state) || "forced_active".equals(state))) return false;
         return !"completed".equals(bootstrapStatus);
     }
 
@@ -128,6 +140,7 @@ public final class LocalHubService {
             .put("networkPort", networkPort)
             .put("networkEndpoints", networkServer.endpoints())
             .put("peerEndpoints", database.peerEndpoints())
+            .put("allowInsecureLan", BuildConfig.ALLOW_INSECURE_LAN)
             .put("batteryOptimizationExempt", batteryOptimizationExempt())
             .put("synchronization", synchronizationStatus());
     }
@@ -254,6 +267,160 @@ public final class LocalHubService {
             .put("hasMore", hasMore);
     }
 
+    public JSONObject peerOperations(String originNodeId, long after, int limit) throws JSONException {
+        ensureRunning();
+        String origin = String.valueOf(originNodeId == null ? "" : originNodeId).trim();
+        if (origin.isEmpty()) throw new IllegalArgumentException("origin is required");
+        long normalizedAfter = Math.max(0, after);
+        int boundedLimit = Math.max(1, Math.min(limit, 200));
+        JSONArray operations = database.listOperationsAfter(origin, normalizedAfter, boundedLimit);
+        long nextAfter = operations.length() == 0
+            ? normalizedAfter
+            : operations.getJSONObject(operations.length() - 1).getLong("originSequence");
+        long headSequence = database.operationHead(origin).getLong("originSequence");
+        return new JSONObject()
+            .put("originNodeId", origin)
+            .put("after", normalizedAfter)
+            .put("nextAfter", nextAfter)
+            .put("headSequence", headSequence)
+            .put("hasMore", nextAfter < headSequence)
+            .put("operations", operations);
+    }
+
+    public JSONObject peerHello(JSONObject input) throws Exception {
+        ensureRunning();
+        JSONObject current = status();
+        JSONObject secrets = secretStore.load();
+        if (!current.optBoolean("configured", false) || secrets == null) {
+            throw new IllegalStateException("LOCAL_HUB_NOT_CONFIGURED");
+        }
+        if (input.optInt("protocolVersion", -1) != LocalHubDatabase.PROTOCOL_VERSION) {
+            throw new IllegalStateException("PEER_PROTOCOL_INCOMPATIBLE");
+        }
+        if (input.optInt("schemaVersion", -1) != LocalHubDatabase.NODE_SCHEMA_VERSION) {
+            throw new IllegalStateException("PEER_SCHEMA_INCOMPATIBLE");
+        }
+        if (!current.getString("spaceId").equals(input.optString("spaceId"))) {
+            throw new IllegalStateException("PEER_SPACE_MISMATCH");
+        }
+        if (!secrets.optString("peerNodeId").equals(input.optString("nodeId"))) {
+            throw new IllegalStateException("PEER_IDENTITY_MISMATCH");
+        }
+        if (current.getLong("epoch") != input.optLong("epoch", -1)) {
+            throw new IllegalStateException("PEER_EPOCH_MISMATCH");
+        }
+        if (!current.getString("activeNodeId").equals(input.optString("activeNodeId"))) {
+            throw new IllegalStateException("PEER_ACTIVE_NODE_MISMATCH");
+        }
+        String localNodeId = current.getString("localNodeId");
+        JSONObject head = database.operationHead(localNodeId);
+        return new JSONObject()
+            .put("protocolVersion", LocalHubDatabase.PROTOCOL_VERSION)
+            .put("schemaVersion", LocalHubDatabase.NODE_SCHEMA_VERSION)
+            .put("spaceId", current.getString("spaceId"))
+            .put("nodeId", localNodeId)
+            .put("peerNodeId", input.getString("nodeId"))
+            .put("epoch", current.getLong("epoch"))
+            .put("activeNodeId", current.getString("activeNodeId"))
+            .put("state", current.getString("state"))
+            .put("watermarks", new JSONObject().put(localNodeId, head.getLong("originSequence")))
+            .put("recordsRoot", JSONObject.NULL)
+            .put("pendingBlobCount", current.getLong("pendingMediaCount"))
+            .put("capabilities", new JSONArray()
+                .put("operation-v1")
+                .put("acknowledgement-v1")
+                .put("sync-complete-v1")
+                .put("switch-preflight-v1"));
+    }
+
+    public JSONObject peerAcknowledgements(JSONObject input) throws Exception {
+        ensureRunning();
+        JSONArray acknowledgements = input.optJSONArray("acknowledgements");
+        if (acknowledgements == null || acknowledgements.length() == 0) {
+            throw new IllegalArgumentException("acknowledgements is required");
+        }
+        JSONObject current = status();
+        JSONObject secrets = secretStore.load();
+        JSONArray accepted = new JSONArray();
+        for (int index = 0; index < acknowledgements.length(); index += 1) {
+            JSONObject acknowledgement = acknowledgements.getJSONObject(index);
+            String originNodeId = acknowledgement.optString("originNodeId");
+            JSONObject head = database.operationHead(originNodeId);
+            if (!current.getString("localNodeId").equals(originNodeId) ||
+                head.getLong("originSequence") != acknowledgement.optLong("contiguousSequence", -1) ||
+                !head.getString("operationHash").equals(acknowledgement.optString("operationHash"))) {
+                throw new IllegalStateException("PEER_ACK_HASH_MISMATCH");
+            }
+            accepted.put(new JSONObject()
+                .put("originNodeId", originNodeId)
+                .put("contiguousSequence", head.getLong("originSequence"))
+                .put("operationHash", head.getString("operationHash"))
+                .put("acknowledgedAt", System.currentTimeMillis()));
+        }
+        return new JSONObject()
+            .put("peerNodeId", secrets == null ? "" : secrets.optString("peerNodeId"))
+            .put("acknowledgements", accepted);
+    }
+
+    public JSONObject peerClientSession() throws Exception {
+        ensureRunning();
+        JSONObject current = status();
+        JSONObject bootstrap = current.optJSONObject("bootstrap");
+        if (!"active".equals(current.optString("role")) ||
+            !"stable".equals(current.optString("state")) ||
+            bootstrap == null || !"completed".equals(bootstrap.optString("status"))) {
+            throw new IllegalStateException("HUB_NOT_ACTIVE");
+        }
+        JSONObject stored = SecureSessionPlugin.loadStoredSession(appContext);
+        JSONObject user = stored == null ? null : stored.optJSONObject("user");
+        if (user == null || user.optString("id").isEmpty() || user.optString("username").isEmpty()) {
+            throw new IllegalStateException("LOCAL_HUB_SESSION_UNAVAILABLE");
+        }
+        return new JSONObject()
+            .put("user", user)
+            .put("spaceId", current.getString("spaceId"))
+            .put("nodeId", current.getString("localNodeId"))
+            .put("activeNodeId", current.getString("activeNodeId"))
+            .put("epoch", current.getLong("epoch"));
+    }
+
+    public JSONObject peerMediaManifest(String cursor, int limit) throws JSONException {
+        ensureRunning();
+        JSONObject current = status();
+        if (!current.getString("localNodeId").equals(current.getString("activeNodeId"))) {
+            throw new IllegalStateException("MEDIA_SOURCE_NOT_ACTIVE");
+        }
+        int boundedLimit = Math.max(1, Math.min(limit, 200));
+        String after = String.valueOf(cursor == null ? "" : cursor);
+        JSONArray blobs = database.verifiedMediaBlobs();
+        JSONArray items = new JSONArray();
+        String nextCursor = after;
+        boolean hasMore = false;
+        for (int index = 0; index < blobs.length(); index += 1) {
+            JSONObject blob = blobs.getJSONObject(index);
+            String mediaId = blob.getString("mediaId");
+            if (mediaId.compareTo(after) <= 0) continue;
+            if (items.length() >= boundedLimit) {
+                hasMore = true;
+                break;
+            }
+            items.put(new JSONObject()
+                .put("id", mediaId)
+                .put("mimeType", blob.getString("mimeType"))
+                .put("fileName", blob.getString("fileName"))
+                .put("byteSize", blob.getLong("byteSize"))
+                .put("contentHash", blob.getString("contentHash"))
+                .put("createdAt", blob.optLong("createdAt", 0)));
+            nextCursor = mediaId;
+        }
+        return new JSONObject()
+            .put("spaceId", current.getString("spaceId"))
+            .put("sourceNodeId", current.getString("localNodeId"))
+            .put("items", items)
+            .put("hasMore", hasMore)
+            .put("nextCursor", nextCursor);
+    }
+
     public JSONObject verifyIntegrity() throws JSONException {
         ensureRunning();
         return database.verifyIntegrity();
@@ -290,6 +457,18 @@ public final class LocalHubService {
             throw error;
         } catch (Exception error) {
             throw new IllegalStateException("LOCAL_HUB_KEEPALIVE_FAILED", error);
+        }
+    }
+
+    public JSONObject acceptDiscoveredPeerEndpoint(String endpoint) {
+        ensureRunning();
+        try {
+            return new LocalHubPeerSync(database, secretStore, blobStore)
+                .acceptDiscoveredEndpoint(endpoint);
+        } catch (IllegalStateException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("LOCAL_HUB_DISCOVERY_FAILED", error);
         }
     }
 
@@ -436,6 +615,9 @@ public final class LocalHubService {
         return new JSONObject()
             .put("mediaId", mediaId)
             .put("mimeType", blob.getString("mimeType"))
+            .put("fileName", blob.getString("fileName"))
+            .put("byteSize", blob.getLong("byteSize"))
+            .put("contentHash", blob.getString("contentHash"))
             .put("path", path)
             .put("uri", "file://" + path);
     }

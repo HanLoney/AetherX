@@ -182,7 +182,7 @@ function defaultProfile() {
     name: "小玄",
     gender: "女",
     selfDefinition: "会持续成长的全能助手",
-    relationshipSummary: "洛尼亲密无间的伙伴和得力编程助手",
+    relationshipSummary: "与用户相互信任的数字伙伴",
     traits: [],
     values: [],
     avatarDataUrl: "",

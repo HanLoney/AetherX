@@ -1,6 +1,7 @@
 const { HttpError } = require("../../lib/http-error");
 const { sha256Canonical } = require("../replication/operation-codec");
 const { CLUSTER_PROTOCOL_VERSION } = require("../hub-cluster/cluster-service");
+const { isPristineAccountProfile } = require("../auth/account-defaults");
 const {
   normalizeHubEndpoints,
   unwrapHubPairingEnvelope
@@ -188,6 +189,7 @@ class HubImportService {
     ).all().map((row) => row.name);
     for (const table of tables) {
       if (LOCAL_TABLES.has(table) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) continue;
+      if (isPristineAccountProfile(this.database, table, userId)) continue;
       const columns = this.database.prepare(`PRAGMA table_info("${table}")`)
         .all().map((column) => column.name);
       if (!columns.includes("user_id")) continue;
@@ -197,6 +199,7 @@ class HubImportService {
       if (count > 0) throw localDataConflict();
     }
   }
+
 }
 
 function normalizePayload(payload) {

@@ -246,6 +246,14 @@ paths:
       responses:
         "200": { description: 本 Hub 的复制能力与连续 Watermark }
         "409": { description: Space、协议、Schema、epoch 或活动节点不一致 }
+  /peer/status:
+    get:
+      security:
+        - peerHmac: []
+      summary: 查询对端 Hub 的集群和切换状态
+      description: 供切换恢复流程确认对端实际阶段；切换事务进行中也允许读取。
+      responses:
+        "200": { description: 当前节点角色、活动节点、epoch、集群状态和切换事务 }
   /peer/client-sessions/mint:
     post:
       security:
@@ -668,6 +676,7 @@ paths:
       summary: 撤销设备及其访问令牌
       responses:
         "204": { description: 已撤销 }
+        "409": { description: 设备关联的 Hub 仍处于活动状态，必须先切换 Hub }
   /devices/{id}/record:
     parameters:
       - in: path
