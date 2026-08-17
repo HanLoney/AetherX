@@ -1,6 +1,6 @@
 {
   "name": "aetherx-launcher",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "AetherX Windows deployment and health control center",
   "main": "main.js",
   "author": "Xuanxiaotech",
@@ -11,6 +11,7 @@
     "directory": "frontend/launcher"
   },
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "start": "electron .",
     "test": "node --test",
     "smoke:hub": "node scripts/smoke-hub.js",
@@ -30,6 +31,7 @@
     "appId": "com.xuanxiaotech.aetherx.launcher",
     "productName": "AetherX 启动器",
     "asar": true,
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"
     },
