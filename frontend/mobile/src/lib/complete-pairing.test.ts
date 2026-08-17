@@ -89,7 +89,7 @@ describe("complete device pairing", () => {
     await expect(detectReachablePairingServer(
       ["http://127.0.0.1:4318", "https://hub.example.com"],
       async () => { throw new Error("offline"); }
-    )).rejects.toThrow("已尝试 USB、局域网和 Anywhere");
+    )).rejects.toThrow("已尝试局域网和 Anywhere");
   });
 
   it("leaves legacy one-purpose pairing codes untouched", async () => {

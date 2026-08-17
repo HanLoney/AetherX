@@ -99,6 +99,11 @@ export class SyncCoordinator {
             await this.deliverCommand(JSON.parse(event.data) as Record<string, unknown>);
             return;
           }
+          if (event.event === "cluster-change") {
+            const change = JSON.parse(event.data) as Record<string, unknown>;
+            await this.onCommand({ ...change, type: "cluster-change" });
+            return;
+          }
           if (event.event !== "change") return;
           const change = JSON.parse(event.data) as SyncChange;
           if (change.seq <= this.cursor) return;

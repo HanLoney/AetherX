@@ -83,6 +83,35 @@ public final class LocalHubPeerSync {
             .put("checkedAt", System.currentTimeMillis());
     }
 
+    public JSONObject acceptDiscoveredEndpoint(String endpoint) throws Exception {
+        JSONObject config = database.replicationConfig();
+        JSONObject secrets = requireSecrets();
+        JSONObject credential = secrets.getJSONObject("peerCredential");
+        JSONObject peer = hello(endpoint, config, credential, secrets);
+        if (!config.getString("spaceId").equals(peer.optString("spaceId")) ||
+            !config.getString("peerNodeId").equals(peer.optString("nodeId"))) {
+            throw new IllegalStateException("PEER_IDENTITY_MISMATCH");
+        }
+        JSONArray merged = new JSONArray().put(new JSONObject()
+            .put("transport", "lan")
+            .put("address", endpoint)
+            .put("priority", 600));
+        JSONArray existing = database.peerEndpoints();
+        for (int index = 0; index < existing.length() && merged.length() < 8; index += 1) {
+            JSONObject item = existing.getJSONObject(index);
+            if (!endpoint.equals(item.optString("address"))) merged.put(item);
+        }
+        database.updatePeerEndpoints(merged);
+        selectedEndpoint = endpoint;
+        rememberHealthyEndpoint(endpoint);
+        return new JSONObject()
+            .put("nodeId", config.getString("peerNodeId"))
+            .put("address", endpoint)
+            .put("transport", "lan")
+            .put("peer", peer)
+            .put("discoveredAt", System.currentTimeMillis());
+    }
+
     public JSONObject run() throws Exception {
         JSONObject config = database.replicationConfig();
         if ("active".equals(config.optString("role"))) return pushActiveOperations(config);
@@ -1404,6 +1433,14 @@ public final class LocalHubPeerSync {
             !"final_sync".equals(status.optString("state")) ||
             !transitionId.equals(status.optString("transitionId")) ||
             !status.optString("localNodeId").equals(status.optString("transitionTargetNodeId"))) {
+            Log.e(TAG, "Final sync state conflict: " + new JSONObject()
+                .put("peerNodeId", config.optString("peerNodeId"))
+                .put("localNodeId", status.optString("localNodeId"))
+                .put("activeNodeId", status.optString("activeNodeId"))
+                .put("state", status.optString("state"))
+                .put("requestedTransitionId", transitionId)
+                .put("transitionId", status.optString("transitionId"))
+                .put("transitionTargetNodeId", status.optString("transitionTargetNodeId")));
             throw new IllegalStateException("SWITCH_STATE_CONFLICT");
         }
         return run();

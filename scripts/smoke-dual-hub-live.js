@@ -109,6 +109,11 @@ function hubSummary(hub) {
     active: hub.active,
     ready: hub.ready,
     status: hub.status,
+    hubOnline: hub.hubOnline,
+    hubLastSeenAt: hub.hubLastSeenAt,
+    hubAgeMs: hub.hubAgeMs,
+    reachability: hub.reachability,
+    replication: hub.replication,
     syncStatus: hub.syncStatus,
     progress: hub.progress,
     operations: hub.operations,
@@ -280,11 +285,8 @@ async function main() {
     }))
   };
 
-  if (!mobileNode?.token) {
-    throw new Error("No persisted mobile Hub session is available for authenticated validation.");
-  }
   if (process.env.AETHERX_SWITCH_CYCLE === "1") {
-    const hub = mobileHubs?.hubs?.find((item) => item.ready);
+    const hub = mobileHubs?.hubs?.find((item) => item.ready && item.hubOnline === true);
     if (!hub) throw new Error("No ready mobile Hub is available for a switch cycle.");
     result.switchCycle = await runSwitchCycle({
       desktopBaseUrl,
@@ -294,17 +296,56 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  let mobileCluster;
-  try {
-    mobileCluster = await request(
-      mobileUrl,
-      mobileNode.token,
-      "/api/v1/cluster/status"
-    );
-  } catch (error) {
-    if (!/HUB_NOT_ACTIVE/.test(error.message)) throw error;
-    result.mobile.standbyProtected = true;
+  if (process.env.AETHERX_SWITCH_TO_MOBILE === "1") {
+    const hub = mobileHubs?.hubs?.find((item) => item.ready && item.hubOnline === true);
+    if (!hub) throw new Error("No ready mobile Hub is available.");
+    const switchPath = `/api/v1/cluster/mobile-hubs/${encodeURIComponent(hub.id)}/switch`;
+    const requested = await request(desktopBaseUrl, desktopToken, switchPath, {
+      method: "POST",
+      body: {},
+      timeoutMs: 300_000
+    });
+    const active = await waitFor("switch to mobile Hub", async () =>
+      request(desktopBaseUrl, desktopToken, "/api/v1/cluster/status"),
+    (cluster) => cluster?.state === "stable" && cluster.activeNodeId === hub.id);
+    result.switchToMobile = {
+      requested,
+      activeNodeId: active.activeNodeId,
+      epoch: active.epoch,
+      state: active.state
+    };
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  let mobileCluster;
+  if (mobileNode?.token) {
+    try {
+      mobileCluster = await request(
+        mobileUrl,
+        mobileNode.token,
+        "/api/v1/cluster/status",
+        { timeoutMs: 20_000 }
+      );
+    } catch (error) {
+      if (!/HUB_NOT_ACTIVE/.test(error.message)) throw error;
+      result.mobile.standbyProtected = true;
+    }
+  } else {
+    result.mobile.standbyProtected = true;
+  }
+  if (!mobileCluster) {
+    const readyMobileHub = mobileHubs?.hubs?.find((hub) => hub.ready && hub.hubOnline === true);
+    result.agreement = {
+      sameSpace: Boolean(readyMobileHub && desktopCluster.spaceId),
+      sameActiveNode: Boolean(readyMobileHub && desktopCluster.activeNodeId),
+      sameEpoch: Boolean(readyMobileHub && Number(desktopCluster.epoch) >= 1),
+      stable: desktopCluster.state === "stable" && Boolean(readyMobileHub),
+      desktopControlPlaneValidated: true
+    };
+    console.log(JSON.stringify(result, null, 2));
+    if (Object.values(result.agreement).some((value) => value !== true)) {
+      throw new Error("Desktop control-plane Hub authority state is not ready.");
+    }
     return;
   }
   result.mobile.cluster = clusterSummary(mobileCluster);

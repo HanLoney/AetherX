@@ -3,7 +3,6 @@ package com.xuanxiaotech.aetherx.mobile;
 import android.os.Bundle;
 import android.util.Log;
 import android.content.Intent;
-import android.webkit.WebSettings;
 
 import com.getcapacitor.BridgeActivity;
 import com.xuanxiaotech.aetherx.mobile.hub.LocalHubForegroundService;
@@ -17,6 +16,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SecureSessionPlugin.class);
         registerPlugin(LocalHubPlugin.class);
 
+        super.onCreate(savedInstanceState);
+
         startForegroundService(new Intent(this, LocalHubForegroundService.class));
 
         // Bring up the native listener independently from the WebView. Desktop clients can
@@ -29,13 +30,5 @@ public class MainActivity extends BridgeActivity {
                 Log.e(TAG, "Failed to bootstrap Android Local Hub", error);
             }
         }, "aetherx-local-hub-bootstrap").start();
-
-        super.onCreate(savedInstanceState);
-
-        if (BuildConfig.ALLOW_INSECURE_LAN) {
-            getBridge().getWebView().getSettings().setMixedContentMode(
-                WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            );
-        }
     }
 }

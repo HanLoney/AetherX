@@ -90,3 +90,20 @@ test("mobile Hub status falls back to cached cluster when live requests fail", a
   assert.equal(result.cluster, cachedCluster);
   assert.equal(result.hubs[0].active, true);
 });
+
+test("revoked mobile Hubs are excluded from synthesized desktop status", () => {
+  const hubs = mergeMobileHubStatus({
+    activeNodeId: "desktop-1",
+    nodes: [
+      { id: "android-old", platform: "android", status: "standby", revokedAt: 100 },
+      { id: "android-current", platform: "android", status: "standby", revokedAt: null }
+    ]
+  }, [{
+    id: "android-old",
+    platform: "android",
+    status: "standby",
+    revokedAt: 100
+  }]);
+
+  assert.deepEqual(hubs.map((hub) => hub.id), ["android-current"]);
+});

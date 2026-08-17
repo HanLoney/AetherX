@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+
 public class LocalHubDatabaseTest {
     @Test
     public void quoteJsonStringMatchesJavaScriptJsonStringify() {
@@ -27,6 +28,9 @@ public class LocalHubDatabaseTest {
         assertTrue(LocalHubService.requiresRecovery(true, "stable", "", false));
         assertTrue(LocalHubService.requiresRecovery(true, "stable", "restored", false));
         assertTrue(LocalHubService.requiresRecovery(true, "stable", "completed", true));
-        assertTrue(LocalHubService.requiresRecovery(true, "switching", "completed", false));
+        assertFalse(LocalHubService.requiresRecovery(true, "integrity_check", "completed", false));
+        assertFalse(LocalHubService.requiresRecovery(true, "committing_switch", "completed", false));
+        assertTrue(LocalHubService.requiresRecovery(true, "integrity_check", "completed", true));
     }
+
 }
