@@ -13,6 +13,7 @@
   "bugs": "https://github.com/HanLoney/AetherX/issues",
   "homepage": "https://github.com/HanLoney/AetherX#readme",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "start": "electron .",
     "test": "node --test",
     "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
