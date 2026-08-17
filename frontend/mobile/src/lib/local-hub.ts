@@ -19,6 +19,7 @@ export interface LocalHubStatus {
     priority: number;
     certificateFingerprint: string;
   }>;
+  allowInsecureLan: boolean;
   batteryOptimizationExempt: boolean;
   nodeId: string;
   localNodeId: string;
@@ -78,6 +79,10 @@ interface LocalHubPlugin {
   addListener(
     eventName: "networkRequest",
     listener: (request: LocalHubNetworkRequest) => void
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "peerEndpointDiscovered",
+    listener: (endpoint: { nodeId: string; address: string; transport: "lan" }) => void
   ): Promise<PluginListenerHandle>;
   start(): Promise<LocalHubStatus>;
   stop(): Promise<LocalHubStatus>;
@@ -190,10 +195,11 @@ let activeReplicationTimer: ReturnType<typeof setTimeout> | null = null;
 let activeReplicationInFlight: Promise<void> | null = null;
 let activeReplicationRequested = false;
 let networkListener: Promise<PluginListenerHandle> | null = null;
+let discoveryListener: Promise<PluginListenerHandle> | null = null;
 
 function registerNetworkBridge() {
-  if (Capacitor.getPlatform() !== "android" || networkListener) return;
-  networkListener = LocalHub.addListener("networkRequest", (request) => {
+  if (Capacitor.getPlatform() !== "android") return;
+  if (!networkListener) networkListener = LocalHub.addListener("networkRequest", (request) => {
     void import("./local-hub-network-api")
       .then(({ dispatchLocalHubNetworkRequest }) => dispatchLocalHubNetworkRequest(request))
       .then((data) => LocalHub.respondNetworkRequest({
@@ -213,6 +219,15 @@ function registerNetworkBridge() {
         });
       });
   });
+  if (!discoveryListener) discoveryListener = LocalHub.addListener(
+    "peerEndpointDiscovered",
+    (endpoint) => {
+      void refreshLocalHub().catch(() => undefined);
+      window.dispatchEvent(new CustomEvent("aetherx:peer-endpoint-discovered", {
+        detail: endpoint
+      }));
+    }
+  );
 }
 
 function scheduleActiveReplication(delay = ACTIVE_REPLICATION_DEBOUNCE_MS) {

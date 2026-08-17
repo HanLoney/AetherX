@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { initializeAccountProfiles } = require("./account-defaults");
 
 class AuthRepository {
   constructor(database) {
@@ -40,6 +41,10 @@ class AuthRepository {
       )
       .run(id, userId, tokenHash, now, now, expiresAt);
     return { id, userId, createdAt: now, lastUsedAt: now, expiresAt };
+  }
+
+  initializeAccountProfiles(userId, displayName, now) {
+    initializeAccountProfiles(this.database, userId, displayName, now);
   }
 
   findSession(tokenHash) {

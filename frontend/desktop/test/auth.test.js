@@ -4,7 +4,38 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { XuanApiClient } = require("../api-client");
-const { AuthStore, selectAuthenticationSession } = require("../auth-store");
+const {
+  AuthStore,
+  selectAuthenticationSession,
+  shouldKeepRoutedConnection
+} = require("../auth-store");
+
+test("desktop preserves authenticated active-Hub routes without accepting older epochs", () => {
+  const previous = {
+    spaceId: "space-1",
+    activeNodeId: "desktop",
+    localNodeId: "desktop",
+    epoch: 43
+  };
+  assert.equal(shouldKeepRoutedConnection({
+    spaceId: "space-1",
+    activeNodeId: "mobile",
+    localNodeId: "mobile",
+    epoch: 44
+  }, previous), true);
+  assert.equal(shouldKeepRoutedConnection({
+    spaceId: "space-1",
+    activeNodeId: "mobile",
+    localNodeId: "mobile",
+    epoch: 42
+  }, previous), false);
+  assert.equal(shouldKeepRoutedConnection({
+    spaceId: "space-1",
+    activeNodeId: "mobile",
+    localNodeId: "desktop",
+    epoch: 44
+  }, previous), false);
+});
 
 test("API client authenticates with a bearer token and never sends a user id header", async () => {
   const originalFetch = global.fetch;

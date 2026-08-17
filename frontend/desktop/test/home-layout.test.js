@@ -30,6 +30,12 @@ test("single conversation mode exposes no conversation selector", () => {
   assert.match(css, /\.provider-card\s*\{[^}]*flex:\s*0 0 auto;/s);
 });
 
+test("desktop welcome addresses the authenticated account instead of a hard-coded user", () => {
+  assert.match(html, /id="welcomeTitle"/);
+  assert.doesNotMatch(html, /嗨，洛尼。今天想一起做什么？/);
+  assert.match(javascript, /welcomeTitle\.textContent = `嗨，\$\{name\}。今天想一起做什么？`/);
+});
+
 test("desktop searches the primary conversation in a dedicated result view", () => {
   assert.match(html, /id="messageSearchBtn"/);
   assert.match(html, /id="messageSearchView"/);
@@ -128,6 +134,7 @@ test("desktop integrates the Hub connection matrix instead of relying on the lau
   assert.ok(html.indexOf('src="connection-center.js"') < html.indexOf('src="home.js"'));
   assert.match(preload, /getConnectionStatus:\s*\(\) => ipcRenderer\.invoke\("connections:status"\)/);
   assert.match(main, /ipcMain\.handle\("connections:status", \(\) => loadConnectionStatus\(\)\)/);
+  assert.match(main, /localApi \? settleStatus\(localApi\.listMobileHubs\(\), \{ hubs: \[\] \}\)/);
   assert.match(javascript, /elements\.connectionCenterBtn\.addEventListener\("click"/);
   assert.match(javascript, /isHubRecoveryActionable\(state\.hubStatus\)/);
   assert.match(javascript, /connectionCenter\.open\(\)/);

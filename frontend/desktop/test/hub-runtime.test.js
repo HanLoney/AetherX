@@ -25,6 +25,9 @@ test("desktop Hub startup is independent from the currently routed client Hub", 
   assert.match(mainSource, /const localHubServerUrl = "http:\/\/127\.0\.0\.1:4318";/);
   assert.match(startup, /baseUrl: localHubServerUrl/);
   assert.doesNotMatch(startup, /baseUrl: api\.baseUrl/);
+  assert.match(startup, /!app\.isPackaged/);
+  assert.match(startup, /process\.env\.AETHERX_ADB_REVERSE/);
+  assert.doesNotMatch(startup, /enableAdbReverse:\s*true/);
 });
 
 test("hub paths preserve development data and isolate packaged data", () => {

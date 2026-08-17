@@ -115,7 +115,7 @@
     const cluster = status.cluster || null;
     const computer = status.computerHub || {};
     const mobileHubs = Array.isArray(status.mobileHubs) ? status.mobileHubs : [];
-    const mobile = mobileHubs.find((hub) => hub.active) || mobileHubs[0] || null;
+    const mobile = selectMobileHub(mobileHubs);
     const mobileClient = mobile?.client || null;
     const activeHubType = computer.active ? "电脑 Hub" : mobile?.active ? "手机 Hub" : "当前 Hub";
     const activeHubName = status.activeHub?.name || (computer.active ? "电脑 Hub" : mobile?.name) || "尚未确定";
@@ -129,8 +129,8 @@
       ? { state: "error", title: "电脑 Hub 不可用", detail: "桌面端无法连接本机中枢" }
       : mobile && !mobileOnline
         ? { state: "warning", title: "电脑链路正常，手机端离线", detail: "手机重新打开后会继续同步备用副本" }
-        : sync.state === "syncing"
-          ? { state: "warning", title: "双 Hub 正在同步", detail: sync.detail }
+        : mobile && sync.state !== "healthy"
+          ? { state: "warning", title: sync.title, detail: sync.detail }
           : { state: "healthy", title: "中枢链路稳定", detail: mobile ? "电脑与手机 Hub 状态已对齐" : "电脑内置 Hub 正常运行" };
 
     elements.overallDot.className = `connection-overall-dot ${overall.state}`;
@@ -141,7 +141,7 @@
     elements.syncState.textContent = sync.title;
 
     renderComputerHub(elements, computer);
-    renderMobileHub(elements, mobile);
+    renderMobileHub(elements, mobile, sync);
     renderBridge(elements, sync, mobile);
     renderDesktopClient(elements, status.desktop || {}, activeHubLabel);
     renderAnywhere(elements, status.network || {});
@@ -161,7 +161,7 @@
     elements.computerIdentity.textContent = shortIdentity(computer.node?.name, computer.node?.id);
   }
 
-  function renderMobileHub(elements, mobile) {
+  function renderMobileHub(elements, mobile, sync) {
     if (!mobile) {
       elements.mobileNode.dataset.state = "offline";
       elements.mobileRole.textContent = "尚未配对";
@@ -172,14 +172,20 @@
       return;
     }
     const clientStatus = String(mobile.client?.status || "offline");
-    const online = !["offline", "incompatible"].includes(clientStatus);
+    const online = mobile.hubOnline === true;
     const progress = normalizedProgress(mobile);
-    elements.mobileNode.dataset.state = online ? progress >= 100 ? "healthy" : "warning" : "offline";
+    elements.mobileNode.dataset.state = online ? sync?.state === "healthy" ? "healthy" : "warning" : "offline";
     elements.mobileRole.textContent = mobile.active ? "当前活动" : mobile.ready ? "备用副本" : "准备中";
     elements.mobileHealth.textContent = mobile.client
       ? clientStatusLabel(clientStatus)
       : "客户端未上报";
-    elements.mobileProgress.textContent = progress >= 100 ? "已同步" : progress > 0 ? `同步中 · ${progress}%` : "等待同步";
+    elements.mobileProgress.textContent = !online
+      ? "同步状态待确认"
+      : sync?.state === "healthy"
+        ? "已同步"
+        : progress > 0
+          ? `同步中 · ${progress}%`
+          : "等待同步";
     const mediaBytes = Number(mobile.progress?.mediaBytes || 0);
     const mediaTotal = Number(mobile.progress?.mediaTotalBytes || 0);
     elements.mobileMedia.textContent = mediaTotal > 0
@@ -204,6 +210,7 @@
   function renderAnywhere(elements, network) {
     const tailscale = network.tailscale || {};
     const remote = network.remote || {};
+    const lanAccess = network.lanAccess || {};
     const lan = (network.endpoints || []).filter((item) => item.transport === "lan");
     const state = remote.healthy ? "healthy" : tailscale.connected || lan.length ? "warning" : "offline";
     elements.anywhereCard.dataset.state = state;
@@ -215,6 +222,10 @@
       elements.anywhereTitle.textContent = "Tailscale 已连接";
       elements.anywhereDetail.textContent = remote.enabled ? "远程入口等待 Hub" : "尚未开启 AetherX HTTPS 入口";
       elements.anywhereState.textContent = "待开启";
+    } else if (lan.length && lanAccess.status === "public") {
+      elements.anywhereTitle.textContent = "当前 Wi-Fi 为公用网络";
+      elements.anywhereDetail.textContent = "可信家庭网络请设为专用，跨网络请启用 Anywhere";
+      elements.anywhereState.textContent = "LAN 已阻止";
     } else if (lan.length) {
       elements.anywhereTitle.textContent = "局域网可用";
       elements.anywhereDetail.textContent = "同一 Wi-Fi 下可直连电脑 Hub";
@@ -277,10 +288,32 @@
       return { state: "syncing", title: "安全切换中", detail: String(cluster.state), progress: normalizedProgress(mobile) };
     }
     const progress = normalizedProgress(mobile);
-    const caughtUp = mobile.replication?.caughtUp === true || (mobile.ready && progress >= 100);
+    if (mobile.hubOnline !== true) {
+      return {
+        state: "waiting",
+        title: "等待手机重连",
+        detail: "当前无法验证双方数据是否仍然一致",
+        progress
+      };
+    }
+    const caughtUp = mobile.replication?.confirmedCurrent === true;
     if (caughtUp) return { state: "healthy", title: "已同步", detail: "SIGNED OPERATION / BLOB", progress: 100 };
     if (progress > 0) return { state: "syncing", title: `同步中 ${progress}%`, detail: "正在追平手机 Hub", progress };
     return { state: "waiting", title: "等待同步", detail: "手机 Hub 尚未追平", progress: 0 };
+  }
+
+  function selectMobileHub(hubs) {
+    const available = (Array.isArray(hubs) ? hubs : [])
+      .filter((hub) => hub && hub.revokedAt == null);
+    return available.find((hub) => hub.active) || available
+      .sort((left, right) => {
+        const leftOnline = left.hubOnline === true;
+        const rightOnline = right.hubOnline === true;
+        if (leftOnline !== rightOnline) return rightOnline ? 1 : -1;
+        const leftSeen = Number(left.hubLastSeenAt || left.lastSeenAt || 0);
+        const rightSeen = Number(right.hubLastSeenAt || right.lastSeenAt || 0);
+        return rightSeen - leftSeen;
+      })[0] || null;
   }
 
   function normalizedProgress(mobile) {
@@ -317,6 +350,6 @@
 
   global.AetherConnectionCenter = AetherConnectionCenter;
   if (typeof module !== "undefined") {
-    module.exports = { deriveSyncState, normalizedProgress };
+    module.exports = { deriveSyncState, normalizedProgress, selectMobileHub };
   }
 })(typeof window !== "undefined" ? window : globalThis);

@@ -123,13 +123,25 @@ class DeviceService {
   }
 
   revokeDevice(userId, id) {
-    const device = this.repository.findDevice(userId, id);
-    if (!device) {
-      throw new HttpError(404, "DEVICE_NOT_FOUND", "设备不存在。");
-    }
-    if (device.status !== "revoked") {
-      this.repository.revokeDevice(userId, id, Date.now());
-    }
+    return this.repository.transaction(() => {
+      const device = this.repository.findDevice(userId, id);
+      if (!device) {
+        throw new HttpError(404, "DEVICE_NOT_FOUND", "设备不存在。");
+      }
+      const linkedHubs = this.repository.listLinkedHubNodes(userId, id);
+      if (linkedHubs.some((node) => Boolean(node.is_active))) {
+        throw new HttpError(
+          409,
+          "DEVICE_HUB_ACTIVE",
+          "请先切换到其他 Hub，再撤销这台设备。"
+        );
+      }
+      const now = Date.now();
+      if (device.status !== "revoked") {
+        this.repository.revokeDevice(userId, id, now);
+      }
+      this.repository.revokeLinkedHubNodes(userId, id, now);
+    });
   }
 
   deleteDeviceRecord(userId, id) {

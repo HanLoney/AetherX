@@ -148,7 +148,7 @@ const MIGRATIONS = [
       name TEXT NOT NULL DEFAULT '小玄',
       gender TEXT NOT NULL DEFAULT '女',
       self_definition TEXT NOT NULL DEFAULT '会持续成长的全能助手',
-      relationship_summary TEXT NOT NULL DEFAULT '洛尼亲密无间的伙伴和得力编程助手',
+      relationship_summary TEXT NOT NULL DEFAULT '与用户相互信任的数字伙伴',
       traits_json TEXT NOT NULL DEFAULT '[]',
       values_json TEXT NOT NULL DEFAULT '[]',
       updated_at INTEGER NOT NULL

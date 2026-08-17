@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -88,6 +89,15 @@ public final class LocalHubNetworkServer {
         throw new IllegalStateException("LOCAL_HUB_NETWORK_PORT_UNAVAILABLE");
     }
 
+    public synchronized int ensureReachable() {
+        int listeningPort = start();
+        if (probeHealth(listeningPort)) return listeningPort;
+
+        Log.w(TAG, "Android Local Hub listener is unresponsive; restarting");
+        closeListener();
+        return start();
+    }
+
     public synchronized void stop() {
         closeListener();
     }
@@ -141,24 +151,59 @@ public final class LocalHubNetworkServer {
     }
 
     private void acceptLoop() {
-        while (true) {
-            ServerSocket current = socket;
-            if (current == null || current.isClosed()) return;
-            try {
-                Socket client = current.accept();
-                client.setSoTimeout(15_000);
+        try {
+            while (true) {
+                ServerSocket current = socket;
+                if (current == null || current.isClosed()) return;
                 try {
-                    clients.execute(() -> handle(client));
-                } catch (RuntimeException error) {
-                    try { client.close(); } catch (Exception ignored) {}
-                    throw error;
+                    Socket client = current.accept();
+                    client.setSoTimeout(15_000);
+                    try {
+                        clients.execute(() -> handle(client));
+                    } catch (RuntimeException error) {
+                        try { client.close(); } catch (Exception ignored) {}
+                        throw error;
+                    }
+                } catch (SocketException error) {
+                    if (socket != current || current.isClosed()) return;
+                    Log.w(TAG, "Transient Local Hub listener failure; continuing", error);
+                } catch (Exception error) {
+                    Log.w(TAG, "Unable to accept Local Hub connection", error);
                 }
-            } catch (SocketException error) {
-                if (socket != current || current.isClosed()) return;
-                Log.w(TAG, "Transient Local Hub listener failure; continuing", error);
-            } catch (Exception error) {
-                Log.w(TAG, "Unable to accept Local Hub connection", error);
             }
+        } finally {
+            clearStoppedListener(Thread.currentThread());
+        }
+    }
+
+    private synchronized void clearStoppedListener(Thread stoppedThread) {
+        if (acceptThread != stoppedThread) return;
+        ServerSocket stoppedSocket = socket;
+        socket = null;
+        acceptThread = null;
+        port = 0;
+        if (stoppedSocket != null) {
+            try { stoppedSocket.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private boolean probeHealth(int listeningPort) {
+        try (Socket probe = new Socket()) {
+            probe.connect(new InetSocketAddress("127.0.0.1", listeningPort), 1_500);
+            probe.setSoTimeout(1_500);
+            OutputStream output = probe.getOutputStream();
+            output.write((
+                "GET /health HTTP/1.1\r\n" +
+                "Host: 127.0.0.1\r\n" +
+                "Connection: close\r\n\r\n"
+            ).getBytes(StandardCharsets.US_ASCII));
+            output.flush();
+            byte[] status = new byte[15];
+            int read = probe.getInputStream().read(status);
+            return read > 0 && new String(status, 0, read, StandardCharsets.US_ASCII)
+                .startsWith("HTTP/1.1 200");
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
@@ -180,6 +225,12 @@ public final class LocalHubNetworkServer {
                 }
                 if (request.pathname.startsWith("/api/v1/peer/")) {
                     verifyPeer(request);
+                    if ("GET".equals(request.method) &&
+                        request.pathname.startsWith("/api/v1/peer/media/") &&
+                        request.pathname.endsWith("/blob")) {
+                        servePeerMediaChunk(output, request);
+                        return;
+                    }
                     JSONObject nativeResponse = dispatchNativePeer(request);
                     if (nativeResponse != null) {
                         writeData(output, 200, nativeResponse);
@@ -254,7 +305,31 @@ public final class LocalHubNetworkServer {
         if ("GET".equals(request.method) && "/api/v1/peer/status".equals(request.pathname)) {
             return service.status();
         }
+        if ("GET".equals(request.method) && "/api/v1/peer/operations".equals(request.pathname)) {
+            return service.peerOperations(
+                queryParameter(request.path, "origin"),
+                queryLong(request.path, "after", 0),
+                (int) queryLong(request.path, "limit", 200)
+            );
+        }
+        if ("GET".equals(request.method) && "/api/v1/peer/media/manifest".equals(request.pathname)) {
+            return service.peerMediaManifest(
+                queryParameter(request.path, "cursor"),
+                (int) queryLong(request.path, "limit", 200)
+            );
+        }
         if (!"POST".equals(request.method)) return null;
+        if ("/api/v1/peer/hello".equals(request.pathname)) {
+            return service.peerHello(request.body);
+        }
+        if ("/api/v1/peer/acknowledgements".equals(request.pathname)) {
+            return service.peerAcknowledgements(request.body);
+        }
+        if ("/api/v1/peer/client-sessions/mint".equals(request.pathname)) {
+            JSONObject data = service.peerClientSession();
+            LocalHubClientSessionStore.Session session = sessionStore.issue();
+            return data.put("token", session.token).put("expiresAt", session.expiresAt);
+        }
         if ("/api/v1/peer/switch/preflight".equals(request.pathname)) {
             return service.createPeerSwitchPreflightProof();
         }
@@ -271,6 +346,58 @@ public final class LocalHubNetworkServer {
             return service.switchToPeer();
         }
         return null;
+    }
+
+    private void servePeerMediaChunk(OutputStream output, Request request) throws Exception {
+        String prefix = "/api/v1/peer/media/";
+        String suffix = "/blob";
+        String encodedMediaId = request.pathname.substring(
+            prefix.length(),
+            request.pathname.length() - suffix.length()
+        );
+        String mediaId = URLDecoder.decode(encodedMediaId, StandardCharsets.UTF_8.name());
+        JSONObject media = service.media(mediaId);
+        File file = new File(media.getString("path"));
+        long byteSize = media.getLong("byteSize");
+        long offset = queryLong(request.path, "offset", 0);
+        int length = (int) Math.min(
+            1024 * 1024,
+            queryLong(request.path, "length", 1024 * 1024)
+        );
+        if (!file.isFile() || file.length() != byteSize || offset >= byteSize || length < 1) {
+            writeError(output, 416, "MEDIA_RANGE_INVALID", "媒体分块范围无效。");
+            return;
+        }
+        int expected = (int) Math.min(length, byteSize - offset);
+        byte[] bytes = new byte[expected];
+        int read = 0;
+        try (FileInputStream fileInput = new FileInputStream(file)) {
+            long skipped = 0;
+            while (skipped < offset) {
+                long next = fileInput.skip(offset - skipped);
+                if (next <= 0) throw new IllegalStateException("LOCAL_HUB_MEDIA_READ_FAILED");
+                skipped += next;
+            }
+            while (read < expected) {
+                int next = fileInput.read(bytes, read, expected - read);
+                if (next < 0) break;
+                read += next;
+            }
+        }
+        if (read != expected) throw new IllegalStateException("LOCAL_HUB_MEDIA_READ_FAILED");
+        String headers = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
+            "Content-Length: " + bytes.length + "\r\n" +
+            "Cache-Control: no-store\r\n" +
+            "Accept-Ranges: bytes\r\n" +
+            "X-AetherX-Blob-Hash: " + media.getString("contentHash") + "\r\n" +
+            "X-AetherX-Chunk-Hash: " + LocalHubDatabase.sha256(bytes) + "\r\n" +
+            "X-AetherX-Blob-Offset: " + offset + "\r\n" +
+            "X-AetherX-Blob-Size: " + byteSize + "\r\n" +
+            "Connection: close\r\n\r\n";
+        output.write(headers.getBytes(StandardCharsets.US_ASCII));
+        output.write(bytes);
+        output.flush();
     }
 
     private void serveMedia(OutputStream output, String encodedMediaId) throws Exception {
@@ -459,6 +586,14 @@ public final class LocalHubNetworkServer {
         return "";
     }
 
+    private static long queryLong(String path, String name, long fallback) {
+        try {
+            return Math.max(0, Long.parseLong(queryParameter(path, name)));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
     private static byte[] hexBytes(String value) {
         byte[] bytes = new byte[value.length() / 2];
         for (int index = 0; index < bytes.length; index += 1) {
@@ -500,6 +635,7 @@ public final class LocalHubNetworkServer {
         if (status == 403) return "Forbidden";
         if (status == 404) return "Not Found";
         if (status == 409) return "Conflict";
+        if (status == 416) return "Range Not Satisfiable";
         if (status == 501) return "Not Implemented";
         if (status == 503) return "Service Unavailable";
         return "Internal Server Error";

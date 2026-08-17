@@ -104,6 +104,29 @@ test("client session handoff allows an Android Local Hub cold-start window", asy
   assert.equal(result.serverUrl, "http://192.168.1.8:4319");
 });
 
+test("cluster mobile Hub list excludes revoked Android nodes", () => {
+  withDatabase(({ database }) => {
+    const userId = "revoked-mobile-user";
+    const spaceId = "revoked-mobile-space";
+    const desktopNodeId = "desktop-node";
+    const mobileNodeId = "mobile-node";
+    createUser(database, userId);
+    seedPairedCluster(database, {
+      userId,
+      spaceId,
+      localNodeId: desktopNodeId,
+      desktopNodeId,
+      mobileNodeId
+    });
+    database.prepare(
+      "UPDATE hub_nodes SET revoked_at = ? WHERE space_id = ? AND id = ?"
+    ).run(1780000001000, spaceId, mobileNodeId);
+
+    const service = new ClusterService(new ClusterRepository(database));
+    assert.deepEqual(service.mobileHubs(userId), []);
+  });
+});
+
 test("switch integrity treats semantically identical JSON text as the same record", () => {
   const base = {
     account: { displayName: "洛尼" },

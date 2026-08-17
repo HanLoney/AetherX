@@ -31,6 +31,7 @@
     "appId": "com.xuanxiaotech.todo",
     "productName": "AetherX",
     "asar": true,
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"
     },
@@ -54,6 +55,7 @@
       "connection-center.js",
       "mobile-hub-status.js",
       "pairing-endpoints.js",
+      "windows-network-profile.js",
       "emoji-picker.js",
       "qr-code.js",
       "home.js",
@@ -122,19 +124,44 @@
         "to": "connection-runtime/tailscale-manager.js"
       },
       {
-        "from": ".",
-        "to": "agent-tools",
-        "filter": [
-          "tool-registry.js",
-          "todo-tools.js",
-          "wallet-tools.js",
-          "memory-tools.js",
-          "journal-illustrator.js",
-          "journal-tools.js",
-          "album-tools.js",
-          "dream-tools.js",
-          "image-tools.js"
-        ]
+        "from": "windows-firewall.ps1",
+        "to": "connection-runtime/windows-firewall.ps1"
+      },
+      {
+        "from": "tool-registry.js",
+        "to": "agent-tools/tool-registry.js"
+      },
+      {
+        "from": "todo-tools.js",
+        "to": "agent-tools/todo-tools.js"
+      },
+      {
+        "from": "wallet-tools.js",
+        "to": "agent-tools/wallet-tools.js"
+      },
+      {
+        "from": "memory-tools.js",
+        "to": "agent-tools/memory-tools.js"
+      },
+      {
+        "from": "journal-illustrator.js",
+        "to": "agent-tools/journal-illustrator.js"
+      },
+      {
+        "from": "journal-tools.js",
+        "to": "agent-tools/journal-tools.js"
+      },
+      {
+        "from": "album-tools.js",
+        "to": "agent-tools/album-tools.js"
+      },
+      {
+        "from": "dream-tools.js",
+        "to": "agent-tools/dream-tools.js"
+      },
+      {
+        "from": "image-tools.js",
+        "to": "agent-tools/image-tools.js"
       }
     ],
     "win": {
@@ -155,7 +182,9 @@
       ]
     },
     "nsis": {
+      "include": "installer.nsh",
       "oneClick": false,
+      "packElevateHelper": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,

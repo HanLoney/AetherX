@@ -10,6 +10,7 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 const { HttpError } = require("../../lib/http-error");
+const { isPristineAccountProfile } = require("../auth/account-defaults");
 const {
   DIGEST_ALGORITHM,
   FORMAT_VERSION,
@@ -643,7 +644,17 @@ class IntegrityService {
 
   assertTargetBusinessDataEmpty(userId) {
     const records = this.archiveService.collectRecords(userId);
-    const occupied = TABLES.filter((table) => (records[table] || []).length > 0);
+    const occupied = TABLES.filter((table) => {
+      const rows = records[table] || [];
+      if (!rows.length) return false;
+      if (
+        rows.length === 1 &&
+        isPristineAccountProfile(this.archiveService.database, table, userId)
+      ) {
+        return false;
+      }
+      return true;
+    });
     if (occupied.length) {
       throw new HttpError(
         409,

@@ -119,8 +119,15 @@ class ClusterService {
     const cluster = this.status(userId);
     const clients = this.mobileHealthProvider(userId);
     return cluster.nodes
-      .filter((node) => ["android", "ios"].includes(String(node.platform).toLowerCase()))
+      .filter((node) =>
+        node.revokedAt === null &&
+        ["android", "ios"].includes(String(node.platform).toLowerCase())
+      )
       .map((node) => {
+        const now = Date.now();
+        const hubLastSeenAt = Number(node.lastSeenAt || 0);
+        const hubAgeMs = hubLastSeenAt > 0 ? Math.max(0, now - hubLastSeenAt) : null;
+        const hubOnline = hubAgeMs !== null && hubAgeMs <= 60_000;
         const latestSnapshot = this.repository.findLatestSnapshotForNode(cluster.spaceId, node.id);
         const snapshot = node.status === "standby"
           ? this.repository.findLatestCompletedSnapshotForNode(cluster.spaceId, node.id) || latestSnapshot
@@ -131,6 +138,9 @@ class ClusterService {
         return {
           ...node,
           lastSeenAt: Math.max(Number(node.lastSeenAt || 0), Number(client?.lastHeartbeatAt || 0)) || null,
+          hubOnline,
+          hubLastSeenAt: hubLastSeenAt || null,
+          hubAgeMs,
           active: node.id === cluster.activeNodeId,
           ready: node.status === "standby" && snapshotStatus === "completed",
           progress: client?.localHub || null,

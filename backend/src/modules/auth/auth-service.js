@@ -69,6 +69,7 @@ class AuthService {
       const claimedRows = firstUser
         ? this.repository.claimLegacyData(user.id)
         : 0;
+      this.repository.initializeAccountProfiles(user.id, displayName, now);
       const session = this.repository.createSession({
         userId: user.id,
         tokenHash,

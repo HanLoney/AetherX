@@ -76,6 +76,40 @@ describe("parseEventStream", () => {
     expect(storageMocks.saveSyncCursor).toHaveBeenCalledTimes(1);
   });
 
+  it("delivers cluster changes so the client can route immediately", async () => {
+    const change = { state: "stable", activeNodeId: "android-1", epoch: 8 };
+    const stream = new Response(
+      `event: ready\ndata: {"cursor":0}\n\nevent: cluster-change\ndata: ${JSON.stringify(change)}\n\n`
+    ).body!;
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(stream, { status: 200 }));
+
+    const received: Array<Record<string, unknown>> = [];
+    let coordinator!: SyncCoordinator;
+    const done = new Promise<void>((resolve) => {
+      coordinator = new SyncCoordinator(
+        {
+          serverUrl: "http://127.0.0.1:4318",
+          accessToken: "token",
+          syncChanges: vi.fn(async () => ({ changes: [], nextCursor: 0, hasMore: false }))
+        } as never,
+        vi.fn(),
+        "cluster-scope",
+        vi.fn(),
+        "android-1",
+        async (value) => {
+          received.push(value);
+          coordinator.stop();
+          resolve();
+        }
+      );
+    });
+
+    await coordinator.start();
+    await done;
+
+    expect(received).toEqual([{ ...change, type: "cluster-change" }]);
+  });
+
   it("keeps a command-only control channel without pulling business changes", async () => {
     const command = { type: "switch-desktop-hub", nodeId: "android-1" };
     const stream = new Response(

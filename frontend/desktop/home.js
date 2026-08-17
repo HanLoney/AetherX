@@ -126,6 +126,7 @@ const elements = {
   hubRecoveryNotice: document.querySelector("#hubRecoveryNotice"),
   exportHubRecoveryBtn: document.querySelector("#exportHubRecoveryBtn"),
   welcome: document.querySelector("#welcome"),
+  welcomeTitle: document.querySelector("#welcomeTitle"),
   messageList: document.querySelector("#messageList"),
   conversation: document.querySelector("#conversation"),
   messageSearchBtn: document.querySelector("#messageSearchBtn"),
@@ -2599,6 +2600,7 @@ function renderAccount() {
   elements.accountMenuName.textContent = name;
   elements.accountUsername.textContent = `@${user.username}`;
   elements.accountServer.textContent = state.auth.serverUrl || "";
+  elements.welcomeTitle.textContent = `嗨，${name}。今天想一起做什么？`;
 }
 
 async function refreshSystemPrompt() {

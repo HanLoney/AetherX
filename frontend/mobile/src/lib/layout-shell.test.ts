@@ -12,6 +12,7 @@ const gallerySource = readFileSync(new URL("../views/GalleryView.vue", import.me
 const memoriesSource = readFileSync(new URL("../views/MemoriesView.vue", import.meta.url), "utf8");
 const settingsSource = readFileSync(new URL("../views/SettingsView.vue", import.meta.url), "utf8");
 const sessionSource = readFileSync(new URL("../stores/session.ts", import.meta.url), "utf8");
+const localHubSource = readFileSync(new URL("./local-hub.ts", import.meta.url), "utf8");
 const dataSource = readFileSync(new URL("../stores/data.ts", import.meta.url), "utf8");
 const modulesSource = readFileSync(new URL("../stores/modules.ts", import.meta.url), "utf8");
 const loginSource = readFileSync(new URL("../views/LoginView.vue", import.meta.url), "utf8");
@@ -21,7 +22,22 @@ const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "u
 const dataBootstrapSource = readFileSync(new URL("./mobile-data-bootstrap.ts", import.meta.url), "utf8");
 
 describe("adaptive mobile shell", () => {
+  it("recovers the mobile client route from authenticated native LAN discovery", () => {
+    expect(localHubSource).toContain('"peerEndpointDiscovered"');
+    expect(localHubSource).toContain('new CustomEvent("aetherx:peer-endpoint-discovered"');
+    expect(sessionSource).toContain('window.addEventListener("aetherx:peer-endpoint-discovered"');
+    expect(sessionSource).toContain("recoverDiscoveredHub(detail.nodeId, detail.address)");
+    expect(sessionSource).toContain("validateHubConnection(candidate, user.value)");
+  });
+
+  it("waits for stored Hub recovery before exposing the authenticated shell", () => {
+    expect(sessionSource).toContain("await validateStoredSession(api, stored");
+    expect(sessionSource).not.toContain("void validateStoredSession(api, stored");
+  });
+
   it("shows cached data immediately and still refreshes it from the active Hub", () => {
+    expect(dataBootstrapSource).toContain("await session.bootstrap()");
+    expect(dataBootstrapSource).toContain("if (!session.authenticated.value) return;");
     expect(dataBootstrapSource).toContain("const restored = await data.restoreCache()");
     expect(dataBootstrapSource).toContain("if (restored)");
     expect(dataBootstrapSource).toContain("void data.refreshAll().catch");
@@ -137,14 +153,33 @@ describe("adaptive mobile shell", () => {
     expect(sessionSource).toContain("recovered.status.localNodeId");
     expect(sessionSource).toContain("recovered: true");
     expect(sessionSource).toContain("createDesktopControlConnection");
+    expect(sessionSource).toContain("const localStatus = await discoverPeerEndpoints(localHub, route.nodeId)");
+    expect(sessionSource).toContain("shouldAvoidInsecureAndroidRoute");
+    expect(sessionSource).toContain("if (shouldAvoidInsecureAndroidRoute(address)) return;");
+    expect(sessionSource).toContain("normalizeRouteUrl(api.serverUrl) === normalizeRouteUrl(address)");
+    expect(sessionSource).toContain("allowInsecureLan !== true");
     expect(dataSource).toContain("startControlSync(session, userId)");
     expect(dataSource).toContain("{ controlOnly: true }");
+    expect(dataSource).toContain('commandType === "cluster-change"');
+    expect(dataSource).toContain('state !== "stable"');
+    expect(dataSource).toContain("await session.activateLocalHub()");
+    expect(dataSource).toContain("await session.activateDesktopHub()");
+    expect(sessionSource).toContain('local?.role !== "active" || local.state !== "stable"');
+    expect(sessionSource).toContain('local?.role === "standby" && local.state === "stable"');
     expect(dataSource).toContain("stopControlSyncTransport()");
     expect(dataSource).toContain("正在把手机端最新变更同步回电脑 Hub");
     expect(dataSource).toContain("await localHub.resume()");
     expect(sessionSource).toContain("timeoutMs = 12_000");
     expect(dataSource).toContain("void refreshAll().catch");
     expect(dataSource).toContain("void startSync().catch");
+    expect(dataSource).toContain("let syncGeneration = 0");
+    expect(dataSource).toContain("generation !== syncGeneration || sync !== coordinator");
+    expect(dataSource).toContain("syncGeneration += 1");
+    expect(dataSource).toContain("generation !== controlSyncGeneration || controlSync !== coordinator");
+    expect(dataSource).toContain("const bootstrapReporter = new MobileHealthReporter");
+    expect(dataSource.indexOf("bootstrapReporter.start()")).toBeLessThan(
+      dataSource.indexOf("await coordinator.start()")
+    );
     expect(dataSource).not.toContain('else if (status.state === "retrying") syncState.value = "error"');
     expect(settingsSource).toContain("退出这个账号");
   });

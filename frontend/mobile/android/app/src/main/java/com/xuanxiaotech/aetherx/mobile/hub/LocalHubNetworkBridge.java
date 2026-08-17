@@ -6,13 +6,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class LocalHubNetworkBridge {
     public interface RequestListener {
         void onRequest(JSONObject request) throws Exception;
     }
 
-    private static final long REQUEST_TIMEOUT_SECONDS = 310;
+    private static final long REQUEST_TIMEOUT_SECONDS = 15;
     private static final ConcurrentHashMap<String, CompletableFuture<JSONObject>> pending =
         new ConcurrentHashMap<>();
     private static volatile RequestListener listener;
@@ -39,7 +40,11 @@ public final class LocalHubNetworkBridge {
                 .put("method", method)
                 .put("path", path)
                 .put("body", body == null ? new JSONObject() : body));
-            return response.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            try {
+                return response.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (TimeoutException error) {
+                throw new IllegalStateException("LOCAL_HUB_RUNTIME_UNAVAILABLE", error);
+            }
         } finally {
             pending.remove(requestId);
         }

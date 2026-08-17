@@ -13,10 +13,11 @@
   "homepage": "https://github.com/HanLoney/AetherX#readme",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-capacitor-android.mjs",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "test": "vitest run",
-    "android:sync": "npm run build && cap sync android",
+    "android:sync": "node scripts/patch-capacitor-android.mjs && npm run build && cap sync android",
     "android:test": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest",
     "android:release": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest assembleRelease bundleRelease",
     "android:lan-release": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest assembleLanRelease",

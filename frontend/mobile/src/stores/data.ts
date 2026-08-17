@@ -41,6 +41,8 @@ let sseConnected = false;
 let controlSyncCursor = 0;
 let controlSseConnected = false;
 let controlSyncRetrying = false;
+let syncGeneration = 0;
+let controlSyncGeneration = 0;
 let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
 let conversationPagePromise: Promise<ConversationPage> | null = null;
@@ -301,8 +303,10 @@ async function startSync() {
   }
   if (sync) return;
   stopControlSyncTransport();
+  const generation = syncGeneration;
   const installationId = await loadInstallationId();
-  sync = new SyncCoordinator(api, async (changes) => {
+  if (generation !== syncGeneration || sync) return;
+  const coordinator = new SyncCoordinator(api, async (changes) => {
     const archiveReset = changes.find((change) => change.entityType === "archive_restore" && change.operation === "reset");
     if (archiveReset) {
       await resetAfterArchiveRestore(archiveReset.seq);
@@ -321,18 +325,35 @@ async function startSync() {
     if (status.state === "online") syncState.value = "online";
     void reportMobileHealth();
   }, installationId, (command) => handleHubCommand(command));
+  sync = coordinator;
+  const bootstrapReporter = new MobileHealthReporter(api, async () => ({
+    syncStatus: syncState.value,
+    syncCursor,
+    sseConnected,
+    lastError: localHubSyncError,
+    ...await refreshedLocalHubHeartbeat()
+  }));
+  healthReporter = bootstrapReporter;
+  bootstrapReporter.start();
   try {
-    await sync.start();
-    healthReporter = new MobileHealthReporter(api, () => ({
+    await coordinator.start();
+    if (generation !== syncGeneration || sync !== coordinator) {
+      coordinator.stop();
+      bootstrapReporter.stop();
+      return;
+    }
+    bootstrapReporter.stop();
+    const reporter = new MobileHealthReporter(api, async () => ({
       syncStatus: syncState.value,
       syncCursor,
       sseConnected,
       lastError: localHubSyncError || (syncState.value === "error" ? "实时同步通道正在重连" : ""),
-      ...localHubHeartbeat()
+      ...await refreshedLocalHubHeartbeat()
     }));
-    healthReporter.start();
+    healthReporter = reporter;
+    reporter.start();
   } catch {
-    syncState.value = "error";
+    if (generation === syncGeneration && sync === coordinator) syncState.value = "error";
   }
 }
 
@@ -341,12 +362,14 @@ async function startControlSync(
   userId: string
 ) {
   if (controlSync) return;
+  const generation = controlSyncGeneration;
   const connection = await session.createDesktopControlConnection();
+  if (generation !== controlSyncGeneration || controlSync) return;
   if (!connection) {
     throw new Error("手机 Hub 已启用，但找不到电脑 Hub 的控制连接，请重新配对。");
   }
   const installationId = await loadInstallationId();
-  controlSync = new SyncCoordinator(
+  const coordinator = new SyncCoordinator(
     connection.api,
     () => undefined,
     `${session.spaceId.value || connection.api.serverUrl}|control|${connection.nodeId}|${session.user.value?.username || userId}`,
@@ -360,34 +383,63 @@ async function startControlSync(
     (command) => handleHubCommand(command),
     { controlOnly: true }
   );
-  await controlSync.start();
-  controlHealthReporter = new MobileHealthReporter(connection.api, () => ({
+  controlSync = coordinator;
+  const bootstrapReporter = new MobileHealthReporter(connection.api, async () => ({
+    syncStatus: syncState.value,
+    syncCursor: controlSyncCursor,
+    sseConnected: controlSseConnected,
+    lastError: localHubSyncError,
+    ...await refreshedLocalHubHeartbeat()
+  }));
+  controlHealthReporter = bootstrapReporter;
+  bootstrapReporter.start();
+  await coordinator.start();
+  if (generation !== controlSyncGeneration || controlSync !== coordinator) {
+    coordinator.stop();
+    bootstrapReporter.stop();
+    return;
+  }
+  bootstrapReporter.stop();
+  const reporter = new MobileHealthReporter(connection.api, async () => ({
     syncStatus: syncState.value,
     syncCursor: controlSyncCursor,
     sseConnected: controlSseConnected,
     lastError: localHubSyncError || (controlSyncRetrying ? "电脑 Hub 控制通道正在重连" : ""),
-    ...localHubHeartbeat()
+    ...await refreshedLocalHubHeartbeat()
   }));
-  controlHealthReporter.start();
+  controlHealthReporter = reporter;
+  reporter.start();
 }
 
 async function handleHubCommand(command: Record<string, unknown>) {
-  if (!["synchronize-local-hub", "switch-local-hub", "switch-desktop-hub", "resolve-hub-divergence"].includes(String(command.type || ""))) return;
+  const commandType = String(command.type || "");
+  if (!["synchronize-local-hub", "switch-local-hub", "switch-desktop-hub", "resolve-hub-divergence", "cluster-change"].includes(commandType)) return;
   const session = useSessionStore();
   const localHub = useLocalHub();
   const localStatus = localHub.status.value || await localHub.refresh();
-  if (!localStatus?.configured || localStatus.localNodeId !== String(command.nodeId || "")) return;
+  if (!localStatus?.configured) return;
+  if (commandType === "cluster-change") {
+    const cluster = (command.cluster || command) as Record<string, unknown>;
+    const activeNodeId = String(cluster.activeNodeId || command.activeNodeId || "");
+    const state = String(cluster.state || command.state || "");
+    if (!activeNodeId || state !== "stable") return;
+    if (session.localNodeId.value === activeNodeId && session.activeNodeId.value === activeNodeId) return;
+    if (activeNodeId === localStatus.localNodeId) await session.activateLocalHub();
+    else await session.activateDesktopHub();
+    return;
+  }
+  if (localStatus.localNodeId !== String(command.nodeId || "")) return;
   if (Array.isArray(command.endpoints) && command.endpoints.length) {
     await localHub.updatePeerEndpoints({
       endpoints: command.endpoints as Array<Record<string, unknown>>
     });
   }
-  if (command.type === "resolve-hub-divergence") {
+  if (commandType === "resolve-hub-divergence") {
     await handleDivergenceRecovery(session, localHub, command);
     return;
   }
-  if (command.type === "switch-local-hub" || command.type === "switch-desktop-hub") {
-    await handleRemoteHubSwitch(session, localHub, String(command.type));
+  if (commandType === "switch-local-hub" || commandType === "switch-desktop-hub") {
+    await handleRemoteHubSwitch(session, localHub, commandType);
     return;
   }
   const syncingToDesktop = localStatus.role === "active";
@@ -570,6 +622,14 @@ async function reportMobileHealth() {
   ]);
 }
 
+async function refreshedLocalHubHeartbeat() {
+  const localHub = useLocalHub();
+  if (localHub.status.value?.configured) {
+    await localHub.refresh().catch(() => null);
+  }
+  return localHubHeartbeat();
+}
+
 function localHubHeartbeat() {
   const current = useLocalHub().status.value;
   if (!current?.configured) return {};
@@ -664,6 +724,7 @@ function stopSyncTransport() {
 }
 
 function stopDataSyncTransport() {
+  syncGeneration += 1;
   sync?.stop();
   sync = null;
   healthReporter?.stop();
@@ -673,6 +734,7 @@ function stopDataSyncTransport() {
 }
 
 function stopControlSyncTransport() {
+  controlSyncGeneration += 1;
   controlSync?.stop();
   controlSync = null;
   controlHealthReporter?.stop();

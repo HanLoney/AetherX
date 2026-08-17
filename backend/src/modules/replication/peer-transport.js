@@ -44,6 +44,7 @@ class PeerTransport {
       throw new HttpError(409, "PEER_ENDPOINT_UNAVAILABLE", "对端 Hub 尚未登记连接地址。");
     }
     const attempts = [];
+    const remoteErrors = [];
     for (const endpoint of endpoints) {
       try {
         const result = await this.fetchEndpoint(endpoint, {
@@ -56,14 +57,28 @@ class PeerTransport {
           timeoutMs: input.timeoutMs,
           signal: input.signal
         });
+        if (typeof input.validateResponse === "function") {
+          await input.validateResponse(result.data, presentEndpoint(endpoint));
+        }
         this.endpointRepository.markSuccess(endpoint.id, this.now());
         this.clusterRepository.touchNode(context.space_id, peer.id, this.now());
         return { ...result, endpoint: presentEndpoint(endpoint) };
       } catch (error) {
-        if (error instanceof RemotePeerError && error.status < 500) {
+        if (error instanceof RemotePeerError) {
           this.endpointRepository.markSuccess(endpoint.id, this.now());
           this.clusterRepository.touchNode(context.space_id, peer.id, this.now());
-          throw error.toHttpError();
+          const attempt = {
+            transport: endpoint.transport,
+            address: endpoint.address,
+            status: error.status,
+            code: error.code || "PEER_REQUEST_FAILED",
+            remote: true,
+            ...(error.details === undefined ? {} : { details: error.details })
+          };
+          attempts.push(attempt);
+          if (error.status < 500) throw error.toHttpError({ attempts });
+          remoteErrors.push(error);
+          continue;
         }
         this.endpointRepository.markFailure(endpoint.id, this.now());
         attempts.push({
@@ -72,6 +87,9 @@ class PeerTransport {
           code: error.code || "PEER_ENDPOINT_FAILED"
         });
       }
+    }
+    if (remoteErrors.length) {
+      throw remoteErrors.at(-1).toHttpError({ attempts });
     }
     throw new HttpError(
       503,
@@ -137,8 +155,11 @@ class RemotePeerError extends Error {
     this.details = details;
   }
 
-  toHttpError() {
-    return new HttpError(this.status, this.code, this.message, this.details);
+  toHttpError(extraDetails) {
+    const details = this.details === undefined
+      ? extraDetails
+      : { remote: this.details, ...extraDetails };
+    return new HttpError(this.status, this.code, this.message, details);
   }
 }
 

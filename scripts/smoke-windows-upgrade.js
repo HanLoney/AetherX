@@ -7,7 +7,10 @@ const { ComponentManager } = require("../frontend/launcher/component-manager");
 const root = path.resolve(__dirname, "..");
 const oldArchive = path.resolve(process.argv[2] || "");
 const oldVersion = String(process.argv[3] || "").trim();
-const currentPayload = path.join(root, "frontend", "desktop", "dist", "win-unpacked");
+const currentPayload = path.resolve(
+  process.env.AETHERX_CURRENT_DESKTOP_PAYLOAD ||
+    path.join(root, "frontend", "desktop", "dist", "win-unpacked")
+);
 
 if (!oldArchive || !fs.existsSync(oldArchive) || !/^\d+\.\d+\.\d+$/.test(oldVersion)) {
   throw new Error("Usage: node scripts/smoke-windows-upgrade.js <old-installer.exe> <old-version>");

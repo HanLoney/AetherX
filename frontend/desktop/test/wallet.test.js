@@ -73,9 +73,23 @@ test("钱包作为独立模块进入桌面导航、功能插槽和安装包", ()
   assert.ok(packageJson.build.files.includes("wallet.html"));
   assert.ok(packageJson.build.files.includes("wallet.css"));
   assert.ok(packageJson.build.files.includes("wallet.js"));
-  const agentTools = packageJson.build.extraResources
-    .find((item) => item.to === "agent-tools")?.filter || [];
-  assert.ok(agentTools.includes("wallet-tools.js"));
+  const agentToolTargets = packageJson.build.extraResources
+    .map((item) => item.to)
+    .filter((target) => target?.startsWith("agent-tools/"));
+  assert.deepEqual(
+    agentToolTargets.sort(),
+    [
+      "agent-tools/album-tools.js",
+      "agent-tools/dream-tools.js",
+      "agent-tools/image-tools.js",
+      "agent-tools/journal-illustrator.js",
+      "agent-tools/journal-tools.js",
+      "agent-tools/memory-tools.js",
+      "agent-tools/todo-tools.js",
+      "agent-tools/tool-registry.js",
+      "agent-tools/wallet-tools.js"
+    ]
+  );
 });
 
 test("聊天工具能查询并精确修改单笔流水，不会把流水误当账户资料", () => {
