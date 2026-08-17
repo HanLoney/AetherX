@@ -176,6 +176,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           (cd release-assets && sha256sum * > "AetherX-${version}-SHA256SUMS.txt")
           gh release create "${GITHUB_REF_NAME}" release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
             --prerelease \
             --title "AetherX ${version} 公共测试版" \
