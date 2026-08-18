@@ -309,6 +309,20 @@ function createApp(config) {
   const syncEventBroker = new SyncEventBroker(syncRepository);
   const clusterRepository = new ClusterRepository(database);
   const endpointRepository = new HubEndpointRepository(database);
+  const localEndpointProvider = (userId) => {
+    const context = clusterRepository.findContextByUserId(userId);
+    if (!context) return [];
+    const remoteEndpoints = endpointRepository
+      .listForNode(context.space_id, context.local_node_id)
+      .filter((endpoint) => endpoint.transport !== "lan")
+      .map((endpoint) => ({
+        transport: endpoint.transport,
+        address: endpoint.address,
+        priority: endpoint.priority,
+        certificateFingerprint: endpoint.certificateFingerprint
+      }));
+    return [...lanHubAnnouncer.endpoints(), ...remoteEndpoints].slice(0, 8);
+  };
   const deviceService = new DeviceService(new DeviceRepository(database), {
     localHubEndpointRegistrar(userId, nodeId, endpoints, now) {
       const context = clusterRepository.findContextByUserId(userId);
@@ -329,7 +343,8 @@ function createApp(config) {
   });
   const mobileHubSyncNotifier = new MobileHubSyncNotifier({
     clusterService,
-    syncEventBroker
+    syncEventBroker,
+    localEndpointProvider
   });
   const replicationRepository = new ReplicationRepository(database);
   const spaceKeyService = new SpaceKeyService({
@@ -363,7 +378,8 @@ function createApp(config) {
     endpointRepository,
     clusterService,
     clusterRepository,
-    peerAuthenticationService
+    peerAuthenticationService,
+    localEndpointProvider
   });
   const mobileHubProbeService = new MobileHubProbeService({
     clusterService,

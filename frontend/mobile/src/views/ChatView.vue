@@ -34,6 +34,9 @@ const searchOpen = ref(false);
 const searchQuery = ref("");
 const showLatestButton = ref(false);
 let conversationRefreshPending = false;
+const CHAT_RENDER_WINDOW = 120;
+const renderStart = ref(0);
+const renderEnd = ref(0);
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
 const messageTimestampFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
@@ -54,6 +57,10 @@ const assistantName = computed(() => String(data.assistant.value.name || "小玄
 const assistantAvatar = computed(() => String(data.assistant.value.avatarDataUrl || ""));
 const userName = computed(() => String(data.profile.value.preferredName || data.profile.value.displayName || session.user.value?.displayName || "你"));
 const userAvatar = computed(() => String(data.profile.value.avatarDataUrl || ""));
+const renderedMessages = computed(() => displayMessages.value
+  .slice(renderStart.value, renderEnd.value)
+  .map((message, index) => ({ message, index: renderStart.value + index })));
+const hasEarlierMessages = computed(() => renderStart.value > 0);
 const searchResults = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase();
   if (!query) return [];
@@ -95,6 +102,10 @@ function closeSearch() {
 
 async function jumpToSearchResult(index: number) {
   closeSearch();
+  if (index < renderStart.value || index >= renderEnd.value) {
+    renderStart.value = Math.max(0, index - Math.floor(CHAT_RENDER_WINDOW / 3));
+    renderEnd.value = Math.min(displayMessages.value.length, renderStart.value + CHAT_RENDER_WINDOW);
+  }
   await nextTick();
   const row = messageList.value?.querySelector<HTMLElement>(`[data-message-index="${index}"]`);
   if (!row) return;
@@ -110,14 +121,37 @@ function updateLatestButton() {
     showLatestButton.value = false;
     return;
   }
-  showLatestButton.value = list.scrollHeight - list.scrollTop - list.clientHeight >= 96;
+  showLatestButton.value = renderEnd.value < displayMessages.value.length ||
+    list.scrollHeight - list.scrollTop - list.clientHeight >= 96;
 }
 
-function scrollToLatest() {
+async function scrollToLatest() {
+  showLatestMessageWindow();
+  await nextTick();
   const list = messageList.value;
   if (!list) return;
   showLatestButton.value = false;
   list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+}
+
+function showLatestMessageWindow() {
+  renderEnd.value = displayMessages.value.length;
+  renderStart.value = Math.max(0, renderEnd.value - CHAT_RENDER_WINDOW);
+}
+
+function replaceDisplayMessages(messages: ChatMessage[]) {
+  displayMessages.value = messages;
+  showLatestMessageWindow();
+}
+
+async function loadEarlierMessages() {
+  const list = messageList.value;
+  if (!list || !hasEarlierMessages.value) return;
+  const previousHeight = list.scrollHeight;
+  const previousTop = list.scrollTop;
+  renderStart.value = Math.max(0, renderStart.value - CHAT_RENDER_WINDOW);
+  await nextTick();
+  list.scrollTop = previousTop + list.scrollHeight - previousHeight;
 }
 
 function handleEmojiClick(event: Event) {
@@ -211,7 +245,7 @@ onBeforeUnmount(() => {
 async function openConversation(conversation: Conversation) {
   const result = await session.requireApi().conversation(conversation.id);
   current.value = result.conversation;
-  displayMessages.value = normalizeStoredDisplayMessages(result.displayMessages);
+  replaceDisplayMessages(normalizeStoredDisplayMessages(result.displayMessages));
   await scrollToBottom();
 }
 
@@ -225,7 +259,7 @@ watch(() => data.conversationRevision.value, async () => {
   if (!latest) {
     resolveAllApprovals(false);
     current.value = null;
-    displayMessages.value = [];
+    replaceDisplayMessages([]);
     return;
   }
   if ((latest.updatedAt || 0) <= (current.value.updatedAt || 0)) return;
@@ -241,6 +275,7 @@ async function send() {
   draft.value = "";
   const optimistic: ChatMessage = { id: crypto.randomUUID(), role: "user", content, createdAt: Date.now() };
   displayMessages.value.push(optimistic);
+  renderEnd.value = displayMessages.value.length;
   await scrollToBottom();
   try {
     const chat = new MobileChat(session.requireApi());
@@ -252,7 +287,7 @@ async function send() {
       requestApproval
     });
     current.value = result.conversation;
-    displayMessages.value = result.displayMessages;
+    replaceDisplayMessages(result.displayMessages);
     conversationRefreshPending = false;
     sending.value = false;
     void data.refreshConversationPage(true).catch(() => undefined);
@@ -260,6 +295,7 @@ async function send() {
   } catch (cause) {
     resolveAllApprovals(false);
     displayMessages.value = displayMessages.value.filter((message) => message !== optimistic);
+    showLatestMessageWindow();
     draft.value = content;
     error.value = cause instanceof Error ? cause.message : "消息没有发出去。";
   } finally {
@@ -278,7 +314,10 @@ async function send() {
 function updateActivity(activity: ChatMessage) {
   const index = displayMessages.value.findIndex((message) => message.id === activity.id);
   if (index >= 0) displayMessages.value.splice(index, 1, activity);
-  else displayMessages.value.push(activity);
+  else {
+    displayMessages.value.push(activity);
+    renderEnd.value = displayMessages.value.length;
+  }
   void scrollToBottom();
 }
 
@@ -368,20 +407,21 @@ async function scrollToBottom() {
 
     <section v-show="!searchOpen" ref="messageList" class="message-list" @scroll.passive="updateLatestButton">
       <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="你们会一直在这一段对话里延续共同的上下文。" />
-      <template v-for="(message, index) in displayMessages" :key="message.id || index">
-        <ChatActivity v-if="message.role === 'tool' || message.role === 'memory'" :message="message" @decide="decideTool(message, $event)" />
-        <article v-else-if="message.role === 'assistant' || message.role === 'user'" class="message-row" :class="message.role" :data-message-index="index">
-          <ProfileAvatar v-if="message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
+      <button v-if="hasEarlierMessages" class="chat-load-earlier" type="button" @click="loadEarlierMessages">查看更早消息</button>
+      <template v-for="entry in renderedMessages" :key="entry.message.id || entry.index">
+        <ChatActivity v-if="entry.message.role === 'tool' || entry.message.role === 'memory'" :message="entry.message" @decide="decideTool(entry.message, $event)" />
+        <article v-else-if="entry.message.role === 'assistant' || entry.message.role === 'user'" class="message-row" :class="entry.message.role" :data-message-index="entry.index">
+          <ProfileAvatar v-if="entry.message.role === 'assistant'" :name="assistantName" :src="assistantAvatar" size="small" />
           <div class="message-bubble">
-            <MarkdownMessage v-if="message.role === 'assistant'" :content="message.content || ''" />
-            <span v-else class="message-content">{{ message.content }}</span>
+            <MarkdownMessage v-if="entry.message.role === 'assistant'" :content="entry.message.content || ''" />
+            <span v-else class="message-content">{{ entry.message.content }}</span>
             <time
-              v-if="messageTimestamp(message.createdAt)"
+              v-if="messageTimestamp(entry.message.createdAt)"
               class="message-timestamp"
-              :datetime="messageTimestamp(message.createdAt)?.iso"
-            >{{ messageTimestamp(message.createdAt)?.label }}</time>
+              :datetime="messageTimestamp(entry.message.createdAt)?.iso"
+            >{{ messageTimestamp(entry.message.createdAt)?.label }}</time>
           </div>
-          <ProfileAvatar v-if="message.role === 'user'" :name="userName" :src="userAvatar" size="small" />
+          <ProfileAvatar v-if="entry.message.role === 'user'" :name="userName" :src="userAvatar" size="small" />
         </article>
       </template>
       <article v-if="sending" class="message-row assistant">
@@ -464,6 +504,7 @@ async function scrollToBottom() {
 .chat-search-empty { min-height:230px; display:grid; place-items:center; color:#aaa5ae; font-size:calc(12px * var(--font-scale, 1)); }
 .message-list { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding:calc(max(12px,env(safe-area-inset-top)) + 58px) 2px calc(var(--bottom-dock-height) + 34px); scrollbar-width: none; }
 .message-list::-webkit-scrollbar { display: none; }
+.chat-load-earlier { display:block; margin:0 auto 18px; padding:8px 14px; border:1px solid rgba(255,255,255,.76); border-radius:999px; color:#777083; background:rgba(255,255,255,.62); font-size:calc(10px * var(--font-scale,1)); box-shadow:0 7px 20px rgba(80,72,104,.08); }
 .message-row { display:flex; align-items:flex-end; gap:7px; margin:0 0 14px; }
 .message-row.user { justify-content: flex-end; }
 .message-row :deep(.avatar-small) { width:30px; height:30px; border-radius:50%; border-color:rgba(255,255,255,.82); box-shadow:0 7px 20px rgba(91,78,116,.16); }

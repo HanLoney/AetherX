@@ -4,7 +4,8 @@ const {
   DISCOVERY_PORT,
   DISCOVERY_TYPE,
   LanHubAnnouncer,
-  privateBroadcastAddresses
+  privateBroadcastAddresses,
+  privateLanEndpoints
 } = require("../src/infrastructure/lan-hub-announcer");
 
 test("LAN Hub discovery only targets physical private-network broadcasts", () => {
@@ -14,6 +15,19 @@ test("LAN Hub discovery only targets physical private-network broadcasts", () =>
     Tailscale: [{ family: "IPv4", address: "100.64.0.1", netmask: "255.192.0.0", internal: false }],
     VMware: [{ family: "IPv4", address: "192.168.76.1", netmask: "255.255.255.0", internal: false }]
   }), ["172.31.19.255", "192.168.1.255"]);
+});
+
+test("LAN Hub endpoints use current physical private addresses", () => {
+  assert.deepEqual(privateLanEndpoints({
+    WLAN: [{ family: "IPv4", address: "172.31.17.73", netmask: "255.255.252.0", internal: false }],
+    Tailscale: [{ family: "IPv4", address: "100.64.0.1", netmask: "255.192.0.0", internal: false }],
+    VMware: [{ family: "IPv4", address: "192.168.76.1", netmask: "255.255.255.0", internal: false }]
+  }, 4318), [{
+    transport: "lan",
+    address: "http://172.31.17.73:4318",
+    priority: 500,
+    certificateFingerprint: ""
+  }]);
 });
 
 test("LAN Hub announcer emits a credential-free beacon and closes cleanly", () => {

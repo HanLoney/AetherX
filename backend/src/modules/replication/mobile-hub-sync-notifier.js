@@ -7,6 +7,7 @@ class MobileHubSyncNotifier {
   constructor({
     clusterService,
     syncEventBroker,
+    localEndpointProvider = () => [],
     debounceMs = DEFAULT_DEBOUNCE_MS,
     pendingTtlMs = DEFAULT_PENDING_TTL_MS,
     now = () => Date.now(),
@@ -16,6 +17,7 @@ class MobileHubSyncNotifier {
   }) {
     this.clusterService = clusterService;
     this.syncEventBroker = syncEventBroker;
+    this.localEndpointProvider = localEndpointProvider;
     this.debounceMs = normalizeDelay(debounceMs, DEFAULT_DEBOUNCE_MS);
     this.pendingTtlMs = normalizeDelay(pendingTtlMs, DEFAULT_PENDING_TTL_MS);
     this.now = now;
@@ -65,6 +67,7 @@ class MobileHubSyncNotifier {
       hub.status === "standby" &&
       hub.client?.id
     );
+    const endpoints = this.localEndpointProvider(key);
     for (const hub of hubs) {
       const command = {
         commandId: this.createId(),
@@ -75,6 +78,7 @@ class MobileHubSyncNotifier {
         headSequence: entry.headSequence,
         epoch: entry.epoch,
         committedAt: entry.committedAt,
+        ...(endpoints.length ? { endpoints } : {}),
         requestedAt: this.now()
       };
       this.syncEventBroker.publish(key, "hub-command", command, {

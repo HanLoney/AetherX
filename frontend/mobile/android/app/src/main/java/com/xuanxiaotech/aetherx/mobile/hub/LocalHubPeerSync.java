@@ -76,11 +76,25 @@ public final class LocalHubPeerSync {
         JSONObject credential = secrets.getJSONObject("peerCredential");
         String endpoint = selectEndpoint(config);
         JSONObject response = hello(endpoint, config, credential, secrets);
+        boolean active = "active".equals(config.optString("role"));
+        String sequenceNodeId = active ? config.getString("localNodeId") : config.getString("peerNodeId");
+        long localSequence = active
+            ? database.operationHead(sequenceNodeId).optLong("originSequence", 0)
+            : config.optLong("after", 0);
+        JSONObject watermarks = response.optJSONObject("watermarks");
+        long remoteSequence = watermarks == null ? 0 : watermarks.optLong(sequenceNodeId, 0);
         return new JSONObject()
             .put("reachable", true)
             .put("endpoint", endpoint)
             .put("peer", response)
+            .put("localSequence", localSequence)
+            .put("remoteSequence", remoteSequence)
+            .put("needsSynchronization", needsSynchronization(active, localSequence, remoteSequence))
             .put("checkedAt", System.currentTimeMillis());
+    }
+
+    static boolean needsSynchronization(boolean active, long localSequence, long remoteSequence) {
+        return active ? localSequence > remoteSequence : remoteSequence > localSequence;
     }
 
     public JSONObject acceptDiscoveredEndpoint(String endpoint) throws Exception {
@@ -1784,7 +1798,7 @@ public final class LocalHubPeerSync {
             return data == null ? new JSONObject() : data;
         } catch (IOException error) {
             forgetHealthyEndpoint(endpoint);
-            throw error;
+            throw new IllegalStateException("LOCAL_HUB_PEER_UNREACHABLE", error);
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -1851,6 +1865,9 @@ public final class LocalHubPeerSync {
                 }
             }
             return new BinaryResponse(connection, output.toByteArray());
+        } catch (IOException error) {
+            forgetHealthyEndpoint(endpoint);
+            throw new IllegalStateException("LOCAL_HUB_PEER_UNREACHABLE", error);
         } finally {
             if (connection != null) connection.disconnect();
         }

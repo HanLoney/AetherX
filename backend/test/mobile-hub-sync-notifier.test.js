@@ -36,6 +36,12 @@ test("operation bursts produce one targeted mobile Hub sync command", () => {
     syncEventBroker: {
       publish: (...args) => published.push(args)
     },
+    localEndpointProvider: () => [{
+      transport: "lan",
+      address: "http://172.31.17.73:4318",
+      priority: 500,
+      certificateFingerprint: ""
+    }],
     now: () => 2_000,
     createId: () => "command-1",
     setTimeout: (callback, delay) => {
@@ -73,6 +79,12 @@ test("operation bursts produce one targeted mobile Hub sync command", () => {
     headSequence: 14,
     epoch: 3,
     committedAt: 1_950,
+    endpoints: [{
+      transport: "lan",
+      address: "http://172.31.17.73:4318",
+      priority: 500,
+      certificateFingerprint: ""
+    }],
     requestedAt: 2_000
   });
   assert.deepEqual(published[0][3], {

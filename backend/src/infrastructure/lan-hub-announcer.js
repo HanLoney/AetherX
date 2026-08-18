@@ -50,6 +50,10 @@ class LanHubAnnouncer {
     }
   }
 
+  endpoints() {
+    return privateLanEndpoints(this.networkInterfaces(), this.hubPort);
+  }
+
   close() {
     if (this.timer) this.clearIntervalImpl(this.timer);
     this.timer = null;
@@ -73,6 +77,24 @@ function privateBroadcastAddresses(interfaces) {
     }
   }
   return [...new Set(addresses)];
+}
+
+function privateLanEndpoints(interfaces, port) {
+  const addresses = [];
+  for (const [name, entries] of Object.entries(interfaces || {})) {
+    if (/(?:vmware|virtualbox|vethernet|hyper-v|wsl|docker|loopback|tailscale)/i.test(name)) continue;
+    for (const entry of entries || []) {
+      const family = typeof entry.family === "string" ? entry.family : entry.family === 4 ? "IPv4" : "";
+      if (family !== "IPv4" || entry.internal || !isPrivateIpv4(entry.address)) continue;
+      addresses.push(entry.address);
+    }
+  }
+  return [...new Set(addresses)].map((address, index) => ({
+    transport: "lan",
+    address: `http://${address}:${Number(port)}`,
+    priority: 500 - index,
+    certificateFingerprint: ""
+  }));
 }
 
 function isPrivateIpv4(value) {
@@ -99,5 +121,6 @@ module.exports = {
   DISCOVERY_PORT,
   DISCOVERY_TYPE,
   LanHubAnnouncer,
-  privateBroadcastAddresses
+  privateBroadcastAddresses,
+  privateLanEndpoints
 };

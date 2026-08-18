@@ -9,6 +9,7 @@ class PeerTransport {
     clusterService,
     clusterRepository,
     peerAuthenticationService,
+    localEndpointProvider = () => [],
     fetchImpl = globalThis.fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     now = () => Date.now()
@@ -17,6 +18,7 @@ class PeerTransport {
     this.clusterService = clusterService;
     this.clusterRepository = clusterRepository;
     this.peerAuthenticationService = peerAuthenticationService;
+    this.localEndpointProvider = localEndpointProvider;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.now = now;
@@ -38,7 +40,9 @@ class PeerTransport {
     }
     const method = String(input.method || "GET").toUpperCase();
     const requestPath = normalizePeerPath(input.path);
-    const body = input.body ?? {};
+    const body = requestPath === "/api/v1/peer/hello" && method === "POST"
+      ? { ...(input.body ?? {}), endpoints: this.localEndpointProvider(userId) }
+      : input.body ?? {};
     const endpoints = this.endpointRepository.listForNode(context.space_id, peer.id);
     if (!endpoints.length) {
       throw new HttpError(409, "PEER_ENDPOINT_UNAVAILABLE", "对端 Hub 尚未登记连接地址。");

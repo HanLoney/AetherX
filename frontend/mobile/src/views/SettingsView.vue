@@ -122,7 +122,7 @@ const currentHubDescription = computed(() => {
 });
 const currentHubBadge = computed(() => {
   if (localHub.status.value?.state === "forced_active") return "临时接管";
-  if (data.syncState.value === "error" && !isLocalHubActive.value) return "连接异常";
+  if (data.syncState.value === "error" && !isLocalHubActive.value) return "通道重连中";
   return "当前使用";
 });
 const localHubDescription = computed(() => {
@@ -801,7 +801,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
     <section class="current-hub-card" :class="{ mobile: isLocalHubActive }">
       <div class="current-hub-head">
         <span><i />当前连接</span>
-        <b :class="{ warning: currentHubBadge === '连接异常' }">{{ currentHubBadge }}</b>
+        <b :class="{ warning: currentHubBadge === '通道重连中' }">{{ currentHubBadge }}</b>
       </div>
       <div class="current-hub-main">
         <i class="current-hub-icon"><Smartphone v-if="isLocalHubActive" :size="25" /><Server v-else :size="25" /></i>

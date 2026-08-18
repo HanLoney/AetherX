@@ -796,7 +796,6 @@ window.addEventListener("aetherx:local-data-changed", (event) => {
   const detail = (event as CustomEvent<{ groups?: string[] }>).detail;
   const groups = new Set(detail?.groups || []);
   if (groups.size) void refreshGroups(groups).catch(() => undefined);
-  void refreshConversationPage(true).catch(() => undefined);
 });
 
 async function toggleTodo(todo: Todo) {

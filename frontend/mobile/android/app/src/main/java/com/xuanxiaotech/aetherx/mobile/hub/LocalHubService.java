@@ -312,6 +312,8 @@ public final class LocalHubService {
         if (!current.getString("activeNodeId").equals(input.optString("activeNodeId"))) {
             throw new IllegalStateException("PEER_ACTIVE_NODE_MISMATCH");
         }
+        JSONArray endpoints = input.optJSONArray("endpoints");
+        if (endpoints != null && endpoints.length() > 0) database.updatePeerEndpoints(endpoints);
         String localNodeId = current.getString("localNodeId");
         JSONObject head = database.operationHead(localNodeId);
         return new JSONObject()

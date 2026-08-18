@@ -89,7 +89,8 @@ public final class LocalHubForegroundService extends Service {
             String state = status.optString("state");
             if (!status.optBoolean("configured", false) ||
                 !("stable".equals(state) || "forced_active".equals(state))) return;
-            service.keepPeerAlive();
+            JSONObject heartbeat = service.keepPeerAlive();
+            if (heartbeat.optBoolean("needsSynchronization", false)) service.synchronize();
         } catch (Exception error) {
             long now = System.currentTimeMillis();
             if (now - lastKeepAliveWarningAt < 60_000) return;
