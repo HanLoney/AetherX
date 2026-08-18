@@ -110,6 +110,9 @@ describe("Android Local Hub replication envelope", () => {
       .toBeLessThan(peerSyncSource.indexOf("database.updatePeerEndpoints(merged)"));
     expect(foregroundServiceSource).toContain("lanDiscovery.start()");
     expect(foregroundServiceSource).toContain("lanDiscovery.stop()");
+    expect(foregroundServiceSource).toContain("JSONObject heartbeat = service.keepPeerAlive()");
+    expect(foregroundServiceSource).toContain('heartbeat.optBoolean("needsSynchronization", false)');
+    expect(peerSyncSource).toContain('.put("needsSynchronization", needsSynchronization(active, localSequence, remoteSequence))');
   });
 
   it("keeps Android on schema 42 and exposes the complete divergence recovery bridge", () => {
@@ -268,9 +271,11 @@ describe("Android Local Hub replication envelope", () => {
     expect(networkServerSource).toContain('"/api/v1/peer/hello"');
     expect(networkServerSource).toContain("return service.peerHello(request.body)");
     expect(serviceSource).toContain("public JSONObject peerHello(JSONObject input)");
+    expect(serviceSource).toContain('database.updatePeerEndpoints(endpoints)');
     expect(networkServerSource).toContain('"/api/v1/peer/acknowledgements"');
     expect(networkServerSource).toContain("return service.peerAcknowledgements(request.body)");
     expect(serviceSource).toContain("public JSONObject peerAcknowledgements(JSONObject input)");
+    expect(peerSyncSource).toContain('throw new IllegalStateException("LOCAL_HUB_PEER_UNREACHABLE", error)');
     expect(networkServerSource).toContain('"/api/v1/peer/client-sessions/mint"');
     expect(networkServerSource).toContain("JSONObject data = service.peerClientSession()");
     expect(serviceSource).toContain("public JSONObject peerClientSession()");

@@ -38,13 +38,13 @@ let bootstrapPromise: Promise<void> | null = null;
 let discoveredHubRecovery: Promise<void> | null = null;
 let discoveryListenerRegistered = false;
 
-function createApi(url: string, token = "", invalidateOnUnauthorized = true) {
+function createApi(url: string, token = "", invalidateOnUnauthorized = true, routeChanges = true) {
   let instance: AetherApi;
   instance = new AetherApi({
     baseUrl: url,
     token,
     ...(invalidateOnUnauthorized ? { onUnauthorized: () => void invalidate() } : {}),
-    onConnectionChanged: (connection) => applyRoutedConnection(instance, connection)
+    ...(routeChanges ? { onConnectionChanged: (connection: HubConnectionChange) => applyRoutedConnection(instance, connection) } : {})
   });
   return instance;
 }
@@ -109,13 +109,17 @@ function registerDiscoveredHubRecovery() {
 }
 
 async function recoverDiscoveredHub(nodeId: string, address: string) {
+  if (api instanceof LocalHubClient) return;
   if (shouldAvoidInsecureAndroidRoute(address)) return;
   if (api && normalizeRouteUrl(api.serverUrl) === normalizeRouteUrl(address)) return;
   const route = routing.value?.nodes.find((item) => item.nodeId === nodeId);
   if (!route?.token || !user.value) return;
   const candidate = createApi(address, route.token, false);
   const connection = await validateHubConnection(candidate, user.value);
-  if (connection.status.localNodeId !== nodeId) return;
+  if (
+    connection.status.localNodeId !== nodeId ||
+    connection.status.activeNodeId !== nodeId
+  ) return;
   await applyRoutedConnection(candidate, {
     baseUrl: candidate.serverUrl,
     token: route.token,
@@ -472,7 +476,7 @@ async function createDesktopControlConnection() {
     )
     .sort((left, right) => right.lastSeenAt - left.lastSeenAt)[0];
   if (!route) return null;
-  const connection = await connectStoredHub(route, user.value);
+  const connection = await connectStoredHub(route, user.value, "", false);
   return { nodeId: route.nodeId, api: connection.api };
 }
 
@@ -567,7 +571,8 @@ function normalizeRouteUrl(value: string) {
 async function connectStoredHub(
   route: StoredHubRouting["nodes"][number],
   expectedUser: AuthUser | null,
-  excludedUrl = ""
+  excludedUrl = "",
+  routeChanges = true
 ) {
   const localHub = useLocalHub();
   const localStatus = await discoverPeerEndpoints(localHub, route.nodeId);
@@ -579,7 +584,7 @@ async function connectStoredHub(
     : candidates;
   if (!secureCandidates.length) throw new Error("No secure Hub endpoint is available.");
   return Promise.any(secureCandidates.map(async (url) => {
-    const candidate = createApi(url, route.token, false);
+    const candidate = createApi(url, route.token, false, routeChanges);
     const validated = await validateHubConnection(candidate, expectedUser);
     return { api: candidate, ...validated };
   }));

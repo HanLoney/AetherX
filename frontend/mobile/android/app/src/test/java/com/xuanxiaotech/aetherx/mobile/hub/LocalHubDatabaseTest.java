@@ -33,4 +33,12 @@ public class LocalHubDatabaseTest {
         assertTrue(LocalHubService.requiresRecovery(true, "integrity_check", "completed", true));
     }
 
+    @Test
+    public void backgroundKeepAliveDetectsBothReplicationDirections() {
+        assertTrue(LocalHubPeerSync.needsSynchronization(false, 6817, 6822));
+        assertFalse(LocalHubPeerSync.needsSynchronization(false, 6822, 6822));
+        assertTrue(LocalHubPeerSync.needsSynchronization(true, 9, 7));
+        assertFalse(LocalHubPeerSync.needsSynchronization(true, 9, 9));
+    }
+
 }

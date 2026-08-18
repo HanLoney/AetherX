@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { PeerTransport } = require("../src/modules/replication/peer-transport");
 
-function createTransport(fetchImpl) {
+function createTransport(fetchImpl, options = {}) {
   const endpoint = {
     id: "endpoint-1",
     transport: "lan",
@@ -25,6 +25,7 @@ function createTransport(fetchImpl) {
         touchNode: () => { calls.touches += 1; }
       },
       peerAuthenticationService: { createSignedHeaders: () => ({}) },
+      localEndpointProvider: options.localEndpointProvider,
       fetchImpl
     })
   };
@@ -57,6 +58,38 @@ test("peer transport preserves reachable remote 5xx errors and details", async (
     }
   );
   assert.deepEqual(fixture.calls, { successes: 1, failures: 0, touches: 1 });
+});
+
+test("peer hello carries the desktop's current endpoints", async () => {
+  let requestBody;
+  const fixture = createTransport(async (_url, input) => {
+    requestBody = JSON.parse(input.body);
+    return new Response(JSON.stringify({ data: {} }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }, {
+    localEndpointProvider: () => [{
+      transport: "lan",
+      address: "http://172.31.17.73:4318",
+      priority: 500
+    }]
+  });
+
+  await fixture.transport.requestJson("user-1", "mobile", {
+    method: "POST",
+    path: "/api/v1/peer/hello",
+    body: { nodeId: "desktop" }
+  });
+
+  assert.deepEqual(requestBody, {
+    nodeId: "desktop",
+    endpoints: [{
+      transport: "lan",
+      address: "http://172.31.17.73:4318",
+      priority: 500
+    }]
+  });
 });
 
 test("peer transport validates a response before marking its endpoint healthy", async () => {
