@@ -193,6 +193,7 @@ a { color: inherit; text-decoration: none; }
 }
 .connection-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 31px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: #777186; background: rgba(255,255,255,.68); font-size: calc(10px * var(--font-scale, 1)); font-weight: 700; backdrop-filter: blur(12px); }
 .connection-pill.online { color: #518e7a; border-color: rgba(89,164,139,.18); }
+.connection-pill.recovering { color: #8f7954; border-color: rgba(162,129,73,.2); }
 .connection-pill.error { color: #bd6579; border-color: rgba(189,101,121,.18); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

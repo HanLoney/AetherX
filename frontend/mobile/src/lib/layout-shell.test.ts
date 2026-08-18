@@ -20,6 +20,7 @@ const routerSource = readFileSync(new URL("../router.ts", import.meta.url), "utf
 const baseStyles = readFileSync(new URL("../styles/base.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
 const dataBootstrapSource = readFileSync(new URL("./mobile-data-bootstrap.ts", import.meta.url), "utf8");
+const connectionPillSource = readFileSync(new URL("../components/ConnectionPill.vue", import.meta.url), "utf8");
 
 describe("adaptive mobile shell", () => {
   it("recovers the mobile client route from authenticated native LAN discovery", () => {
@@ -42,6 +43,32 @@ describe("adaptive mobile shell", () => {
     expect(dataBootstrapSource).toContain("if (restored)");
     expect(dataBootstrapSource).toContain("void data.refreshAll().catch");
     expect(dataBootstrapSource).toContain("await data.refreshAll().catch");
+  });
+
+  it("does not reload chat for unrelated Local Hub background changes", () => {
+    const localChangeHandler = dataSource.match(
+      /window\.addEventListener\("aetherx:local-data-changed"[\s\S]*?\n\}\);/
+    )?.[0];
+
+    expect(localChangeHandler).toContain("refreshGroups(groups)");
+    expect(localChangeHandler).not.toContain("refreshConversationPage");
+  });
+
+  it("keeps the desktop control channel from rerouting the active mobile client", () => {
+    expect(sessionSource).toContain('connectStoredHub(route, user.value, "", false)');
+    expect(sessionSource).toContain("routeChanges = true");
+    expect(sessionSource).toContain("createApi(url, route.token, false, routeChanges)");
+    expect(sessionSource).toContain("if (api instanceof LocalHubClient) return");
+    expect(sessionSource).toContain("connection.status.activeNodeId !== nodeId");
+  });
+
+  it("separates the client channel from native dual Hub replication health", () => {
+    expect(connectionPillSource).toContain('online: "已连接"');
+    expect(connectionPillSource).toContain('recovering: "通道重连中"');
+    expect(connectionPillSource).toContain('replication.synchronization.state === "synced"');
+    expect(connectionPillSource).not.toContain('online: "已同步"');
+    expect(settingsSource).toContain('return "通道重连中"');
+    expect(settingsSource).not.toContain('return "连接异常"');
   });
 
   it("keeps chat as a secondary page outside the primary navigation", () => {
@@ -209,14 +236,18 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain('class="chat-search-view"');
     expect(chatSource).toContain("const searchResults = computed");
     expect(chatSource).toContain("message.role !== \"user\" && message.role !== \"assistant\"");
-    expect(chatSource).toContain(':data-message-index="index"');
+    expect(chatSource).toContain(':data-message-index="entry.index"');
     expect(chatSource).toContain("jumpToSearchResult");
     expect(chatSource).toContain('class="chat-search-snippet"');
     expect(chatSource).toContain("<mark>{{ result.match }}</mark>");
     expect(chatSource).toContain('class="scroll-to-latest"');
     expect(chatSource).toContain('@scroll.passive="updateLatestButton"');
-    expect(chatSource).toContain("function scrollToLatest()");
+    expect(chatSource).toContain("async function scrollToLatest()");
     expect(chatSource).toContain("showLatestButton.value");
+    expect(chatSource).toContain("CHAT_RENDER_WINDOW = 120");
+    expect(chatSource).toContain("renderedMessages");
+    expect(chatSource).toContain("loadEarlierMessages");
+    expect(chatSource).toContain("查看更早消息");
     expect(chatSource).toContain('type="text" inputmode="search"');
     expect(chatSource).toContain("border:0; border-bottom:1px solid");
     expect(chatSource).toContain("data.refreshConversationPage(true)");
