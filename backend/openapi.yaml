@@ -35,6 +35,39 @@ paths:
       summary: 使用账号密码登录
       responses:
         "200": { description: 当前账号与会话令牌 }
+  /auth/desktop-login/challenges:
+    post:
+      security: []
+      summary: 创建桌面扫码登录挑战
+      description: 仅允许桌面端从本机回环地址创建短期挑战，返回一次性秘密与过期时间。
+      responses:
+        "201": { description: 待手机 Hub 扫描的一次性登录挑战 }
+        "403": { description: 请求不是来自本机桌面端 }
+  /auth/desktop-login/challenges/{id}:
+    get:
+      security: []
+      summary: 查询桌面扫码登录挑战状态
+      description: 桌面端使用挑战 ID 与一次性秘密轮询；授权完成后返回本地登录会话和活动 Hub 路由。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: secret
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 挑战等待中、凭据恢复中或已授权的结果 }
+        "403": { description: 请求不是来自本机桌面端 }
+        "404": { description: 挑战不存在、秘密错误或已经过期 }
+  /auth/desktop-login/authorize:
+    post:
+      security: []
+      summary: 活动手机 Hub 使用数据空间证明恢复扫码登录
+      description: Android Local Hub 使用 Space Key HMAC 证明当前节点身份；电脑 Hub 轮换 Peer 凭据并返回加密信封，尚不会直接完成桌面登录。
+      responses:
+        "200": { description: 已签发加密 Peer 凭据，等待手机保存并完成认证握手 }
+        "401": { description: 数据空间证明无效 }
+        "403": { description: 请求节点不是当前活动且未撤销的 Android Hub }
+        "409": { description: 挑战已使用或恢复节点不一致 }
   /auth/session:
     get:
       summary: 验证当前会话
@@ -246,6 +279,17 @@ paths:
       responses:
         "200": { description: 本 Hub 的复制能力与连续 Watermark }
         "409": { description: Space、协议、Schema、epoch 或活动节点不一致 }
+  /peer/desktop-login:
+    post:
+      security:
+        - peerHmac: []
+      summary: 手机 Hub 在认证握手后确认桌面扫码登录
+      description: 仅接受刚刚完成凭据保存并通过 Peer HMAC 认证的 Android Hub；成功后把对应桌面挑战标记为已授权。
+      responses:
+        "200": { description: 桌面登录挑战已授权，可由桌面端领取会话 }
+        "401": { description: Peer HMAC 无效、过期或重放 }
+        "403": { description: Peer 不是已配对且未撤销的 Android Hub }
+        "409": { description: 挑战已经授权或与恢复节点不一致 }
   /peer/status:
     get:
       security:
@@ -744,6 +788,17 @@ paths:
       responses:
         "200": { description: 指令已送达或已定向排队 }
         "404": { description: 手机 Hub 不存在或已撤销 }
+  /cluster/mobile-hubs/{id}/discover-endpoint:
+    post:
+      summary: 验证并登记自动发现的手机 Hub 端点
+      description: 桌面端提交局域网发现候选，电脑 Hub 通过已登记 Peer 凭据完成认证 hello 后才保存该端点。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 端点已通过 Peer 身份验证并更新优先级 }
+        "400": { description: 地址不是允许的私网或 Tailscale Hub 端点 }
+        "404": { description: 手机 Hub 不存在或已撤销 }
+        "503": { description: 候选端点不可达或 Peer 身份验证失败 }
   /cluster/mobile-hubs/{id}/switch:
     post:
       summary: 请求目标手机安全切换活动 Hub
