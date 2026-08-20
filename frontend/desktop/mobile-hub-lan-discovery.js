@@ -61,7 +61,6 @@ class MobileHubLanDiscovery {
         resolve(items);
       };
       const timer = setTimeout(() => finish(this.candidates()), timeoutMs);
-      timer.unref?.();
       this.waiters.add(finish);
     });
   }
