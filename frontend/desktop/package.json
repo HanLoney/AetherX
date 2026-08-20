@@ -55,6 +55,7 @@
       "device-manager.js",
       "connection-center.js",
       "mobile-hub-status.js",
+      "mobile-hub-lan-discovery.js",
       "pairing-endpoints.js",
       "windows-network-profile.js",
       "emoji-picker.js",

@@ -54,6 +54,30 @@ class PeerAuthenticationService {
     };
   }
 
+  getCredential(userId, peerNodeId) {
+    const context = this.clusterService.ensureSpace(userId);
+    const peer = this.clusterRepository.findNode(context.space_id, peerNodeId);
+    const credential = this.repository.find(context.space_id, peerNodeId);
+    if (
+      !peer ||
+      peer.revoked_at !== null ||
+      peer.id === context.local_node_id ||
+      !credential ||
+      credential.revoked_at !== null
+    ) {
+      throw new HttpError(409, "PEER_CREDENTIAL_UNAVAILABLE", "对端 Hub 的签名凭据不可用。");
+    }
+    return {
+      spaceId: context.space_id,
+      peerNodeId: peer.id,
+      keyId: credential.key_id,
+      sharedSecret: decryptSharedSecret(
+        this.secretBox,
+        credential.encrypted_shared_secret
+      ).toString("base64")
+    };
+  }
+
   importCredential(userId, peerNodeId, keyId, sharedSecret) {
     const context = this.clusterService.ensureSpace(userId);
     const peer = this.clusterRepository.findNode(context.space_id, peerNodeId);

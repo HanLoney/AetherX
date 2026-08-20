@@ -46,6 +46,37 @@ class HubEndpointRepository {
     return this.listForNode(spaceId, nodeId);
   }
 
+  upsertNodeEndpoint(spaceId, nodeId, endpoint, now = Date.now()) {
+    this.database.prepare(
+      `INSERT INTO hub_endpoints(
+         id, space_id, node_id, transport, address, priority,
+         certificate_fingerprint, last_success_at, created_at, updated_at,
+         last_failure_at, failure_count
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)`
+      + ` ON CONFLICT(space_id, node_id, transport, address) DO UPDATE SET
+            priority = excluded.priority,
+            certificate_fingerprint = excluded.certificate_fingerprint,
+            last_success_at = excluded.last_success_at,
+            last_failure_at = NULL,
+            failure_count = 0,
+            updated_at = excluded.updated_at`
+    ).run(
+      randomUUID(),
+      spaceId,
+      nodeId,
+      endpoint.transport,
+      endpoint.address,
+      endpoint.priority,
+      endpoint.certificateFingerprint || "",
+      now,
+      now,
+      now
+    );
+    return this.listForNode(spaceId, nodeId).find(
+      (item) => item.transport === endpoint.transport && item.address === endpoint.address
+    ) || null;
+  }
+
   listForNode(spaceId, nodeId) {
     return this.database.prepare(
       `SELECT id, space_id, node_id, transport, address, priority,

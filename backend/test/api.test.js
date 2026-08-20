@@ -778,7 +778,7 @@ test("Hub pairing requires owner approval and redeems encrypted node credentials
   });
 });
 
-test("integrated pairing reuses an existing mobile Hub without issuing new Peer credentials", async () => {
+test("integrated pairing reuses an existing mobile Hub and rotates Peer credentials safely", async () => {
   await withServer(async (baseUrl, _dataDir, app) => {
     const created = await request(
       baseUrl,
@@ -789,6 +789,7 @@ test("integrated pairing reuses an existing mobile Hub without issuing new Peer 
     const session = created.payload.data;
     const nodeId = "mobile-hub-reuse-01";
     const identity = generateClientIdentityKeyPair();
+    const ephemeral = generateClientEphemeralKeyPair();
     app.database.prepare(
       `INSERT INTO hub_nodes(
          id, space_id, node_name, platform, public_identity,
@@ -810,27 +811,46 @@ test("integrated pairing reuses an existing mobile Hub without issuing new Peer 
       baseUrl,
       "POST",
       `/api/v1/hub-pairing/sessions/${session.id}/reuse`,
-      { secret: session.secret, nodeId }
+      {
+        secret: session.secret,
+        nodeId,
+        clientEphemeralPublicKey: ephemeral.publicKey
+      }
     );
     assert.equal(reused.response.status, 200);
     assert.equal(reused.payload.data.status, "redeemed");
     assert.equal(reused.payload.data.reused, true);
     assert.equal(reused.payload.data.nodeId, nodeId);
+    const packageValue = unwrapHubPairingEnvelope(
+      reused.payload.data.envelope,
+      ephemeral.privateKey
+    );
+    assert.equal(packageValue.localNodeId, nodeId);
+    assert.equal(packageValue.spaceId, session.spaceId);
     assert.equal(
       app.database.prepare(
         "SELECT COUNT(*) AS count FROM hub_peer_credentials WHERE space_id = ? AND peer_node_id = ?"
       ).get(session.spaceId, nodeId).count,
-      0
+      1
     );
 
     const replayed = await rawRequest(
       baseUrl,
       "POST",
       `/api/v1/hub-pairing/sessions/${session.id}/reuse`,
-      { secret: session.secret, nodeId }
+      {
+        secret: session.secret,
+        nodeId,
+        clientEphemeralPublicKey: ephemeral.publicKey
+      }
     );
     assert.equal(replayed.response.status, 200);
     assert.equal(replayed.payload.data.reused, true);
+    assert.equal(
+      unwrapHubPairingEnvelope(replayed.payload.data.envelope, ephemeral.privateKey)
+        .peerCredential.keyId,
+      packageValue.peerCredential.keyId
+    );
 
     const revokedSession = await request(
       baseUrl,
@@ -845,7 +865,11 @@ test("integrated pairing reuses an existing mobile Hub without issuing new Peer 
       baseUrl,
       "POST",
       `/api/v1/hub-pairing/sessions/${revokedSession.payload.data.id}/reuse`,
-      { secret: revokedSession.payload.data.secret, nodeId }
+      {
+        secret: revokedSession.payload.data.secret,
+        nodeId,
+        clientEphemeralPublicKey: generateClientEphemeralKeyPair().publicKey
+      }
     );
     assert.equal(rejected.response.status, 409);
     assert.equal(rejected.payload.error.code, "HUB_NODE_NOT_REUSABLE");

@@ -89,44 +89,67 @@ class HubPairingService {
 
   reuse(id, input = {}) {
     const secretHash = requireSecret(input.secret);
-    const session = this.requireBySecret(id, secretHash);
-    assertNotExpired(session, this.now());
     const nodeId = normalizeNodeId(input.nodeId);
-    const context = this.clusterService.ensureSpace(session.user_id);
-    assertLocalActive(context);
-    if (context.space_id !== session.space_id) {
-      throw new HttpError(409, "HUB_PAIRING_SPACE_MISMATCH", "配对数据空间已经变化。");
-    }
-    const node = this.clusterRepository.findNode(context.space_id, nodeId);
-    if (!node || node.revoked_at !== null || node.status === "revoked") {
-      throw new HttpError(
-        409,
-        "HUB_NODE_NOT_REUSABLE",
-        "手机 Hub 尚未登记或已经撤销，无法复用这个节点。"
-      );
-    }
-    if (session.status === "redeemed" && session.requested_node_id === nodeId) {
-      return { ...presentSession(session), reused: true };
-    }
-    if (session.status !== "created") throw stateConflict();
-    const reusedAt = this.now();
-    if (!this.repository.markReused({
-      id,
-      secretHash,
-      nodeId,
-      nodeName: node.node_name,
-      platform: node.platform,
-      publicIdentity: node.public_identity,
-      protocolVersion: Number(node.protocol_version),
-      schemaVersion: Number(node.schema_version),
-      reusedAt
-    })) {
-      throw stateConflict();
-    }
-    return {
-      ...presentSession(this.repository.findForUser(session.user_id, id)),
-      reused: true
-    };
+    const clientEphemeralPublicKey = normalizeX25519PublicKey(input.clientEphemeralPublicKey);
+    return this.repository.transaction(() => {
+      const session = this.requireBySecret(id, secretHash);
+      assertNotExpired(session, this.now());
+      const context = this.clusterService.ensureSpace(session.user_id);
+      assertLocalActive(context);
+      if (context.space_id !== session.space_id) {
+        throw new HttpError(409, "HUB_PAIRING_SPACE_MISMATCH", "配对数据空间已经变化。");
+      }
+      const node = this.clusterRepository.findNode(context.space_id, nodeId);
+      if (!node || node.revoked_at !== null || node.status === "revoked") {
+        throw new HttpError(
+          409,
+          "HUB_NODE_NOT_REUSABLE",
+          "手机 Hub 尚未登记或已经撤销，无法复用这个节点。"
+        );
+      }
+      if (
+        session.status === "redeemed" &&
+        (session.requested_node_id !== nodeId ||
+          session.client_ephemeral_public_key !== clientEphemeralPublicKey)
+      ) {
+        throw stateConflict();
+      }
+      if (!['created', 'redeemed'].includes(session.status)) throw stateConflict();
+
+      const envelopeSession = {
+        ...session,
+        requested_node_id: nodeId,
+        client_ephemeral_public_key: clientEphemeralPublicKey
+      };
+      const credential = session.status === "redeemed"
+        ? this.peerAuthenticationService.getCredential(session.user_id, nodeId)
+        : this.peerAuthenticationService.issueCredential(session.user_id, nodeId);
+      const spaceKey = this.spaceKeyService.ensure(context.space_id);
+      const envelope = this.wrapSecrets(envelopeSession, context, credential, spaceKey);
+      if (session.status === "created") {
+        const reusedAt = this.now();
+        if (!this.repository.markReused({
+          id,
+          secretHash,
+          nodeId,
+          nodeName: node.node_name,
+          platform: node.platform,
+          publicIdentity: node.public_identity,
+          protocolVersion: Number(node.protocol_version),
+          schemaVersion: Number(node.schema_version),
+          clientEphemeralPublicKey,
+          reusedAt
+        })) {
+          throw stateConflict();
+        }
+      }
+      return {
+        ...presentSession(this.repository.findForUser(session.user_id, id)),
+        reused: true,
+        sourceNodeId: context.local_node_id,
+        envelope
+      };
+    });
   }
 
   pairingPayload(session, secret, context = this.clusterService.ensureSpace(session.user_id)) {

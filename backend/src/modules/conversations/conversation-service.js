@@ -48,11 +48,18 @@ class ConversationService {
       throw new HttpError(404, "CONVERSATION_NOT_FOUND", "未找到指定会话。");
     }
     const messages = this.repository.messages(id);
+    const displayMessages = messages
+      .filter((message) => message.stream === "display")
+      .map(restoreMessage);
+    const legacyVisibleMessages = messages
+      .filter(isLegacyVisibleMessage)
+      .map(restoreLegacyDisplayMessage);
     return {
       conversation,
-      displayMessages: messages
-        .filter((message) => message.stream === "display")
-        .map(restoreMessage),
+      displayMessages: restoreLegacyDisplayHistory(
+        displayMessages,
+        legacyVisibleMessages
+      ),
       modelMessages: messages
         .filter((message) => message.stream === "model")
         .map(restoreMessage)
@@ -112,6 +119,43 @@ function restoreMessage(message) {
   };
 }
 
+function isLegacyVisibleMessage(message) {
+  return message.stream === "model" &&
+    ["user", "assistant"].includes(message.role) &&
+    typeof message.content === "string" &&
+    message.content.trim().length > 0;
+}
+
+function restoreLegacyDisplayMessage(message) {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt
+  };
+}
+
+function restoreLegacyDisplayHistory(displayMessages, legacyMessages) {
+  const legacyIsPrimaryHistory =
+    legacyMessages.length >= 20 &&
+    legacyMessages.length > displayMessages.length * 4;
+  if (!legacyIsPrimaryHistory) return displayMessages;
+
+  const seen = new Set();
+  return [...legacyMessages, ...displayMessages]
+    .sort((left, right) => Number(left.createdAt) - Number(right.createdAt))
+    .filter((message) => {
+      const key = [
+        message.role,
+        Number(message.createdAt) || 0,
+        String(message.content || "")
+      ].join("\u0000");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function boundedInteger(value, fallback, maximum) {
   const parsed = Math.trunc(Number(value));
   return Number.isFinite(parsed) && parsed > 0
@@ -124,4 +168,4 @@ function nonNegativeInteger(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-module.exports = { ConversationService };
+module.exports = { ConversationService, restoreLegacyDisplayHistory };

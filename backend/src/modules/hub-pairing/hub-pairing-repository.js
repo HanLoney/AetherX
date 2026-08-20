@@ -92,8 +92,8 @@ class HubPairingRepository {
       `UPDATE hub_pairing_sessions
        SET status = 'redeemed', requested_node_id = ?, node_name = ?,
            platform = ?, public_identity = ?, protocol_version = ?,
-           schema_version = ?, claimed_at = ?, approved_at = ?, redeemed_at = ?,
-           encrypted_server_ephemeral_private_key = ''
+           schema_version = ?, client_ephemeral_public_key = ?,
+           claimed_at = ?, approved_at = ?, redeemed_at = ?
        WHERE id = ? AND secret_hash = ? AND status = 'created'`
     ).run(
       input.nodeId,
@@ -102,6 +102,7 @@ class HubPairingRepository {
       input.publicIdentity,
       input.protocolVersion,
       input.schemaVersion,
+      input.clientEphemeralPublicKey,
       input.reusedAt,
       input.reusedAt,
       input.reusedAt,

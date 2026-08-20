@@ -29,6 +29,10 @@ const { generatePairingQrDataUrl } = require("./qr-code");
 const { createDesktopControlServer } = require("./desktop-control");
 const { discoverHubPairingEndpoints } = require("./pairing-endpoints");
 const { loadMobileHubStatus } = require("./mobile-hub-status");
+const {
+  MobileHubLanDiscovery,
+  verifyMobileHubEndpoint
+} = require("./mobile-hub-lan-discovery");
 const { inspectWindowsNetworkProfiles } = require("./windows-network-profile");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
@@ -52,6 +56,7 @@ let authenticationToken = "";
 let latestClusterStatus = null;
 let clusterRecoveryPromise = null;
 let tailscaleManager = null;
+const mobileHubLanDiscovery = new MobileHubLanDiscovery();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 const api = new XuanApiClient({
@@ -295,7 +300,7 @@ async function recoverHubRoutingFromAuthority() {
   try {
     api.setBaseUrl(authenticationServerUrl);
     api.setToken(authenticationToken);
-    const status = await ensureActiveHub();
+    const status = await ensureActiveHubWithDiscovery();
     desktopSync.stop();
     await startAuthenticatedSync();
     sendHubClusterChanged(status);
@@ -328,6 +333,205 @@ async function ensureActiveHub() {
   applyClusterStatus(status);
   saveAuthenticatedState();
   return status;
+}
+
+async function ensureActiveHubWithDiscovery(onProgress = () => {}) {
+  if (!api.token || !currentUser) return null;
+  onProgress({ stage: "checking", message: "正在读取双 Hub 状态…" });
+  try {
+    const status = await api.getClusterStatus();
+    applyClusterStatus(status);
+    let verifiedEndpoint = "";
+    const mobileIsActive = status.localNodeId !== status.activeNodeId;
+    if (status.localNodeId !== status.activeNodeId) {
+      onProgress({
+        stage: "searching",
+        target: "mobile",
+        message: "手机 Hub 当前为活动中枢，正在局域网中搜索…"
+      });
+      const candidates = await mobileHubLanDiscovery.discoverCandidates();
+      if (!candidates.length) {
+        onProgress({
+          stage: "not-found",
+          target: "mobile",
+          message: "暂未发现新的手机地址，正在尝试已登记连接…"
+        });
+      }
+      for (const endpoint of candidates) {
+        onProgress({
+          stage: "verifying",
+          target: "mobile",
+          endpoint: endpoint.address,
+          message: "已发现手机 Hub，正在安全验证身份…"
+        });
+        try {
+          await api.discoverMobileHubEndpoint(status.activeNodeId, endpoint);
+          verifiedEndpoint = endpoint.address;
+          onProgress({
+            stage: "verified",
+            target: "mobile",
+            endpoint: verifiedEndpoint,
+            message: "手机 Hub 身份验证通过，正在切换会话…"
+          });
+          break;
+        } catch {
+          // Broadcasts are untrusted candidates; the Hub accepts only a valid Peer handshake.
+        }
+      }
+    }
+    onProgress({
+      stage: "routing",
+      target: status.localNodeId === status.activeNodeId ? "computer" : "mobile",
+      endpoint: verifiedEndpoint,
+      message: status.localNodeId === status.activeNodeId
+        ? "电脑 Hub 当前为活动中枢，正在进入…"
+        : "正在连接活动手机 Hub…"
+    });
+    let activeStatus;
+    try {
+      activeStatus = await ensureActiveHub();
+    } catch (error) {
+      const mobilePending = mobileIsActive && !verifiedEndpoint && [
+        "PEER_ENDPOINT_UNAVAILABLE",
+        "PEER_DISCOVERY_FAILED",
+        "HUB_NOT_ACTIVE"
+      ].includes(error?.code);
+      if (!mobilePending) throw error;
+      onProgress({
+        stage: "connected",
+        target: "computer",
+        pendingTarget: "mobile",
+        message: "电脑 Hub 已连接，手机 Hub 暂未在线，稍后会自动重连。"
+      });
+      return status;
+    }
+    const target = activeStatus.localNodeId === status.localNodeId ? "computer" : "mobile";
+    onProgress({
+      stage: "connected",
+      target,
+      endpoint: api.baseUrl,
+      message: target === "mobile" ? "已安全连接手机 Hub" : "已连接电脑 Hub"
+    });
+    return activeStatus;
+  } catch (error) {
+    onProgress({
+      stage: "failed",
+      target: "mobile",
+      message: friendlyHubConnectionError(error)
+    });
+    throw error;
+  }
+}
+
+function friendlyHubConnectionError(error) {
+  if (["PEER_ENDPOINT_UNAVAILABLE", "PEER_DISCOVERY_FAILED"].includes(error?.code)) {
+    return "手机 Hub 暂时无法连接，请确认手机端已打开并与电脑处于同一网络。";
+  }
+  return String(error?.message || "Hub 连接失败，请稍后重试。");
+}
+
+function sendAuthHubProgress(sender, progress) {
+  if (!sender || sender.isDestroyed()) return;
+  sender.send("auth:hub-progress", { ...progress, updatedAt: Date.now() });
+}
+
+async function authHubDiscoveryStatus(waitForMobile = false) {
+  const computer = await probeLocalHub();
+  const candidates = waitForMobile
+    ? await mobileHubLanDiscovery.discoverCandidates(1_200)
+    : mobileHubLanDiscovery.candidates();
+  const mobile = candidates[0] || null;
+  const verifiedMobile = mobile
+    ? await verifyMobileHubEndpoint(fetch, mobile.address, { timeoutMs: 1_200 })
+    : null;
+  return {
+    computerHub: {
+      state: computer.online ? "ready" : "offline",
+      endpoint: localHubServerUrl,
+      latencyMs: computer.latencyMs
+    },
+    mobileHub: {
+      state: verifiedMobile ? "online" : mobile ? "discovered" : waitForMobile ? "notFound" : "searching",
+      endpoint: mobile?.address || "",
+      candidateCount: candidates.length,
+      latencyMs: verifiedMobile?.latencyMs ?? null
+    },
+    activeTarget: latestClusterStatus
+      ? latestClusterStatus.activeNodeId === latestClusterStatus.localNodeId ? "computer" : "mobile"
+      : "unknown"
+  };
+}
+
+async function localDesktopLoginRequest(pathname, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(`${localHubServerUrl}${pathname}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload?.error?.message || "电脑扫码登录请求失败。");
+      error.code = payload?.error?.code || "DESKTOP_QR_LOGIN_FAILED";
+      throw error;
+    }
+    return payload.data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function createDesktopQrLogin() {
+  const challenge = await localDesktopLoginRequest(
+    "/api/v1/auth/desktop-login/challenges",
+    { method: "POST", body: "{}" }
+  );
+  const discovered = await discoverHubPairingEndpoints({ serverUrl: localHubServerUrl });
+  const lanEndpoint = discovered.find((item) => item.transport === "lan");
+  const fallbackEndpoint = discovered.find((item) => item !== lanEndpoint);
+  const endpoints = [lanEndpoint, fallbackEndpoint]
+    .filter(Boolean)
+    .map((item) => String(item.address || "").replace(/\/+$/, ""))
+    .filter(Boolean);
+  if (!endpoints.length) {
+    throw new Error("电脑当前没有可供手机访问的网络地址，请先连接同一局域网。");
+  }
+  const code = new URL("aetherx://desktop-login");
+  code.searchParams.set("v", "1");
+  code.searchParams.set("id", challenge.id);
+  code.searchParams.set("secret", challenge.secret);
+  code.searchParams.set("expiresAt", String(challenge.expiresAt));
+  for (const endpoint of endpoints) code.searchParams.append("e", endpoint);
+  return {
+    id: challenge.id,
+    secret: challenge.secret,
+    expiresAt: challenge.expiresAt,
+    endpoints,
+    qrDataUrl: await generatePairingQrDataUrl(code.toString())
+  };
+}
+
+async function completeDesktopQrLogin(sender, input = {}) {
+  const id = encodeURIComponent(String(input.id || ""));
+  const secret = encodeURIComponent(String(input.secret || ""));
+  const result = await localDesktopLoginRequest(
+    `/api/v1/auth/desktop-login/challenges/${id}?secret=${secret}`,
+    { method: "GET" }
+  );
+  if (result.status !== "authorized") return result;
+  api.setBaseUrl(localHubServerUrl);
+  api.setToken(result.token);
+  authenticationServerUrl = localHubServerUrl;
+  authenticationToken = result.token;
+  currentUser = result.user;
+  hubRouting = null;
+  await ensureActiveHubWithDiscovery((progress) => sendAuthHubProgress(sender, progress));
+  saveAuthenticatedState();
+  await startAuthenticatedSync();
+  openPage(sender, "home.html");
+  return { status: "completed", user: currentUser };
 }
 
 async function handleHubConnectionChanged(connection) {
@@ -394,11 +598,20 @@ function registerIpcHandlers() {
     hasSession: Boolean(authenticationToken),
     user: currentUser
   }));
+  ipcMain.handle("auth:hub-discovery", (_event, options = {}) =>
+    authHubDiscoveryStatus(options.wait === true)
+  );
+  ipcMain.handle("auth:qr-login:create", () => createDesktopQrLogin());
+  ipcMain.handle("auth:qr-login:poll", (event, input) =>
+    completeDesktopQrLogin(event.sender, input)
+  );
   ipcMain.handle("auth:bootstrap", async (event) => {
     if (!api.token) return { authenticated: false };
     const session = await api.getSession();
     currentUser = session.user;
-    await ensureActiveHub();
+    await ensureActiveHubWithDiscovery((progress) =>
+      sendAuthHubProgress(event.sender, progress)
+    );
     saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
@@ -437,7 +650,9 @@ function registerIpcHandlers() {
     api.setToken(result.token);
     authenticationToken = result.token;
     currentUser = result.user;
-    await ensureActiveHub();
+    await ensureActiveHubWithDiscovery((progress) =>
+      sendAuthHubProgress(event.sender, progress)
+    );
     saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
@@ -456,7 +671,9 @@ function registerIpcHandlers() {
     api.setToken(result.token);
     authenticationToken = result.token;
     currentUser = result.user;
-    await ensureActiveHub();
+    await ensureActiveHubWithDiscovery((progress) =>
+      sendAuthHubProgress(event.sender, progress)
+    );
     saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
@@ -975,6 +1192,7 @@ function authenticatedLocalHubApi() {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  mobileHubLanDiscovery.start();
   authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
   const storedAuth = authStore.load();
   const authentication = selectAuthenticationSession(storedAuth, localHubServerUrl);
@@ -1028,6 +1246,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("will-quit", () => {
+  mobileHubLanDiscovery.close();
   if (desktopControlServer) desktopControlServer.close();
   desktopControlServer = null;
 });

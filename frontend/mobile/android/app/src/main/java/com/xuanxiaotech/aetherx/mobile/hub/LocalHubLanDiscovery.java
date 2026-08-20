@@ -83,7 +83,9 @@ public final class LocalHubLanDiscovery {
             ));
             int port = payload.optInt("port", 0);
             if (!DISCOVERY_TYPE.equals(payload.optString("type")) ||
-                payload.optInt("version", 0) != 1 || port < 1 || port > 65535) return "";
+                payload.optInt("version", 0) != 1 ||
+                !"desktop".equals(payload.optString("platform")) ||
+                port < 1 || port > 65535) return "";
             return "http://" + packet.getAddress().getHostAddress() + ":" + port;
         } catch (Exception ignored) {
             return "";

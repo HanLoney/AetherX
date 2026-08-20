@@ -88,6 +88,38 @@ test("API client expands compact media references without embedding image bytes"
   }
 });
 
+test("API client retries transient mobile Hub read failures without retrying writes", async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method });
+    if (calls.length < 3) {
+      return new Response(JSON.stringify({
+        error: {
+          code: "LOCAL_HUB_BUSY",
+          message: "手机 Hub 网络服务暂时不可用。"
+        }
+      }), { status: 503, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ data: { displayName: "洛尼" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const client = new XuanApiClient({
+      baseUrl: "http://172.31.17.146:4319",
+      token: "mobile-token"
+    });
+    const profile = await client.getProfile();
+    assert.equal(profile.displayName, "洛尼");
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "GET"]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("API client hands a write request to the active Hub and preserves its request id", async () => {
   const originalFetch = global.fetch;
   const calls = [];
@@ -296,5 +328,37 @@ test("login screen exposes server selection, registration and migration assuranc
   assert.match(html, /id="serverUrl"/);
   assert.match(html, /id="loginTab"/);
   assert.match(html, /id="registerTab"/);
+  assert.match(html, /id="hubRoutePanel"/);
+  assert.match(html, /id="computerHubNode"/);
+  assert.match(html, /id="mobileHubNode"/);
+  assert.match(html, /id="scanHubBtn"/);
+  assert.match(html, /id="qrLoginPanel"/);
+  assert.match(html, /id="qrLoginImage"/);
+  assert.match(html, /手机 Hub 快速登录/);
+  assert.match(html, /class="login-options"/);
+  assert.match(html, /class="credential-login"/);
+  assert.doesNotMatch(html, /auth-story|PRIVATE DIGITAL SPACE|回到只属于/);
+  assert.match(html, /class="advanced-server"/);
   assert.match(html, /现有数据会被完整保留/);
+});
+
+test("desktop packages LAN discovery and recovers the active mobile Hub before handoff", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.ok(packageJson.build.files.includes("mobile-hub-lan-discovery.js"));
+  assert.match(main, /mobileHubLanDiscovery\.discoverCandidates\(\)/);
+  assert.match(main, /verifyMobileHubEndpoint\(fetch, mobile\.address/);
+  assert.match(main, /api\.discoverMobileHubEndpoint\(status\.activeNodeId, endpoint\)/);
+  assert.match(main, /await ensureActiveHubWithDiscovery\(\)/);
+  assert.match(main, /auth:hub-discovery/);
+  assert.match(main, /auth:qr-login:create/);
+  assert.match(main, /auth:qr-login:poll/);
+  assert.match(main, /\/api\/v1\/auth\/desktop-login\/challenges/);
+  assert.match(main, /aetherx:\/\/desktop-login/);
+  assert.match(main, /auth:hub-progress/);
+  assert.match(main, /stage: "searching"/);
+  assert.match(main, /stage: "verifying"/);
+  assert.match(main, /stage: "connected"/);
+  assert.match(main, /pendingTarget: "mobile"/);
+  assert.match(main, /手机 Hub 暂未在线，稍后会自动重连/);
 });

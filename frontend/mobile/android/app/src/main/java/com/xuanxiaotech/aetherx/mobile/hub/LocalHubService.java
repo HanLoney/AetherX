@@ -474,6 +474,20 @@ public final class LocalHubService {
         }
     }
 
+    public JSONObject authorizeDesktopLogin(JSONObject input) {
+        ensureRunning();
+        try {
+            database.requireBootstrapCompleted();
+            int port = ensureNetworkReachable();
+            return new LocalHubPeerSync(database, secretStore, blobStore)
+                .authorizeDesktopLogin(new JSONObject(input.toString()).put("mobilePort", port));
+        } catch (IllegalStateException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("DESKTOP_LOGIN_AUTHORIZATION_FAILED", error);
+        }
+    }
+
     public JSONObject bootstrapBlobs() {
         ensureRunning();
         try {

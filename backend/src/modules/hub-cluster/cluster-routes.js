@@ -53,6 +53,23 @@ function registerClusterRoutes(
       }
     );
   }
+  if (peerTransport) {
+    router.add(
+      "POST",
+      "/api/v1/cluster/mobile-hubs/:id/discover-endpoint",
+      async ({ userId, params, body }) => {
+        const hub = service.requireMobileHub(userId, params.id);
+        const endpoint = normalizeDiscoveredEndpoint(body?.endpoint);
+        return {
+          data: {
+            discovered: true,
+            nodeId: hub.id,
+            endpoint: await peerTransport.discoverEndpoint(userId, hub.id, endpoint)
+          }
+        };
+      }
+    );
+  }
   if (switchStateMachineService && peerTransport) {
     router.add(
       "POST",
@@ -217,6 +234,28 @@ function normalizeClientEndpoints(value) {
     `${endpoint.transport}\u0000${endpoint.address}`,
     endpoint
   ])).values()].sort((left, right) => right.priority - left.priority);
+}
+
+function normalizeDiscoveredEndpoint(candidate) {
+  let url;
+  try { url = new URL(String(candidate?.address || "")); } catch {}
+  const port = Number(url?.port);
+  if (
+    candidate?.transport !== "lan" ||
+    url?.protocol !== "http:" ||
+    !isPrivateIpv4(url?.hostname) ||
+    !Number.isInteger(port) ||
+    port < 4319 ||
+    port > 4329
+  ) {
+    throw new HttpError(400, "PEER_ENDPOINT_INVALID", "发现的手机 Hub 地址无效。");
+  }
+  return {
+    transport: "lan",
+    address: url.origin,
+    priority: Math.max(-1000, Math.min(1000, Number(candidate?.priority) || 0)),
+    certificateFingerprint: ""
+  };
 }
 
 function isPrivateIpv4(value) {

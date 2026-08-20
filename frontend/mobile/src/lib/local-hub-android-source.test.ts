@@ -79,6 +79,13 @@ const lanDiscoverySource = readFileSync(
   ),
   "utf8"
 );
+const lanAnnouncerSource = readFileSync(
+  new URL(
+    "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubLanAnnouncer.java",
+    import.meta.url
+  ),
+  "utf8"
+);
 const bootReceiverSource = readFileSync(
   new URL(
     "../../android/app/src/main/java/com/xuanxiaotech/aetherx/mobile/hub/LocalHubBootReceiver.java",
@@ -103,6 +110,7 @@ describe("Android Local Hub replication envelope", () => {
   it("discovers a changed desktop LAN address and authenticates it before persistence", () => {
     expect(lanDiscoverySource).toContain('DISCOVERY_TYPE = "aetherx-hub-discovery"');
     expect(lanDiscoverySource).toContain("packet.getAddress().isSiteLocalAddress()");
+    expect(lanDiscoverySource).toContain('!"desktop".equals(payload.optString("platform"))');
     expect(lanDiscoverySource).toContain("service.acceptDiscoveredPeerEndpoint(candidate)");
     expect(peerSyncSource).toContain("public JSONObject acceptDiscoveredEndpoint(String endpoint)");
     expect(peerSyncSource).toContain('throw new IllegalStateException("PEER_IDENTITY_MISMATCH")');
@@ -110,6 +118,11 @@ describe("Android Local Hub replication envelope", () => {
       .toBeLessThan(peerSyncSource.indexOf("database.updatePeerEndpoints(merged)"));
     expect(foregroundServiceSource).toContain("lanDiscovery.start()");
     expect(foregroundServiceSource).toContain("lanDiscovery.stop()");
+    expect(foregroundServiceSource).toContain("lanAnnouncer.start()");
+    expect(foregroundServiceSource).toContain("lanAnnouncer.stop()");
+    expect(lanAnnouncerSource).toContain('.put("platform", "android")');
+    expect(lanAnnouncerSource).toContain('status.optBoolean("configured", false)');
+    expect(lanAnnouncerSource).toContain("LocalHubLanDiscovery.DISCOVERY_PORT");
     expect(foregroundServiceSource).toContain("JSONObject heartbeat = service.keepPeerAlive()");
     expect(foregroundServiceSource).toContain('heartbeat.optBoolean("needsSynchronization", false)');
     expect(peerSyncSource).toContain('.put("needsSynchronization", needsSynchronization(active, localSequence, remoteSequence))');
@@ -276,6 +289,14 @@ describe("Android Local Hub replication envelope", () => {
     expect(networkServerSource).toContain("return service.peerAcknowledgements(request.body)");
     expect(serviceSource).toContain("public JSONObject peerAcknowledgements(JSONObject input)");
     expect(peerSyncSource).toContain('throw new IllegalStateException("LOCAL_HUB_PEER_UNREACHABLE", error)');
+    expect(peerSyncSource).toContain("public JSONObject authorizeDesktopLogin(JSONObject input)");
+    expect(peerSyncSource).toContain('"/api/v1/auth/desktop-login/authorize"');
+    expect(peerSyncSource).toContain('"aetherx-desktop-login-space-proof"');
+    expect(peerSyncSource).toContain("decryptDesktopLoginCredential");
+    expect(peerSyncSource).toContain('secretStore.merge(new JSONObject().put("peerCredential", credential))');
+    expect(peerSyncSource).toContain("JSONObject peer = hello(endpoint, config, credential, refreshedSecrets)");
+    expect(peerSyncSource).toContain("isAetherXBackend(endpoint, 2_500)");
+    expect(serviceSource).toContain("public JSONObject authorizeDesktopLogin(JSONObject input)");
     expect(networkServerSource).toContain('"/api/v1/peer/client-sessions/mint"');
     expect(networkServerSource).toContain("JSONObject data = service.peerClientSession()");
     expect(serviceSource).toContain("public JSONObject peerClientSession()");
@@ -307,10 +328,13 @@ describe("Android Local Hub replication envelope", () => {
     expect(networkServerSource).toContain('"LOCAL_HUB_BUSY".equals(code)');
     expect(networkServerSource.indexOf("dispatchNativePeer(request)"))
       .toBeLessThan(networkServerSource.indexOf("LocalHubNetworkBridge.dispatch("));
-    expect(networkServerSource).toContain("BRIDGE_WORKER_COUNT = 4");
+    expect(networkServerSource).toContain("BRIDGE_WORKER_COUNT = 6");
+    expect(networkServerSource).toContain("BRIDGE_QUEUE_TIMEOUT_SECONDS = 20");
     expect(networkServerSource).toContain("HTTP_WORKER_COUNT = 16");
     expect(networkServerSource).toContain("client.setSoTimeout(15_000)");
-    expect(networkServerSource).toContain("bridgeWorkers.tryAcquire()");
+    expect(networkServerSource).toContain(
+      "bridgeWorkers.tryAcquire(BRIDGE_QUEUE_TIMEOUT_SECONDS, TimeUnit.SECONDS)"
+    );
     expect(networkServerSource).toContain("bridgeWorkers.release()");
   });
 

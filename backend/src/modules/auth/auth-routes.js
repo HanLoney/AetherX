@@ -1,4 +1,4 @@
-function registerAuthRoutes(router, service) {
+function registerAuthRoutes(router, service, desktopQrLoginService) {
   router.add(
     "GET",
     "/api/v1/auth/config",
@@ -19,6 +19,40 @@ function registerAuthRoutes(router, service) {
     }),
     { public: true }
   );
+  if (desktopQrLoginService) {
+    router.add(
+      "POST",
+      "/api/v1/auth/desktop-login/challenges",
+      ({ request }) => ({
+        status: 201,
+        data: desktopQrLoginService.create(request.socket.remoteAddress)
+      }),
+      { public: true }
+    );
+    router.add(
+      "GET",
+      "/api/v1/auth/desktop-login/challenges/:id",
+      ({ request, params, query }) => ({
+        data: desktopQrLoginService.poll(
+          params.id,
+          query.secret,
+          request.socket.remoteAddress
+        )
+      }),
+      { public: true, parseBody: false }
+    );
+    router.add(
+      "POST",
+      "/api/v1/auth/desktop-login/authorize",
+      ({ request, body }) => ({
+        data: desktopQrLoginService.authorizeWithSpaceProof({
+          body,
+          remoteAddress: request.socket.remoteAddress
+        })
+      }),
+      { public: true }
+    );
+  }
   router.add("GET", "/api/v1/auth/session", ({ auth }) => ({
     data: { user: auth.user }
   }));

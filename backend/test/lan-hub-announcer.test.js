@@ -56,7 +56,7 @@ test("LAN Hub announcer emits a credential-free beacon and closes cleanly", () =
 
   announcer.start();
   assert.deepEqual(sends, [{
-    payload: { type: DISCOVERY_TYPE, version: 1, port: 4318 },
+    payload: { type: DISCOVERY_TYPE, version: 1, platform: "desktop", port: 4318 },
     port: DISCOVERY_PORT,
     address: "192.168.8.255"
   }]);

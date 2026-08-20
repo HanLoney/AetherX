@@ -59,6 +59,50 @@ function registerSwitchRoute(hub, overrides = {}) {
   };
 }
 
+function registerDiscoveryRoute(overrides = {}) {
+  const routes = [];
+  const calls = [];
+  const hub = { id: "android-1", active: true };
+  const router = {
+    add(method, path, handler, options) {
+      routes.push({ method, path, handler, options });
+    }
+  };
+  const service = {
+    status: () => ({}),
+    mobileHubs: () => [],
+    requireMobileHub(userId, nodeId) {
+      calls.push(["require", userId, nodeId]);
+      return hub;
+    }
+  };
+  const peerTransport = {
+    async discoverEndpoint(userId, nodeId, endpoint) {
+      calls.push(["discover", userId, nodeId, endpoint]);
+      return { ...endpoint, id: "endpoint-1" };
+    },
+    ...overrides.peerTransport
+  };
+  registerClusterRoutes(
+    router,
+    service,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    peerTransport
+  );
+  return {
+    calls,
+    route: routes.find((route) =>
+      route.method === "POST" &&
+      route.path === "/api/v1/cluster/mobile-hubs/:id/discover-endpoint"
+    )
+  };
+}
+
 test("mobile Hub switch uses the desktop state machine when the phone is standby", async () => {
   const { calls, route } = registerSwitchRoute({
     id: "android-1",
@@ -130,4 +174,57 @@ test("mobile Hub switch still rejects an incomplete standby replica", async () =
     () => route.handler({ userId: "user-1", params: { id: "android-1" }, body: {} }),
     (error) => error.code === "MOBILE_HUB_NOT_READY"
   );
+});
+
+test("mobile Hub discovery authenticates a normalized private LAN endpoint", async () => {
+  const { calls, route } = registerDiscoveryRoute();
+
+  const response = await route.handler({
+    userId: "user-1",
+    params: { id: "android-1" },
+    body: {
+      endpoint: {
+        transport: "lan",
+        address: "http://192.168.1.23:4319/untrusted/path?ignored=1",
+        priority: 5000,
+        certificateFingerprint: "untrusted"
+      }
+    }
+  });
+
+  assert.equal(response.data.discovered, true);
+  assert.deepEqual(calls, [
+    ["require", "user-1", "android-1"],
+    [
+      "discover",
+      "user-1",
+      "android-1",
+      {
+        transport: "lan",
+        address: "http://192.168.1.23:4319",
+        priority: 1000,
+        certificateFingerprint: ""
+      }
+    ]
+  ]);
+});
+
+test("mobile Hub discovery rejects public, Anywhere and unexpected-port endpoints", async () => {
+  const invalidEndpoints = [
+    { transport: "lan", address: "http://203.0.113.5:4319" },
+    { transport: "anywhere", address: "https://mobile.example.test" },
+    { transport: "lan", address: "http://192.168.1.23:8080" }
+  ];
+
+  for (const endpoint of invalidEndpoints) {
+    const { route } = registerDiscoveryRoute();
+    await assert.rejects(
+      () => route.handler({
+        userId: "user-1",
+        params: { id: "android-1" },
+        body: { endpoint }
+      }),
+      (error) => error.code === "PEER_ENDPOINT_INVALID"
+    );
+  }
 });

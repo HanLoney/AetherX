@@ -275,11 +275,32 @@ export async function pairAndroidLocalHub(
     if (localStatus.spaceId !== pairing.spaceId) {
       throw new Error("这台手机的 Hub 已连接到另一个数据空间，请先在设置中重置手机 Hub。 ");
     }
-    onState?.("手机 Hub 已连接，正在恢复手机客户端登录…");
-    await reuseThroughReachableEndpoint(pairing, {
+    onState?.("手机 Hub 已连接，正在更新安全凭据…");
+    const ephemeral = await crypto.subtle.generateKey(
+      { name: "X25519" } as AlgorithmIdentifier,
+      true,
+      ["deriveBits"]
+    ) as CryptoKeyPair;
+    const clientEphemeralPublicKey = base64Encode(
+      await crypto.subtle.exportKey("spki", ephemeral.publicKey)
+    );
+    const clientPrivateKey = await crypto.subtle.exportKey("pkcs8", ephemeral.privateKey);
+    const reused = await reuseThroughReachableEndpoint(pairing, {
       secret: pairing.secret,
-      nodeId: localNodeId
+      nodeId: localNodeId,
+      clientEphemeralPublicKey
     });
+    const packageValue = await unwrapPairingEnvelope(reused.result.envelope, clientPrivateKey);
+    if (packageValue.localNodeId !== localNodeId || packageValue.spaceId !== pairing.spaceId) {
+      throw new Error("电脑端返回的 Hub 身份与本机不一致。 ");
+    }
+    packageValue.endpoints = includeResolvedPeerEndpoint(
+      packageValue.endpoints,
+      String(packageValue.peerNodeId),
+      reused.api.serverUrl
+    );
+    await localHub.configure(packageValue);
+    onState?.("手机 Hub 安全凭据已更新，正在恢复同步…");
     if (localStatus.bootstrap?.status !== "completed") {
       onState?.("手机 Hub 副本未完成，正在从电脑 Hub 继续恢复…");
       await localHub.resume();
@@ -390,15 +411,16 @@ async function claimThroughReachableEndpoint(
   pairing: HubPairingCode,
   claim: Record<string, unknown>
 ) {
-  return requestThroughReachableEndpoint(
+  const { api } = await requestThroughReachableEndpoint(
     pairing,
     (candidate, signal) => candidate.claimHubPairingSession(pairing.sessionId, claim, signal)
   );
+  return api;
 }
 
 async function reuseThroughReachableEndpoint(
   pairing: HubPairingCode,
-  input: { secret: string; nodeId: string }
+  input: { secret: string; nodeId: string; clientEphemeralPublicKey: string }
 ) {
   return requestThroughReachableEndpoint(
     pairing,
@@ -406,9 +428,9 @@ async function reuseThroughReachableEndpoint(
   );
 }
 
-async function requestThroughReachableEndpoint(
+async function requestThroughReachableEndpoint<T>(
   pairing: HubPairingCode,
-  request: (candidate: AetherApi, signal: AbortSignal) => Promise<unknown>
+  request: (candidate: AetherApi, signal: AbortSignal) => Promise<T>
 ) {
   let lastError: unknown = null;
   const addresses = [
@@ -426,11 +448,11 @@ async function requestThroughReachableEndpoint(
       continue;
     }
     try {
-      await withConnectionTimeout(
+      const result = await withConnectionTimeout(
         (signal) => request(candidate, signal),
         15_000
       );
-      return candidate;
+      return { api: candidate, result };
     } catch (cause) {
       lastError = cause;
       if (

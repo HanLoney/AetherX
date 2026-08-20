@@ -178,9 +178,17 @@ const hubSyncLabel = computed(() => {
 const hubSyncMessage = computed(() => {
   if (!localHub.status.value?.configured) return "先在连接管理中完成手机 Hub 配对";
   if (!localHubBootstrapReady.value) return localHubDescription.value;
-  if (hubSynchronization.value?.message) return hubSynchronization.value.message;
+  if (hubSynchronization.value?.message) return readableLocalHubError(hubSynchronization.value.message);
   return "点击立即同步，确认电脑 Hub 与手机 Hub 的数据完全一致";
 });
+
+function readableLocalHubError(value: unknown) {
+  const message = String(value || "");
+  if (message.includes("PEER_AUTH_INVALID")) {
+    return "安全凭据已失效，请扫描电脑端的一体化配对码重新建立信任；本机历史不会删除";
+  }
+  return message;
+}
 const desktopHubSyncLabel = computed(() => {
   if (hubSyncTone.value === "syncing") return "同步中";
   if (hubSyncTone.value === "synced") return "已同步";
@@ -542,6 +550,13 @@ function openPhoneHubSettings() {
   openLocalHubPairing();
 }
 
+async function scanDesktopLoginCode() {
+  connectionOpen.value = true;
+  connectionMode.value = "pair";
+  connectionError.value = "";
+  await scanHubCode();
+}
+
 function closeConnectionSettings() {
   if (!reconnecting.value && !scanning.value) connectionOpen.value = false;
 }
@@ -564,7 +579,12 @@ async function scanHubCode() {
     });
     const code = String(result.ScanResult || "").trim();
     if (!code) return;
-    if (/^https?:\/\//i.test(code)) {
+    const desktopLogin = parseDesktopLoginCode(code);
+    if (desktopLogin) {
+      connectionNotice.value = "正在由手机 Hub 授权电脑登录…";
+      await localHub.authorizeDesktopLogin(desktopLogin);
+      connectionNotice.value = "电脑登录已授权，请回到电脑继续";
+    } else if (/^https?:\/\//i.test(code)) {
       connectionUrl.value = code.replace(/\/+$/, "");
       connectionMode.value = "address";
     } else {
@@ -572,10 +592,49 @@ async function scanHubCode() {
       connectionMode.value = "pair";
     }
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : "没有识别到有效的连接二维码。";
+    const message = desktopLoginErrorMessage(cause);
     if (!/cancel|取消/i.test(message)) connectionError.value = message;
   } finally {
     scanning.value = false;
+  }
+}
+
+function desktopLoginErrorMessage(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause || "");
+  if (message.includes("LOCAL_HUB_NOT_ACTIVE")) {
+    return "当前不是手机 Hub，请先切换到手机 Hub，再扫描电脑登录码。";
+  }
+  if (message.includes("DESKTOP_LOGIN_COMPUTER_UNREACHABLE")) {
+    return "手机暂时连接不到这台电脑，请确认两台设备处于同一网络后重试。";
+  }
+  if (message.includes("DESKTOP_LOGIN_CODE_INVALID") || message.includes("CHALLENGE_EXPIRED")) {
+    return "电脑登录码已经过期，请在电脑端重新生成。";
+  }
+  if (message.includes("PEER_AUTH_INVALID")) {
+    return "手机 Hub 的安全凭据已失效，请扫描电脑登录页的新二维码自动恢复。";
+  }
+  return message || "没有识别到有效的连接二维码。";
+}
+
+function parseDesktopLoginCode(code: string) {
+  try {
+    const url = new URL(code);
+    if (url.protocol !== "aetherx:" || url.hostname !== "desktop-login") return null;
+    const challengeId = String(url.searchParams.get("id") || "").trim();
+    const secret = String(url.searchParams.get("secret") || "").trim();
+    const expiresAt = Number(url.searchParams.get("expiresAt"));
+    const endpoints = url.searchParams.getAll("e")
+      .map((endpoint) => endpoint.trim().replace(/\/+$/, ""))
+      .filter((endpoint) => /^https?:\/\//i.test(endpoint));
+    if (!challengeId || secret.length < 32 || !Number.isFinite(expiresAt) || endpoints.length === 0) {
+      throw new Error("电脑登录二维码不完整，请在电脑端重新生成。");
+    }
+    return { challengeId, secret, expiresAt, endpoints };
+  } catch (cause) {
+    if (/^aetherx:\/\/desktop-login/i.test(code)) {
+      throw cause instanceof Error ? cause : new Error("电脑登录二维码无效。");
+    }
+    return null;
   }
 }
 
@@ -843,6 +902,17 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </button>
       <button class="hub-management-entry" type="button" @click="hubManagementOpen = true">
         <span>连接管理</span><small>地址、配对与故障处理</small><ChevronRight :size="16" />
+      </button>
+      <button
+        v-if="localHub.available && localHub.status.value?.configured && localHub.status.value?.role === 'active'"
+        class="desktop-login-scan-entry"
+        type="button"
+        :disabled="scanning || reconnecting"
+        @click="scanDesktopLoginCode"
+      >
+        <ScanLine :size="17" />
+        <span><strong>扫码登录电脑</strong><small>用当前手机 Hub 直接授权电脑进入</small></span>
+        <ChevronRight :size="16" />
       </button>
     </section>
     <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
@@ -1173,4 +1243,5 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .archive-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 92% 5%,rgba(var(--blue-rgb),.16),transparent 31%),radial-gradient(circle at 4% 86%,rgba(var(--pink-rgb),.13),transparent 35%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}.archive-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.archive-settings-sheet header span{color:#7e98b3;font-size:calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.archive-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.archive-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.archive-hero{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:13px;margin-top:16px;padding:15px;border:1px solid rgba(255,255,255,.8);border-radius:21px 21px 21px 8px;background:linear-gradient(135deg,rgba(var(--blue-rgb),.11),rgba(var(--pink-rgb),.075));box-shadow:0 13px 35px rgba(75,70,103,.08)}.archive-hero>i{width:45px;height:45px;display:grid;place-items:center;border-radius:15px;color:#718eac;background:rgba(255,255,255,.64)}.archive-hero>div{display:grid;gap:5px}.archive-hero strong{color:#56505f;font-size:calc(11px * var(--font-scale, 1))}.archive-hero span{color:#928b9a;font-size:calc(8px * var(--font-scale, 1));line-height:1.55}.archive-password{display:grid;gap:7px;margin-top:15px}.archive-password>span{color:#70697d;font-size:calc(9px * var(--font-scale, 1));font-weight:700}.archive-password input{height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale, 1))}.archive-password input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.archive-password small{color:#aaa3b0;font-size:calc(7px * var(--font-scale, 1));line-height:1.5}.archive-export-button{width:100%;min-height:57px;display:flex;align-items:center;gap:11px;margin-top:14px;padding:10px 13px;border:1px solid rgba(var(--blue-rgb),.14);border-radius:16px;color:#7187a2;background:rgba(var(--blue-rgb),.075);text-align:left}.archive-export-button>span{display:grid;gap:3px}.archive-export-button strong{font-size:calc(9px * var(--font-scale, 1))}.archive-export-button small{color:#9992a2;font-size:calc(7px * var(--font-scale, 1))}.archive-restore-card{margin-top:12px;padding:15px;border:1px solid rgba(var(--pink-rgb),.13);border-radius:20px 20px 8px 20px;background:rgba(255,249,252,.72)}.archive-restore-card>div{display:grid;gap:4px}.archive-restore-card strong{color:#655661;font-size:calc(10px * var(--font-scale, 1))}.archive-restore-card span,.archive-restore-card>p{color:#9d8790;font-size:calc(7px * var(--font-scale, 1));line-height:1.55}.archive-file-input{display:none}.archive-file-button{width:100%;min-height:43px;display:flex;align-items:center;justify-content:center;gap:7px;overflow:hidden;margin-top:11px;padding:0 12px;border:1px dashed rgba(123,146,178,.3);border-radius:13px;color:#71829a;background:rgba(255,255,255,.58);font-size:calc(8px * var(--font-scale, 1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.archive-restore-card>p{margin:10px 1px 0}.archive-restore-button{width:100%;height:46px;margin-top:11px;border:0;border-radius:14px;color:#fff;background:linear-gradient(115deg,#c77d9f,#8a8fb9 58%,#729ec4);font-size:calc(9px * var(--font-scale, 1));font-weight:800}.archive-export-button:disabled,.archive-file-button:disabled,.archive-restore-button:disabled,.archive-settings-sheet header button:disabled{opacity:.5}.archive-notice{display:flex;align-items:flex-start;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale, 1));line-height:1.5}.archive-notice svg{flex:0 0 auto;margin-top:1px}.archive-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}
 .crop-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:rgba(40,37,56,.34);backdrop-filter:blur(9px)}.avatar-cropper{width:min(100%,390px);padding:18px;border:1px solid rgba(255,255,255,.78);border-radius:28px;background:linear-gradient(145deg,rgba(255,252,254,.98),rgba(243,247,252,.98));box-shadow:0 28px 80px rgba(50,45,69,.3)}.avatar-cropper header{display:flex;align-items:center;justify-content:space-between}.avatar-cropper header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.avatar-cropper h2{margin:3px 0 0;color:#4d4859;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.avatar-cropper header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.crop-stage{position:relative;width:min(74vw,292px);overflow:hidden;aspect-ratio:1;margin:18px auto 0;border-radius:28px;background:#dedbe5;box-shadow:inset 0 0 0 1px rgba(77,70,98,.1),0 17px 35px rgba(75,68,97,.17)}.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}.crop-stage canvas:active{cursor:grabbing}.crop-guide{position:absolute;inset:10px;border:1px solid rgba(255,255,255,.76);border-radius:21px;box-shadow:0 0 0 1px rgba(68,61,86,.08);pointer-events:none}.avatar-cropper>p{margin:12px 0 0;color:#918a9b;font-size: calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.crop-zoom{height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:8px;padding:0 5px;color:#8a8295}.crop-zoom input{width:100%;accent-color:#a785b3}.crop-error{color:#aa5970!important}.crop-actions{display:grid;grid-template-columns:1fr 1.45fr;gap:9px;margin-top:12px}.crop-actions button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;color:#797283;background:rgba(105,97,131,.08);font-size: calc(9px * var(--font-scale, 1));font-weight:700}.crop-actions button:last-child{color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.crop-actions button:disabled,.avatar-cropper header button:disabled{opacity:.55}
 .hub-replication-status{margin-top:12px;padding:11px 12px;border:1px solid rgba(112,105,133,.08);border-radius:15px;background:rgba(255,255,255,.48)}.hub-replication-status>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.hub-replication-status>div span{display:flex;align-items:center;gap:6px;color:#777181;font-size:calc(8px * var(--font-scale,1));font-weight:800}.hub-replication-status>div svg{color:#7897b4}.hub-replication-status>div b{color:#71907f;font-size:calc(8px * var(--font-scale,1))}.hub-replication-status.syncing>div b{color:#718aaa}.hub-replication-status.error>div b{color:#b06f84}.hub-replication-status p{margin:6px 0 0;color:#97909f;font-size:calc(7px * var(--font-scale,1));line-height:1.45}.hub-replication-status>i{height:4px;display:block;overflow:hidden;margin-top:9px;border-radius:999px;background:rgba(113,107,134,.1)}.hub-replication-status>i b{height:100%;display:block;border-radius:inherit;background:linear-gradient(90deg,#79a6c8,#9e8fbd 55%,#ca8cac);transition:width .35s ease}.hub-replication-status.synced>i b{background:linear-gradient(90deg,#7eb69c,#70a58c)}.hub-replication-status.error>i b{background:#c98295}
+.desktop-login-scan-entry{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;margin-top:10px;padding:11px 12px;border:1px solid rgba(102,157,132,.2);border-radius:15px;color:#638d78;background:linear-gradient(120deg,rgba(239,252,245,.88),rgba(240,248,253,.72));text-align:left}.desktop-login-scan-entry>span{display:grid;gap:3px}.desktop-login-scan-entry strong{font-size:calc(9px * var(--font-scale,1))}.desktop-login-scan-entry small{color:#91a098;font-size:calc(7px * var(--font-scale,1))}.desktop-login-scan-entry>svg:last-child{color:#8ca89a}.desktop-login-scan-entry:disabled{opacity:.55}
 </style>

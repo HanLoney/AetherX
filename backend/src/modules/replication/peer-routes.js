@@ -10,10 +10,28 @@ function registerPeerRoutes(
     clusterService,
     switchStateMachineService,
     clientSessionHandoffService,
+    desktopQrLoginService,
     divergenceRecoveryService,
     replicationScheduler
   }
 ) {
+  if (desktopQrLoginService) {
+    router.add(
+      "POST",
+      "/api/v1/peer/desktop-login",
+      ({ userId, auth, body, request }) => ({
+        data: desktopQrLoginService.authorize({
+          userId,
+          spaceId: auth.spaceId,
+          peerNodeId: auth.peerNodeId,
+          body,
+          remoteAddress: request.socket.remoteAddress
+        })
+      }),
+      { peer: true, allowDuringClusterTransition: true }
+    );
+  }
+
   router.add(
     "GET",
     "/api/v1/peer/status",

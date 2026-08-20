@@ -43,6 +43,7 @@ class LanHubAnnouncer {
     const payload = Buffer.from(JSON.stringify({
       type: DISCOVERY_TYPE,
       version: 1,
+      platform: "desktop",
       port: this.hubPort
     }));
     for (const address of privateBroadcastAddresses(this.networkInterfaces())) {

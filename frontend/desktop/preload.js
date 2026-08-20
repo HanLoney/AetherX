@@ -5,10 +5,19 @@ contextBridge.exposeInMainWorld("desktop", {
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
   getAuthState: () => ipcRenderer.invoke("auth:state"),
+  getAuthHubDiscovery: (options) => ipcRenderer.invoke("auth:hub-discovery", options),
+  createDesktopQrLogin: () => ipcRenderer.invoke("auth:qr-login:create"),
+  pollDesktopQrLogin: (input) => ipcRenderer.invoke("auth:qr-login:poll", input),
   bootstrapAuth: () => ipcRenderer.invoke("auth:bootstrap"),
   getAuthConfig: (serverUrl) => ipcRenderer.invoke("auth:config", serverUrl),
   login: (input) => ipcRenderer.invoke("auth:login", input),
   register: (input) => ipcRenderer.invoke("auth:register", input),
+  onAuthHubProgress: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("auth:hub-progress", listener);
+    return () => ipcRenderer.removeListener("auth:hub-progress", listener);
+  },
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
   getHubStatus: () => ipcRenderer.invoke("hub:status"),
   getConnectionStatus: () => ipcRenderer.invoke("connections:status"),

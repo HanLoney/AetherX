@@ -100,6 +100,69 @@ test("conversation service restores the persisted message creation time", () => 
   });
 });
 
+test("conversation service restores legacy visible history from the model stream", () => {
+  withDatabase((database) => {
+    const userId = "legacy-display-user";
+    createUser(database, userId);
+    const repository = new ConversationRepository(database);
+    const conversation = repository.create(userId, "Legacy conversation");
+    const legacy = [];
+    for (let index = 0; index < 20; index += 1) {
+      legacy.push({
+        id: `legacy-${index}`,
+        stream: "model",
+        position: index,
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `legacy message ${index}`,
+        payload: index % 2 === 0 ? {} : { tool_calls: [{ id: "hidden" }] },
+        createdAt: 100 + index
+      });
+    }
+    repository.upsertMessages(conversation.id, [
+      ...legacy,
+      {
+        id: "legacy-tool",
+        stream: "model",
+        position: 20,
+        role: "tool",
+        content: "internal tool result",
+        payload: {},
+        createdAt: 120
+      },
+      {
+        id: "new-reminder",
+        stream: "display",
+        position: 0,
+        role: "assistant",
+        content: "new reminder",
+        payload: { source: "proactive-reminder" },
+        createdAt: 200
+      }
+    ]);
+
+    const restored = new ConversationService(repository).get(userId, conversation.id);
+
+    assert.equal(restored.displayMessages.length, 21);
+    assert.equal(restored.displayMessages[0].content, "legacy message 0");
+    assert.equal(restored.displayMessages.at(-1).content, "new reminder");
+    assert.equal(restored.displayMessages.some((item) => item.role === "tool"), false);
+    assert.equal("tool_calls" in restored.displayMessages[1], false);
+  });
+});
+
+test("conversation service does not duplicate healthy display and model streams", () => {
+  const displayMessages = [
+    { id: "display-user", role: "user", content: "hello", createdAt: 1 },
+    { id: "display-assistant", role: "assistant", content: "hi", createdAt: 2 }
+  ];
+  const { restoreLegacyDisplayHistory } = require("../src/modules/conversations/conversation-service");
+  const restored = restoreLegacyDisplayHistory(displayMessages, Array.from(
+    { length: 2 },
+    (_, index) => ({ id: `model-${index}`, role: "assistant", content: "model", createdAt: index })
+  ));
+  assert.deepEqual(restored, displayMessages);
+});
+
 function message(id, stream, position, createdAt) {
   return { id, stream, position, role: "assistant", content: id, payload: {}, createdAt };
 }

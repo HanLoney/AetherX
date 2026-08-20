@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -41,7 +42,8 @@ public final class LocalHubNetworkServer {
     private static final long PEER_ALLOWED_SKEW_MS = 5 * 60 * 1000;
     private static final int LAST_PORT = LocalHubService.DEFAULT_PORT + 10;
     private static final int HTTP_WORKER_COUNT = 16;
-    private static final int BRIDGE_WORKER_COUNT = 4;
+    private static final int BRIDGE_WORKER_COUNT = 6;
+    private static final long BRIDGE_QUEUE_TIMEOUT_SECONDS = 20;
 
     private final LocalHubService service;
     private final LocalHubSecretStore secretStore;
@@ -293,7 +295,9 @@ public final class LocalHubNetworkServer {
     }
 
     private JSONObject dispatchBridge(String method, String path, JSONObject body) throws Exception {
-        if (!bridgeWorkers.tryAcquire()) throw new IllegalStateException("LOCAL_HUB_BUSY");
+        if (!bridgeWorkers.tryAcquire(BRIDGE_QUEUE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("LOCAL_HUB_BUSY");
+        }
         try {
             return LocalHubNetworkBridge.dispatch(method, path, body);
         } finally {

@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCipheriv,
+  createHash,
+  createPublicKey,
+  diffieHellman,
+  generateKeyPairSync,
+  hkdfSync
+} from "node:crypto";
+import {
   canonicalStringify,
   pairAndroidLocalHub,
   parseHubPairingCode,
@@ -28,6 +36,52 @@ describe("Android Local Hub pairing", () => {
   const encodePayload = (payload: unknown) => Buffer
     .from(JSON.stringify(payload), "utf8")
     .toString("base64url");
+
+  const reuseEnvelope = async (input: RequestInit | undefined) => {
+    const body = JSON.parse(String(input?.body));
+    const clientPublicKey = Buffer.from(body.clientEphemeralPublicKey, "base64");
+    const server = generateKeyPairSync("x25519");
+    const client = createPublicKey({ key: clientPublicKey, format: "der", type: "spki" });
+    const shared = diffieHellman({ privateKey: server.privateKey, publicKey: client });
+    const aad = {
+      sessionId: "pair-1",
+      spaceId: "space-1",
+      sourceNodeId: "node-desktop",
+      nodeId: "mobile-node-existing",
+      serverEphemeralPublicKey: server.publicKey.export({ format: "der", type: "spki" }).toString("base64"),
+      clientEphemeralPublicKey: body.clientEphemeralPublicKey
+    };
+    const key = Buffer.from(hkdfSync(
+      "sha256",
+      shared,
+      Buffer.from("pair-1"),
+      Buffer.from("aetherx-hub-pairing-v1"),
+      32
+    ));
+    const iv = Buffer.alloc(12, 3);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    cipher.setAAD(Buffer.from(canonicalStringify(aad)));
+    const payload = {
+      localNodeId: "mobile-node-existing",
+      spaceId: "space-1",
+      peerNodeId: "node-desktop",
+      endpoints: []
+    };
+    const ciphertext = Buffer.concat([
+      cipher.update(canonicalStringify(payload), "utf8"),
+      cipher.final()
+    ]);
+    const envelope = {
+      version: 1,
+      algorithm: "X25519+HKDF-SHA256+A256GCM",
+      aad,
+      aadHash: createHash("sha256").update(canonicalStringify(aad)).digest("hex"),
+      iv: iv.toString("base64"),
+      authenticationTag: cipher.getAuthTag().toString("base64"),
+      ciphertext: ciphertext.toString("base64")
+    };
+    return { status: "redeemed", reused: true, nodeId: "mobile-node-existing", envelope };
+  };
 
   it("parses the desktop Hub pairing payload without dropping endpoint identity", () => {
     const payload = createPayload();
@@ -107,10 +161,11 @@ describe("Android Local Hub pairing", () => {
       if (url.endsWith("/api/v1/hub-pairing/sessions/pair-1/reuse")) {
         expect(JSON.parse(String(init?.body))).toEqual({
           secret: "s".repeat(43),
-          nodeId: "mobile-node-existing"
+          nodeId: "mobile-node-existing",
+          clientEphemeralPublicKey: expect.any(String)
         });
         return new Response(JSON.stringify({
-          data: { status: "redeemed", reused: true, nodeId: "mobile-node-existing" }
+          data: { ...(await reuseEnvelope(init)) }
         }), {
           status: 200,
           headers: { "content-type": "application/json" }
@@ -132,7 +187,8 @@ describe("Android Local Hub pairing", () => {
             configured: true,
             spaceId: "space-1",
             bootstrap: { status: "completed" }
-          })
+          }),
+          configure: vi.fn().mockResolvedValue({ configured: true })
         } as any,
         (state) => states.push(state)
       );
@@ -141,7 +197,7 @@ describe("Android Local Hub pairing", () => {
         spaceId: "space-1",
         localNodeId: "mobile-node-existing"
       });
-      expect(states).toContain("手机 Hub 已连接，正在恢复手机客户端登录…");
+      expect(states).toContain("手机 Hub 已连接，正在更新安全凭据…");
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();
@@ -149,7 +205,7 @@ describe("Android Local Hub pairing", () => {
   });
 
   it("resumes an incomplete Local Hub replica after reusing its node", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/health")) {
         return new Response(JSON.stringify({ data: { status: "ok", service: "aetherx-backend" } }), {
@@ -159,7 +215,7 @@ describe("Android Local Hub pairing", () => {
       }
       if (url.endsWith("/api/v1/hub-pairing/sessions/pair-1/reuse")) {
         return new Response(JSON.stringify({
-          data: { status: "redeemed", reused: true, nodeId: "mobile-node-existing" }
+          data: { ...(await reuseEnvelope(init)) }
         }), {
           status: 200,
           headers: { "content-type": "application/json" }
@@ -183,12 +239,14 @@ describe("Android Local Hub pairing", () => {
         bootstrap: { status: "completed" }
       });
     const resume = vi.fn().mockResolvedValue({ completed: true });
+    const configure = vi.fn().mockResolvedValue({ configured: true });
     vi.stubGlobal("fetch", fetchMock);
     try {
       await expect(pairAndroidLocalHub(
         JSON.stringify(createPayload()),
-        { status: { value: null }, refresh, resume } as any
+        { status: { value: null }, refresh, resume, configure } as any
       )).resolves.toMatchObject({ reused: true, localNodeId: "mobile-node-existing" });
+      expect(configure).toHaveBeenCalledOnce();
       expect(resume).toHaveBeenCalledOnce();
       expect(refresh).toHaveBeenCalledTimes(2);
     } finally {

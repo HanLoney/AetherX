@@ -126,6 +126,81 @@ public final class LocalHubPeerSync {
             .put("discoveredAt", System.currentTimeMillis());
     }
 
+    public JSONObject authorizeDesktopLogin(JSONObject input) throws Exception {
+        JSONObject config = database.replicationConfig();
+        String clusterState = config.optString("state");
+        if (!"active".equals(config.optString("role")) ||
+            !("stable".equals(clusterState) || "forced_active".equals(clusterState))) {
+            throw new IllegalStateException("LOCAL_HUB_NOT_ACTIVE");
+        }
+        String challengeId = input.optString("challengeId", "").trim();
+        String secret = input.optString("secret", "").trim();
+        long expiresAt = input.optLong("expiresAt", 0);
+        if (challengeId.isEmpty() || secret.length() < 32 || expiresAt <= System.currentTimeMillis()) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CODE_INVALID");
+        }
+        String endpoint = selectDesktopLoginEndpoint(input.optJSONArray("endpoints"));
+        JSONObject secrets = requireSecrets();
+        byte[] syncKey = Base64.decode(secrets.getString("spaceSyncKey"), Base64.DEFAULT);
+        String nonce = UUID.randomUUID().toString();
+        JSONObject proofMaterial = new JSONObject()
+            .put("version", 1)
+            .put("purpose", "aetherx-desktop-login-space-proof")
+            .put("challengeId", challengeId)
+            .put("secretHash", LocalHubDatabase.sha256(secret))
+            .put("expiresAt", expiresAt)
+            .put("spaceId", config.getString("spaceId"))
+            .put("nodeId", config.getString("localNodeId"))
+            .put("mobilePort", input.optInt("mobilePort", LocalHubService.DEFAULT_PORT))
+            .put("nonce", nonce);
+        JSONObject recovery = requestPublic(
+            endpoint,
+            "POST",
+            "/api/v1/auth/desktop-login/authorize",
+            new JSONObject()
+                .put("challengeId", challengeId)
+                .put("secret", secret)
+                .put("expiresAt", expiresAt)
+                .put("spaceId", config.getString("spaceId"))
+                .put("nodeId", config.getString("localNodeId"))
+                .put("mobilePort", input.optInt("mobilePort", LocalHubService.DEFAULT_PORT))
+                .put("nonce", nonce)
+                .put("proof", hmac(syncKey, LocalHubDatabase.sha256(
+                    LocalHubDatabase.canonical(proofMaterial)
+                )))
+        );
+        JSONObject credential = decryptDesktopLoginCredential(
+            recovery.getJSONObject("envelope"),
+            syncKey,
+            challengeId,
+            config
+        );
+        secretStore.merge(new JSONObject().put("peerCredential", credential));
+        JSONObject refreshedSecrets = requireSecrets();
+        JSONObject peer = hello(endpoint, config, credential, refreshedSecrets);
+        if (!config.getString("peerNodeId").equals(peer.optString("nodeId")) ||
+            !config.getString("spaceId").equals(peer.optString("spaceId"))) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CREDENTIAL_VERIFICATION_FAILED");
+        }
+        JSONObject result = request(
+            endpoint,
+            config,
+            credential,
+            refreshedSecrets,
+            "POST",
+            "/api/v1/peer/desktop-login",
+            new JSONObject()
+                .put("challengeId", challengeId)
+                .put("secret", secret)
+                .put("mobilePort", input.optInt("mobilePort", LocalHubService.DEFAULT_PORT))
+        );
+        return result
+            .put("credentialRotated", recovery.optBoolean("credentialRotated", false))
+            .put("credentialVerified", true)
+            .put("desktopEndpoint", endpoint)
+            .put("authorizedAt", System.currentTimeMillis());
+    }
+
     public JSONObject run() throws Exception {
         JSONObject config = database.replicationConfig();
         if ("active".equals(config.optString("role"))) return pushActiveOperations(config);
@@ -1762,6 +1837,49 @@ public final class LocalHubPeerSync {
         }
     }
 
+    private String selectDesktopLoginEndpoint(JSONArray endpoints) {
+        if (endpoints == null || endpoints.length() == 0) {
+            throw new IllegalStateException("DESKTOP_LOGIN_ENDPOINT_REQUIRED");
+        }
+        for (int index = 0; index < Math.min(8, endpoints.length()); index += 1) {
+            String endpoint = normalizeDesktopLoginEndpoint(endpoints.optString(index, ""));
+            if (!endpoint.isEmpty() && isAetherXBackend(endpoint, 2_500)) return endpoint;
+        }
+        throw new IllegalStateException("DESKTOP_LOGIN_COMPUTER_UNREACHABLE");
+    }
+
+    private static String normalizeDesktopLoginEndpoint(String value) {
+        try {
+            URL url = new URL(String.valueOf(value).trim());
+            if (!"http".equals(url.getProtocol()) && !"https".equals(url.getProtocol())) return "";
+            if (url.getUserInfo() != null || !url.getPath().matches("/?") || url.getQuery() != null) return "";
+            return url.toString().replaceAll("/$", "");
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static boolean isAetherXBackend(String endpoint, int timeoutMs) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(endpoint + "/health").openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
+            connection.setInstanceFollowRedirects(false);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) return false;
+            JSONObject payload = new JSONObject(read(connection.getInputStream()));
+            return "aetherx-backend".equals(payload.optJSONObject("data") == null
+                ? ""
+                : payload.optJSONObject("data").optString("service"));
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     private JSONObject request(
         String endpoint,
         JSONObject config,
@@ -1799,6 +1917,41 @@ public final class LocalHubPeerSync {
         } catch (IOException error) {
             forgetHealthyEndpoint(endpoint);
             throw new IllegalStateException("LOCAL_HUB_PEER_UNREACHABLE", error);
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private JSONObject requestPublic(
+        String endpoint,
+        String method,
+        String path,
+        JSONObject body
+    ) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(endpoint + path).openConnection();
+            connection.setRequestMethod(method);
+            connection.setConnectTimeout(8_000);
+            connection.setReadTimeout(20_000);
+            connection.setInstanceFollowRedirects(false);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(LocalHubDatabase.canonical(body).getBytes(StandardCharsets.UTF_8));
+            }
+            int status = connection.getResponseCode();
+            String responseText = read(status >= 200 && status < 300
+                ? connection.getInputStream()
+                : connection.getErrorStream());
+            JSONObject payload = responseText.isEmpty() ? new JSONObject() : new JSONObject(responseText);
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException(peerErrorCode(payload.optJSONObject("error")));
+            }
+            JSONObject data = payload.optJSONObject("data");
+            return data == null ? new JSONObject() : data;
+        } catch (IOException error) {
+            throw new IllegalStateException("DESKTOP_LOGIN_COMPUTER_UNREACHABLE", error);
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -1908,12 +2061,65 @@ public final class LocalHubPeerSync {
     }
 
     private static String hmac(byte[] key, String value) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(key, "HmacSHA256"));
-        byte[] bytes = mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
+        byte[] bytes = hmacBytes(key, value);
         StringBuilder result = new StringBuilder(bytes.length * 2);
         for (byte item : bytes) result.append(String.format("%02x", item & 0xff));
         return result.toString();
+    }
+
+    private static byte[] hmacBytes(byte[] key, String value) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        return mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static JSONObject decryptDesktopLoginCredential(
+        JSONObject envelope,
+        byte[] syncKey,
+        String challengeId,
+        JSONObject config
+    ) throws Exception {
+        if (envelope.optInt("version", 0) != 1 || !"A256GCM".equals(envelope.optString("algorithm"))) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CREDENTIAL_INVALID");
+        }
+        JSONObject aad = envelope.optJSONObject("aad");
+        if (aad == null ||
+            !"aetherx-desktop-login-credential-v1".equals(aad.optString("purpose")) ||
+            !challengeId.equals(aad.optString("challengeId")) ||
+            !config.getString("spaceId").equals(aad.optString("spaceId")) ||
+            !config.getString("localNodeId").equals(aad.optString("mobileNodeId")) ||
+            !config.getString("peerNodeId").equals(aad.optString("computerNodeId")) ||
+            !LocalHubDatabase.sha256(LocalHubDatabase.canonical(aad)).equals(envelope.optString("aadHash"))) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CREDENTIAL_INVALID");
+        }
+        byte[] key = hmacBytes(
+            syncKey,
+            "aetherx-desktop-login-credential-v1:" + challengeId
+        );
+        byte[] iv = Base64.decode(envelope.getString("iv"), Base64.DEFAULT);
+        byte[] ciphertext = Base64.decode(envelope.getString("ciphertext"), Base64.DEFAULT);
+        byte[] tag = Base64.decode(envelope.getString("authenticationTag"), Base64.DEFAULT);
+        if (key.length != 32 || iv.length != 12 || tag.length != 16) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CREDENTIAL_INVALID");
+        }
+        byte[] combined = new byte[ciphertext.length + tag.length];
+        System.arraycopy(ciphertext, 0, combined, 0, ciphertext.length);
+        System.arraycopy(tag, 0, combined, ciphertext.length, tag.length);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            new SecretKeySpec(key, "AES"),
+            new GCMParameterSpec(128, iv)
+        );
+        cipher.updateAAD(LocalHubDatabase.canonical(aad).getBytes(StandardCharsets.UTF_8));
+        JSONObject payload = new JSONObject(new String(cipher.doFinal(combined), StandardCharsets.UTF_8));
+        JSONObject credential = payload.optJSONObject("peerCredential");
+        if (credential == null ||
+            !aad.optString("keyId").equals(credential.optString("keyId")) ||
+            Base64.decode(credential.optString("sharedSecret"), Base64.DEFAULT).length != 32) {
+            throw new IllegalStateException("DESKTOP_LOGIN_CREDENTIAL_INVALID");
+        }
+        return credential;
     }
 
     private static JSONObject decryptSnapshotEnvelope(JSONObject envelope, String encodedKey) throws Exception {

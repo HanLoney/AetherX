@@ -146,6 +146,9 @@ const { GalleryService } = require("./modules/gallery/gallery-service");
 const { registerGalleryRoutes } = require("./modules/gallery/gallery-routes");
 const { AuthRepository } = require("./modules/auth/auth-repository");
 const { AuthService } = require("./modules/auth/auth-service");
+const {
+  DesktopQrLoginService
+} = require("./modules/auth/desktop-qr-login-service");
 const { registerAuthRoutes } = require("./modules/auth/auth-routes");
 const { DeviceRepository } = require("./modules/devices/device-repository");
 const { DeviceService } = require("./modules/devices/device-service");
@@ -373,6 +376,13 @@ function createApp(config) {
     clusterService,
     clusterRepository,
     secretBox
+  });
+  const desktopQrLoginService = new DesktopQrLoginService({
+    authService,
+    clusterRepository,
+    endpointRepository,
+    peerAuthenticationService,
+    spaceKeyService
   });
   const peerTransport = new PeerTransport({
     endpointRepository,
@@ -661,7 +671,7 @@ function createApp(config) {
     }),
     { public: true }
   );
-  registerAuthRoutes(router, authService);
+  registerAuthRoutes(router, authService, desktopQrLoginService);
   registerDeviceRoutes(router, deviceService);
   registerSyncRoutes(router, syncService, syncEventBroker, deviceService);
   registerClusterRoutes(
@@ -691,6 +701,7 @@ function createApp(config) {
     clusterService,
     switchStateMachineService,
     clientSessionHandoffService,
+    desktopQrLoginService,
     divergenceRecoveryService,
     replicationScheduler
   });
@@ -736,6 +747,7 @@ function createApp(config) {
     server,
     database,
     clusterService,
+    desktopQrLoginService,
     hubPairingService,
     hubImportService,
     peerAuthenticationService,
