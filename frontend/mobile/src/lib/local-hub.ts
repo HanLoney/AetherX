@@ -148,6 +148,19 @@ interface LocalHubPlugin {
     headSequence?: number;
     completedAt: number;
   }>;
+  authorizeDesktopLogin(input: {
+    challengeId: string;
+    secret: string;
+    expiresAt: number;
+    endpoints: string[];
+  }): Promise<{
+    authorized: boolean;
+    challengeId: string;
+    computerNodeId: string;
+    activeNodeId: string;
+    desktopEndpoint: string;
+    authorizedAt: number;
+  }>;
   resume(): Promise<Record<string, unknown>>;
   bootstrapBlobs(): Promise<{ completed: boolean; downloadedBytes: number; blobCount: number; completedAt: number }>;
   finalizeBootstrap(): Promise<{ completed: boolean; receipt: Record<string, unknown>; completedAt: number }>;
@@ -338,6 +351,7 @@ export function useLocalHub() {
       await refreshLocalHub();
       return result;
     },
+    authorizeDesktopLogin: LocalHub.authorizeDesktopLogin,
     flushReplication: flushActiveReplication,
     resume: async () => {
       const result = await LocalHub.resume();

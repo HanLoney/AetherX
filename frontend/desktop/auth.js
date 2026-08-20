@@ -1,7 +1,16 @@
 const state = {
   mode: "login",
   config: null,
-  loading: false
+  loading: false,
+  scanning: false,
+  qrLogin: null,
+  qrPollTimer: 0,
+  qrCountdownTimer: 0,
+  hub: {
+    computer: "checking",
+    mobile: "searching",
+    target: "unknown"
+  }
 };
 
 const elements = {
@@ -24,12 +33,143 @@ const elements = {
   authError: document.querySelector("#authError"),
   submitBtn: document.querySelector("#submitBtn"),
   submitText: document.querySelector("#submitBtn span"),
-  togglePassword: document.querySelector("#togglePassword")
+  togglePassword: document.querySelector("#togglePassword"),
+  hubRoutePanel: document.querySelector("#hubRoutePanel"),
+  computerHubNode: document.querySelector("#computerHubNode"),
+  computerHubState: document.querySelector("#computerHubState"),
+  mobileHubNode: document.querySelector("#mobileHubNode"),
+  mobileHubState: document.querySelector("#mobileHubState"),
+  hubRouteLink: document.querySelector("#hubRouteLink"),
+  hubRouteSummary: document.querySelector("#hubRouteSummary"),
+  scanHubBtn: document.querySelector("#scanHubBtn"),
+  qrLoginPanel: document.querySelector("#qrLoginPanel"),
+  qrLoginImage: document.querySelector("#qrLoginImage"),
+  qrLoginStatus: document.querySelector("#qrLoginStatus"),
+  qrLoginCountdown: document.querySelector("#qrLoginCountdown"),
+  refreshQrLoginBtn: document.querySelector("#refreshQrLoginBtn"),
+  passwordLoginDivider: document.querySelector("#passwordLoginDivider")
 };
+
+const hubStateText = {
+  checking: "正在检查…",
+  ready: "已在线",
+  online: "已在线",
+  searching: "正在搜索…",
+  discovered: "已发现，待验证",
+  verifying: "正在验证身份…",
+  verified: "身份已验证",
+  connecting: "正在连接…",
+  connected: "已连接",
+  offline: "暂未启动",
+  notFound: "未发现，可稍后连接",
+  failed: "连接异常",
+  skipped: "未连接，可稍后连接"
+};
+
+function setHubNode(node, label, status) {
+  if (!node) return;
+  node.className = `hub-node ${status}`;
+  label.textContent = hubStateText[status] || status;
+}
+
+function setHubSummary(message, tone = "") {
+  elements.hubRouteSummary.textContent = message;
+  elements.hubRoutePanel.classList.toggle("is-alert", tone === "alert");
+}
+
+function renderHubDiscovery(discovery) {
+  if (!discovery) return;
+  const computer = discovery.computerHub || {};
+  const mobile = discovery.mobileHub || {};
+  state.hub.target = discovery.activeTarget || "unknown";
+  state.hub.computer = computer.state || "offline";
+  state.hub.mobile = mobile.state || "searching";
+
+  setHubNode(elements.computerHubNode, elements.computerHubState, state.hub.computer);
+  setHubNode(elements.mobileHubNode, elements.mobileHubState, state.hub.mobile);
+  if (mobile.endpoint && ["discovered", "online", "connected"].includes(state.hub.mobile)) {
+    const latency = state.hub.mobile === "online" && Number.isFinite(Number(mobile.latencyMs))
+      ? ` · ${Number(mobile.latencyMs)} ms`
+      : "";
+    elements.mobileHubState.textContent = `${hubStateText[state.hub.mobile]} ${mobile.endpoint.replace(/^https?:\/\//, "")}${latency}`;
+  }
+  elements.hubRouteLink.className = `hub-route-link ${
+    ["discovered", "online", "connected"].includes(state.hub.mobile) ? "ready" : "searching"
+  }`;
+
+  if (state.hub.computer === "offline") {
+    setHubSummary("电脑 Hub 尚未在线，请稍候或重新启动 AetherX。", "alert");
+  } else if (state.hub.mobile === "discovered") {
+    setHubSummary("已收到手机 Hub 广播，正在等待连接验证；仍可先通过电脑 Hub 登录。");
+  } else if (state.hub.mobile === "online") {
+    setHubSummary("手机 Hub 已在线，登录后会根据当前活动 Hub 自动接入。");
+  } else if (state.hub.mobile === "notFound") {
+    setHubSummary("暂未发现手机 Hub，将先通过电脑 Hub 登录，手机上线后会自动连接。");
+  } else {
+    setHubSummary("会先通过电脑 Hub 验证账号；手机 Hub 未发现也不影响登录，可稍后自动连接。");
+  }
+}
+
+function renderHubProgress(progress = {}) {
+  if (progress.stage === "checking") {
+    setHubNode(elements.computerHubNode, elements.computerHubState, "checking");
+    setHubNode(elements.mobileHubNode, elements.mobileHubState, "searching");
+    elements.hubRouteLink.className = "hub-route-link searching";
+    setHubSummary(progress.message || "正在读取双 Hub 状态…");
+    return;
+  }
+  if (progress.target === "mobile") {
+    if (progress.stage === "searching") setHubNode(elements.mobileHubNode, elements.mobileHubState, "searching");
+    if (progress.stage === "not-found") setHubNode(elements.mobileHubNode, elements.mobileHubState, "notFound");
+    if (progress.stage === "verifying") setHubNode(elements.mobileHubNode, elements.mobileHubState, "verifying");
+    if (progress.stage === "verified") setHubNode(elements.mobileHubNode, elements.mobileHubState, "verified");
+    if (progress.stage === "routing") setHubNode(elements.mobileHubNode, elements.mobileHubState, "connecting");
+    if (progress.stage === "connected") setHubNode(elements.mobileHubNode, elements.mobileHubState, "connected");
+    elements.hubRouteLink.className = `hub-route-link ${
+      ["verifying", "verified", "routing"].includes(progress.stage) ? "active" : "ready"
+    }`;
+  }
+  if (progress.target === "computer" && progress.stage === "connected") {
+    setHubNode(elements.computerHubNode, elements.computerHubState, "connected");
+    if (progress.pendingTarget === "mobile") {
+      setHubNode(elements.mobileHubNode, elements.mobileHubState, "skipped");
+    }
+    elements.hubRouteLink.className = "hub-route-link ready";
+  }
+  if (progress.stage === "failed") {
+    const target = progress.target === "computer" ? elements.computerHubNode : elements.mobileHubNode;
+    const label = progress.target === "computer" ? elements.computerHubState : elements.mobileHubState;
+    setHubNode(target, label, "failed");
+    elements.hubRouteLink.className = "hub-route-link failed";
+    setHubSummary(progress.message || "Hub 连接失败，请检查设备状态后重试。", "alert");
+    return;
+  }
+  if (progress.message) {
+    setHubSummary(progress.message);
+  }
+}
+
+async function scanHubs() {
+  if (state.scanning || state.loading) return;
+  state.scanning = true;
+  elements.scanHubBtn.disabled = true;
+  renderHubProgress({ stage: "checking", message: "正在检查电脑 Hub，并搜索手机 Hub…" });
+  try {
+    const discovery = await window.desktop.getAuthHubDiscovery({ wait: true });
+    renderHubDiscovery(discovery);
+  } catch (error) {
+    setHubNode(elements.mobileHubNode, elements.mobileHubState, "failed");
+    setHubSummary(error.message || "无法完成 Hub 搜索，请稍后重试。", "alert");
+  } finally {
+    state.scanning = false;
+    elements.scanHubBtn.disabled = false;
+  }
+}
 
 function setMode(mode) {
   state.mode = mode;
   const registering = mode === "register";
+  document.body.classList.toggle("register-mode", registering);
   elements.loginTab.classList.toggle("active", !registering);
   elements.registerTab.classList.toggle("active", registering);
   elements.displayNameField.classList.toggle("hidden", !registering);
@@ -49,7 +189,72 @@ function setMode(mode) {
     : "登录后继续刚才的故事";
   elements.submitText.textContent = registering ? "创建并进入" : "进入 AetherX";
   elements.password.autocomplete = registering ? "new-password" : "current-password";
+  elements.qrLoginPanel.classList.toggle("hidden", registering);
+  elements.passwordLoginDivider.classList.toggle("hidden", registering);
+  if (!registering && (!state.qrLogin || state.qrLogin.expiresAt <= Date.now())) {
+    createQrLogin().catch(() => undefined);
+  }
   hideError();
+}
+
+function stopQrLoginTimers() {
+  window.clearTimeout(state.qrPollTimer);
+  window.clearInterval(state.qrCountdownTimer);
+  state.qrPollTimer = 0;
+  state.qrCountdownTimer = 0;
+}
+
+function updateQrCountdown() {
+  if (!state.qrLogin) return;
+  const seconds = Math.max(0, Math.ceil((state.qrLogin.expiresAt - Date.now()) / 1000));
+  elements.qrLoginCountdown.textContent = `${seconds}s`;
+  if (seconds === 0) {
+    stopQrLoginTimers();
+    elements.qrLoginStatus.textContent = "二维码已过期，请重新生成";
+  }
+}
+
+async function pollQrLogin() {
+  if (!state.qrLogin || state.mode !== "login") return;
+  const challenge = state.qrLogin;
+  try {
+    const result = await window.desktop.pollDesktopQrLogin({
+      id: challenge.id,
+      secret: challenge.secret
+    });
+    if (state.qrLogin !== challenge) return;
+    if (result.status === "pending") {
+      state.qrPollTimer = window.setTimeout(pollQrLogin, 1200);
+      return;
+    }
+    stopQrLoginTimers();
+    elements.qrLoginStatus.textContent = "手机已确认，正在连接活动 Hub…";
+  } catch (error) {
+    if (state.qrLogin !== challenge) return;
+    stopQrLoginTimers();
+    elements.qrLoginStatus.textContent = error.message || "扫码登录失败，请重新生成";
+  }
+}
+
+async function createQrLogin() {
+  stopQrLoginTimers();
+  elements.refreshQrLoginBtn.disabled = true;
+  elements.qrLoginStatus.textContent = "正在生成一次性登录码…";
+  elements.qrLoginImage.removeAttribute("src");
+  elements.qrLoginCountdown.textContent = "--";
+  try {
+    state.qrLogin = await window.desktop.createDesktopQrLogin();
+    elements.qrLoginImage.src = state.qrLogin.qrDataUrl;
+    elements.qrLoginStatus.textContent = "打开手机端连接设置，扫描此二维码";
+    updateQrCountdown();
+    state.qrCountdownTimer = window.setInterval(updateQrCountdown, 1000);
+    state.qrPollTimer = window.setTimeout(pollQrLogin, 600);
+  } catch (error) {
+    state.qrLogin = null;
+    elements.qrLoginStatus.textContent = error.message || "暂时无法生成扫码登录二维码";
+  } finally {
+    elements.refreshQrLoginBtn.disabled = false;
+  }
 }
 
 async function inspectServer() {
@@ -111,6 +316,8 @@ async function submit(event) {
 function setLoading(loading) {
   state.loading = loading;
   elements.submitBtn.disabled = loading;
+  elements.scanHubBtn.disabled = loading || state.scanning;
+  elements.refreshQrLoginBtn.disabled = loading;
   elements.submitText.textContent = loading
     ? state.mode === "register" ? "正在创建空间…" : "正在登录…"
     : state.mode === "register" ? "创建并进入" : "进入 AetherX";
@@ -132,6 +339,8 @@ elements.registerTab.addEventListener("click", () => {
 });
 elements.serverUrl.addEventListener("change", inspectServer);
 elements.form.addEventListener("submit", submit);
+elements.scanHubBtn.addEventListener("click", scanHubs);
+elements.refreshQrLoginBtn.addEventListener("click", createQrLogin);
 elements.togglePassword.addEventListener("click", () => {
   const visible = elements.password.type === "text";
   elements.password.type = visible ? "password" : "text";
@@ -142,8 +351,12 @@ document.querySelector("#maximizeBtn").addEventListener("click", window.desktop.
 document.querySelector("#closeBtn").addEventListener("click", window.desktop.close);
 
 async function initialize() {
+  const removeHubProgressListener = window.desktop.onAuthHubProgress(renderHubProgress);
+  window.addEventListener("beforeunload", removeHubProgressListener, { once: true });
   const auth = await window.desktop.getAuthState();
   elements.serverUrl.value = auth.serverUrl || "http://127.0.0.1:4318";
+  await scanHubs();
+  await createQrLogin();
   if (auth.hasSession) {
     setLoading(true);
     try {

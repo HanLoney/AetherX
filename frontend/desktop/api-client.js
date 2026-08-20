@@ -60,7 +60,7 @@ class XuanApiClient {
     }
   }
 
-  async performRequest(method, path, body, signal, requestId, allowRoute) {
+  async performRequest(method, path, body, signal, requestId, allowRoute, retryCount = 0) {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
@@ -81,6 +81,21 @@ class XuanApiClient {
         payload?.error?.code || "API_ERROR",
         payload?.requestId || ""
       );
+      if (
+        retryCount < 3 &&
+        isRetryableHubRead(method, response.status, error.code)
+      ) {
+        await waitForHubReadRetry(retryCount);
+        return this.performRequest(
+          method,
+          path,
+          body,
+          signal,
+          requestId,
+          allowRoute,
+          retryCount + 1
+        );
+      }
       if (
         allowRoute &&
         response.status === 409 &&
@@ -195,6 +210,14 @@ class XuanApiClient {
       "POST",
       `/api/v1/cluster/mobile-hubs/${encodeURIComponent(nodeId)}/switch`,
       { endpoints }
+    );
+  }
+
+  discoverMobileHubEndpoint(nodeId, endpoint) {
+    return this.request(
+      "POST",
+      `/api/v1/cluster/mobile-hubs/${encodeURIComponent(nodeId)}/discover-endpoint`,
+      { endpoint }
     );
   }
 
@@ -880,6 +903,21 @@ function normalizeServerUrl(value) {
 
 function isWriteMethod(method) {
   return !["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase());
+}
+
+function isRetryableHubRead(method, status, code) {
+  return ["GET", "HEAD"].includes(String(method || "").toUpperCase()) &&
+    Number(status) === 503 &&
+    [
+      "LOCAL_HUB_BUSY",
+      "LOCAL_HUB_RUNTIME_UNAVAILABLE",
+      "LOCAL_HUB_REQUEST_FAILED"
+    ].includes(String(code || ""));
+}
+
+function waitForHubReadRetry(attempt) {
+  const delayMs = [250, 600, 1200][Math.min(Math.max(Number(attempt) || 0, 0), 2)];
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 module.exports = { XuanApiClient, ApiError, requestTimeoutForPath };

@@ -188,6 +188,14 @@ public class LocalHubPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void authorizeDesktopLogin(PluginCall call) {
+        replicationExecutor.execute(() -> runAction(
+            call,
+            () -> service().authorizeDesktopLogin(call.getData())
+        ));
+    }
+
+    @PluginMethod
     public void resume(PluginCall call) {
         replicationExecutor.execute(() -> runAction(call, () -> service().resumeReplication()));
     }
@@ -311,6 +319,7 @@ public class LocalHubPlugin extends Plugin {
         if ("HUB_OPERATION_AUTH_INVALID".equals(code)) return "复制操作认证标签无效。";
         if ("HUB_OPERATION_ENTITY_VERSION_CONFLICT".equals(code)) return "复制操作的实体版本与本机副本冲突。";
         if ("LOCAL_HUB_CREDENTIAL_UNAVAILABLE".equals(code)) return "手机 Hub 的同步密钥不可用，请重新配对。";
+        if ("PEER_AUTH_INVALID".equals(code)) return "手机 Hub 的安全凭据已失效，请扫描电脑登录页的新二维码自动恢复。";
         if ("LOCAL_HUB_PEER_UNAVAILABLE".equals(code)) return "手机 Hub 没有可用的电脑端点。";
         if ("LOCAL_HUB_SYNC_CURSOR_STALLED".equals(code)) return "手机 Hub 的复制游标没有继续前进。";
         if ("LOCAL_HUB_SYNC_FAILED".equals(code)) return "手机 Hub 暂时无法完成增量同步。";

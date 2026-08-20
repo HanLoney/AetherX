@@ -387,8 +387,18 @@ export class AetherApi {
   claimHubPairingSession(id: string, input: Record<string, unknown>, signal?: AbortSignal) {
     return this.request<{ status: "pending" }>("POST", `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/claim`, input, signal);
   }
-  reuseHubPairingSession(id: string, input: { secret: string; nodeId: string }, signal?: AbortSignal) {
-    return this.request<{ status: "redeemed"; reused: true; nodeId: string }>(
+  reuseHubPairingSession(id: string, input: {
+    secret: string;
+    nodeId: string;
+    clientEphemeralPublicKey: string;
+  }, signal?: AbortSignal) {
+    return this.request<{
+      status: "redeemed";
+      reused: true;
+      nodeId: string;
+      sourceNodeId: string;
+      envelope: Record<string, unknown>;
+    }>(
       "POST",
       `/api/v1/hub-pairing/sessions/${encodeURIComponent(id)}/reuse`,
       input,
