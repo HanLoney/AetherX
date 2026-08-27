@@ -9,6 +9,34 @@ const {
   selectAuthenticationSession,
   shouldKeepRoutedConnection
 } = require("../auth-store");
+const {
+  CLOUD_PRODUCT,
+  cloudUserDataPath,
+  isCloudDesktopEdition,
+  resolveDesktopServerUrl
+} = require("../edition-config");
+
+test("desktop editions use independent product identity, storage and packaged Cloud API", () => {
+  assert.equal(CLOUD_PRODUCT.appId, "com.xuanxiaotech.aetherx.online.desktop");
+  assert.equal(CLOUD_PRODUCT.productName, "AetherX Online");
+  assert.equal(
+    cloudUserDataPath(path.join("C:", "Users", "test", "AppData", "Roaming")),
+    path.join("C:", "Users", "test", "AppData", "Roaming", "AetherX Online")
+  );
+  assert.equal(isCloudDesktopEdition({ packageMetadata: { aetherxEdition: "cloud" } }), true);
+  assert.equal(resolveDesktopServerUrl({
+    cloudEdition: true,
+    packaged: true,
+    env: { AETHERX_SERVER_URL: "http://attacker.invalid" },
+    localServerUrl: "http://127.0.0.1:4318"
+  }), "https://api.aetherx.tech");
+  assert.equal(resolveDesktopServerUrl({
+    cloudEdition: true,
+    packaged: false,
+    env: { AETHERX_CLOUD_SERVER_URL: "https://staging.example" },
+    localServerUrl: "http://127.0.0.1:4318"
+  }), "https://staging.example");
+});
 
 test("desktop preserves authenticated active-Hub routes without accepting older epochs", () => {
   const previous = {
@@ -56,6 +84,52 @@ test("API client authenticates with a bearer token and never sends a user id hea
     assert.equal(capturedHeaders.Authorization, "Bearer secret-session-token");
     assert.equal(capturedHeaders["X-Xuan-User-Id"], undefined);
     assert.equal(client.baseUrl, "https://aether.example.com");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("API client refreshes an expired cloud session and retries the request once", async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  let changedSession = null;
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).endsWith("/api/v1/auth/refresh")) {
+      assert.deepEqual(JSON.parse(options.body), { refreshToken: "old-refresh" });
+      return new Response(JSON.stringify({ data: {
+        token: "new-access",
+        refreshToken: "new-refresh",
+        expiresAt: 123,
+        refreshExpiresAt: 456,
+        user: { id: "u1", email: "loney@example.com", displayName: "洛尼" }
+      } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({
+        error: { code: "SESSION_EXPIRED", message: "登录状态已过期。" }
+      }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ data: {
+      user: { id: "u1", email: "loney@example.com", displayName: "洛尼" }
+    } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const client = new XuanApiClient({
+      baseUrl: "https://api.aetherx.tech",
+      token: "old-access",
+      refreshToken: "old-refresh",
+      onSessionChanged: (session) => { changedSession = session; }
+    });
+    const session = await client.getSession();
+    assert.equal(session.user.email, "loney@example.com");
+    assert.equal(calls.length, 3);
+    assert.equal(calls[0].options.headers.Authorization, "Bearer old-access");
+    assert.equal(calls[1].options.headers.Authorization, undefined);
+    assert.equal(calls[2].options.headers.Authorization, "Bearer new-access");
+    assert.equal(client.token, "new-access");
+    assert.equal(client.refreshToken, "new-refresh");
+    assert.equal(changedSession.refreshToken, "new-refresh");
   } finally {
     global.fetch = originalFetch;
   }
@@ -255,6 +329,7 @@ test("auth store encrypts the session token before writing it to disk", () => {
     store.save({
       serverUrl: "https://aether.example.com/",
       token: "plain-secret-token",
+      refreshToken: "plain-refresh-token",
       user: { id: "u1", username: "luoni", displayName: "洛尼" },
       routing: {
         spaceId: "space-1",
@@ -271,10 +346,12 @@ test("auth store encrypts the session token before writing it to disk", () => {
     });
     const raw = fs.readFileSync(filePath, "utf8");
     assert.doesNotMatch(raw, /plain-secret-token/);
+    assert.doesNotMatch(raw, /plain-refresh-token/);
     assert.doesNotMatch(raw, /node-secret-token/);
     assert.deepEqual(store.load(), {
       serverUrl: "https://aether.example.com",
       token: "plain-secret-token",
+      refreshToken: "plain-refresh-token",
       user: { id: "u1", username: "luoni", displayName: "洛尼" },
       routing: {
         spaceId: "space-1",
@@ -289,6 +366,39 @@ test("auth store encrypts the session token before writing it to disk", () => {
         }]
       }
     });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("auth store preserves a cloud email identity without inventing a username", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "aether-cloud-auth-store-"));
+  const filePath = path.join(directory, "auth.json");
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(`encrypted:${value}`),
+    decryptString: (value) => value.toString().replace(/^encrypted:/, "")
+  };
+  try {
+    const store = new AuthStore(filePath, safeStorage);
+    store.save({
+      serverUrl: "https://online.aetherx.example",
+      token: "cloud-token",
+      refreshToken: "cloud-refresh-token",
+      user: {
+        id: "cloud-user",
+        email: "loney@example.com",
+        emailVerified: true,
+        displayName: "洛尼"
+      }
+    });
+    assert.deepEqual(store.load().user, {
+      id: "cloud-user",
+      email: "loney@example.com",
+      emailVerified: true,
+      displayName: "洛尼"
+    });
+    assert.equal(store.load().refreshToken, "cloud-refresh-token");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -340,6 +450,51 @@ test("login screen exposes server selection, registration and migration assuranc
   assert.doesNotMatch(html, /auth-story|PRIVATE DIGITAL SPACE|回到只属于/);
   assert.match(html, /class="advanced-server"/);
   assert.match(html, /现有数据会被完整保留/);
+  assert.match(html, /id="emailVerificationPanel"/);
+  assert.match(html, /id="emailVerificationToken"/);
+  assert.match(html, /id="verificationLoginBtn"/);
+  assert.match(html, /已有账号：无需再次验证/);
+  assert.match(html, /id="forgotPasswordBtn"/);
+  assert.match(html, /id="passwordResetPanel"/);
+});
+
+test("desktop cloud edition skips the bundled Hub and supports email authentication", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const auth = fs.readFileSync(path.join(__dirname, "..", "auth.js"), "utf8");
+  const home = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const editionConfig = fs.readFileSync(path.join(__dirname, "..", "edition-config.js"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  const cloudBuilder = fs.readFileSync(path.join(__dirname, "..", "electron-builder.cloud.cjs"), "utf8");
+  assert.match(editionConfig, /AETHERX_DESKTOP_EDITION/);
+  assert.match(editionConfig, /argv\.includes\("--cloud"\)/);
+  assert.equal(packageJson.scripts["start:cloud"], "electron . --cloud");
+  assert.match(packageJson.scripts["dist:cloud"], /dist:cloud:installer/);
+  assert.match(cloudBuilder, /CLOUD_PRODUCT\.appId/);
+  assert.match(cloudBuilder, /aetherxEdition: "cloud"/);
+  assert.match(cloudBuilder, /dist-cloud/);
+  assert.match(cloudBuilder, /extraResources: \[\]/);
+  assert.match(cloudBuilder, /_localInstallerInclude/);
+  assert.match(main, /app\.setPath\("userData"/);
+  assert.match(main, /app\.setAppUserModelId\(CLOUD_PRODUCT\.appId\)/);
+  assert.match(main, /if \(!isCloudEdition\) \{/);
+  assert.match(main, /authenticationIdentityMode === "email"/);
+  assert.match(auth, /loginIdentifier === "email"/);
+  assert.match(auth, /verifyEmail/);
+  assert.match(auth, /await window\.desktop\.login\(input\)/);
+  assert.match(auth, /returnToEmailLogin/);
+  assert.match(auth, /requestPasswordReset/);
+  assert.match(auth, /completePasswordReset/);
+  assert.match(preload, /auth:verify-email/);
+  assert.match(preload, /auth:password:forgot/);
+  assert.match(preload, /auth:password:reset/);
+  assert.match(main, /authenticationRefreshToken/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "api-client.js"), "utf8"), /\/api\/v1\/auth\/refresh/);
+  assert.doesNotMatch(preload, /auth:sessions/);
+  assert.doesNotMatch(home, /cloudSessions|authSessions/);
+  assert.match(home, /state\.auth\?\.cloudEdition/);
+  assert.match(home, /elements\.hubLabel\.textContent = "云端服务"/);
+  assert.match(home, /deviceManagerBtn\.classList\.toggle\("hidden"/);
 });
 
 test("desktop packages LAN discovery and recovers the active mobile Hub before handoff", () => {

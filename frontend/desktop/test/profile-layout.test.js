@@ -6,6 +6,7 @@ const test = require("node:test");
 const html = fs.readFileSync(path.join(__dirname, "..", "profile.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "profile.css"), "utf8");
 const javascript = fs.readFileSync(path.join(__dirname, "..", "profile.js"), "utf8");
+const cacheJavascript = fs.readFileSync(path.join(__dirname, "..", "profile-cache.js"), "utf8");
 
 test("AI profile page keeps every id unique", () => {
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
@@ -99,4 +100,27 @@ test("background profile refresh preserves the current scroll position", () => {
   assert.match(javascript, /function setAssistantView\(view, \{ resetScroll = true \} = \{\}\)/);
   assert.match(javascript, /if \(resetScroll\) window\.scrollTo\(\{ top: 0, behavior: "smooth" \}\)/);
   assert.match(javascript, /setAssistantView\(assistantView, \{ resetScroll: false \}\)/);
+});
+
+test("profile pages use the current user profile without a personal-name default", () => {
+  assert.doesNotMatch(html, /洛尼/);
+  assert.doesNotMatch(javascript, /洛尼/);
+  assert.match(javascript, /window\.desktop\.getAssistantProfile\(\),\s*window\.desktop\.getProfile\(\)/);
+  assert.match(javascript, /userProfile\?\.preferredName \|\| userProfile\?\.displayName \|\| "你"/);
+});
+
+test("profile pages restore an account-scoped snapshot before refreshing the cloud", () => {
+  assert.match(html, /<script src="profile-cache\.js"><\/script>\s*<script src="profile\.js"><\/script>/);
+  assert.match(javascript, /await window\.AetherProfileCache\?\.load\(profileCacheScope\)/);
+  assert.match(javascript, /applyCachedProfile\(cached\)/);
+  assert.match(javascript, /await loadProfile\(\)/);
+  assert.match(cacheJavascript, /const PROFILE_STORE = "profile-snapshots"/);
+  assert.match(cacheJavascript, /savedAt: Date\.now\(\)/);
+});
+
+test("profile cache never persists bearer-token gallery URLs", () => {
+  assert.match(javascript, /async function cacheableGalleryImage\(image\)/);
+  assert.match(javascript, /cachedSource = await blobAsDataUrl\(blob\)/);
+  assert.match(javascript, /const \{ source: _source, originalSource: _originalSource, \.\.\.metadata \} = image/);
+  assert.match(javascript, /source: cachedSource, originalSource: cachedSource/);
 });

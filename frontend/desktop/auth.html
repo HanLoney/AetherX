@@ -78,7 +78,7 @@
               </div>
 
               <form id="authForm" novalidate>
-            <details class="advanced-server">
+            <details id="advancedServer" class="advanced-server">
               <summary><span>高级连接设置</span><small>默认使用本机电脑 Hub 登录</small></summary>
               <label class="field server-field">
                 <span>登录入口</span>
@@ -94,12 +94,12 @@
               <span>怎么称呼你</span>
               <div class="field-control">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 19c.7-3.5 3-5.3 6.5-5.3s5.8 1.8 6.5 5.3"/></svg>
-                <input id="displayName" maxlength="40" autocomplete="name" placeholder="例如：洛尼" />
+                <input id="displayName" maxlength="40" autocomplete="name" placeholder="输入你的昵称" />
               </div>
             </label>
 
-            <label class="field">
-              <span>账号名</span>
+            <label id="loginIdentifierField" class="field">
+              <span id="loginIdentifierLabel">账号名</span>
               <div class="field-control">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 19c.7-3.5 3-5.3 6.5-5.3s5.8 1.8 6.5 5.3"/></svg>
                 <input id="username" maxlength="32" autocomplete="username" placeholder="输入账号名" required />
@@ -115,6 +115,7 @@
               </div>
               <small id="passwordHelp" class="field-help hidden">至少 10 个字符，请使用不重复的密码</small>
             </label>
+            <button id="forgotPasswordBtn" class="forgot-password hidden" type="button">忘记密码？</button>
 
             <label id="registrationSecretField" class="field hidden">
               <span>注册口令</span>
@@ -130,6 +131,41 @@
             </div>
 
             <div id="authError" class="auth-error hidden" role="alert"></div>
+                <section id="emailVerificationPanel" class="email-verification-panel hidden" aria-live="polite">
+                  <strong>验证你的邮箱</strong>
+                  <p id="emailVerificationMessage">新账号：请查收验证邮件并粘贴令牌。&#10;已有账号：无需再次验证，直接返回登录。</p>
+                  <label class="field">
+                    <span>验证令牌</span>
+                    <div class="field-control">
+                      <input id="emailVerificationToken" autocomplete="one-time-code" placeholder="粘贴邮件链接或验证令牌" />
+                    </div>
+                  </label>
+                  <div class="email-verification-actions">
+                    <button id="verifyEmailBtn" type="button">完成验证</button>
+                    <button id="resendEmailBtn" type="button">重新发送</button>
+                    <button id="verificationLoginBtn" class="verification-login" type="button">返回账号登录</button>
+                  </div>
+                </section>
+                <section id="passwordResetPanel" class="email-verification-panel hidden" aria-live="polite">
+                  <strong>重置登录密码</strong>
+                  <p id="passwordResetMessage">如果这个邮箱已注册并完成验证，重置邮件会发送到你的邮箱。</p>
+                  <label class="field">
+                    <span>重置令牌</span>
+                    <div class="field-control">
+                      <input id="passwordResetToken" autocomplete="one-time-code" placeholder="粘贴邮件链接或重置令牌" />
+                    </div>
+                  </label>
+                  <label class="field">
+                    <span>新密码</span>
+                    <div class="field-control">
+                      <input id="passwordResetNewPassword" type="password" autocomplete="new-password" placeholder="至少 10 个字符" />
+                    </div>
+                  </label>
+                  <div class="email-verification-actions">
+                    <button id="completePasswordResetBtn" type="button">更新密码</button>
+                    <button id="cancelPasswordResetBtn" type="button">返回登录</button>
+                  </div>
+                </section>
                 <button id="submitBtn" class="submit-button" type="submit">
                   <span>进入 AetherX</span><i aria-hidden="true">→</i>
                 </button>

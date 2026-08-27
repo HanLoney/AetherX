@@ -74,6 +74,7 @@ const localHubSyncError = ref("");
 const interfaceOpen = ref(false);
 const archiveOpen = ref(false);
 const archivePassword = ref("");
+const archiveIncludeProviderKeys = ref(false);
 const archiveBusy = ref(false);
 const archiveNotice = ref("");
 const archiveError = ref("");
@@ -100,9 +101,13 @@ let hubStatusTimer: number | null = null;
 const displayName = computed(() => String(
   data.profile.value.displayName
   || session.user.value?.displayName
+  || session.user.value?.email
   || session.user.value?.username
   || "当前账号"
 ));
+const cloudEdition = computed(() =>
+  import.meta.env.VITE_AETHERX_EDITION === "cloud" || Boolean(session.user.value?.email)
+);
 const preferredName = computed(() => String(data.profile.value.preferredName || ""));
 const occupation = computed(() => String(data.profile.value.occupation || ""));
 const bio = computed(() => String(data.profile.value.bio || ""));
@@ -205,6 +210,7 @@ const phoneHubSyncLabel = computed(() => {
 });
 
 async function pollHubStatus() {
+  if (cloudEdition.value) return;
   if (document.visibilityState !== "visible" || router.currentRoute.value.path !== "/settings") return;
   await localHub.refresh().catch(() => undefined);
 }
@@ -219,6 +225,7 @@ async function openBatteryOptimizationSettings() {
 }
 
 onMounted(() => {
+  if (cloudEdition.value) return;
   void pollHubStatus();
   hubStatusTimer = window.setInterval(() => { void pollHubStatus(); }, 1_200);
 });
@@ -265,6 +272,7 @@ function closeArchiveSettings() {
   if (archiveBusy.value) return;
   archiveOpen.value = false;
   archivePassword.value = "";
+  archiveIncludeProviderKeys.value = false;
   archiveFile.value = null;
   archiveNotice.value = "";
   archiveError.value = "";
@@ -284,7 +292,10 @@ async function exportFullArchive() {
   archiveNotice.value = "正在加密并整理完整存档……";
   try {
     const api = session.requireApi();
-    const result = await api.createArchiveExport(archivePassword.value);
+    const result = await api.createArchiveExport(
+      archivePassword.value,
+      archiveIncludeProviderKeys.value ? "password_encrypted" : "excluded"
+    );
     await Browser.open({ url: api.archiveDownloadUrl(result.downloadPath) });
     archiveNotice.value = "已交给系统浏览器下载，请妥善保存存档和密码。";
   } catch (error) {
@@ -319,14 +330,14 @@ async function restoreFullArchive() {
   }
   archiveBusy.value = true;
   archiveError.value = "";
-  archiveNotice.value = "正在校验并完整恢复，期间请不要关闭应用……";
+  archiveNotice.value = "正在校验并导入存档，期间请不要关闭应用……";
   try {
     const result = await session.requireApi().restoreArchive(archiveFile.value, archivePassword.value);
     await data.resetAfterArchiveRestore(result.resetCursor);
     archiveFile.value = null;
-    archiveNotice.value = "完整恢复成功，聊天、记忆与媒体已经切换到存档状态。";
+    archiveNotice.value = "存档导入成功，聊天、记忆与媒体已经切换到存档状态。";
   } catch (error) {
-    archiveError.value = (error as Error).message || "完整恢复失败，现有数据没有变化。";
+    archiveError.value = (error as Error).message || "导入存档失败，现有数据没有变化。";
     archiveNotice.value = "";
   } finally {
     archiveBusy.value = false;
@@ -856,8 +867,9 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
       </div>
     </section>
 
-    <div class="section-heading"><div><span>ACTIVE HUB</span><h2>当前 Hub</h2></div><ShieldCheck :size="18" /></div>
-    <section class="current-hub-card" :class="{ mobile: isLocalHubActive }">
+    <template v-if="!cloudEdition">
+      <div class="section-heading"><div><span>ACTIVE HUB</span><h2>当前 Hub</h2></div><ShieldCheck :size="18" /></div>
+      <section class="current-hub-card" :class="{ mobile: isLocalHubActive }">
       <div class="current-hub-head">
         <span><i />当前连接</span>
         <b :class="{ warning: currentHubBadge === '通道重连中' }">{{ currentHubBadge }}</b>
@@ -914,10 +926,24 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
         <span><strong>扫码登录电脑</strong><small>用当前手机 Hub 直接授权电脑进入</small></span>
         <ChevronRight :size="16" />
       </button>
-    </section>
-    <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
-    <p v-if="localHubSwitchError" class="connection-error">{{ localHubSwitchError }}</p>
-    <p v-if="localHubSyncError" class="connection-error">{{ localHubSyncError }}</p>
+      </section>
+      <p v-if="connectionNotice" class="connection-notice"><Check :size="13" />{{ connectionNotice }}</p>
+      <p v-if="localHubSwitchError" class="connection-error">{{ localHubSwitchError }}</p>
+      <p v-if="localHubSyncError" class="connection-error">{{ localHubSyncError }}</p>
+    </template>
+    <template v-else>
+      <div class="section-heading"><div><span>CLOUD SERVICE</span><h2>云端同步</h2></div><ShieldCheck :size="18" /></div>
+      <section class="current-hub-card">
+        <div class="current-hub-head">
+          <span><i />当前连接</span>
+          <b :class="{ warning: data.syncState.value === 'error' }">{{ data.syncState.value === 'error' ? '连接异常' : '已连接' }}</b>
+        </div>
+        <div class="current-hub-main">
+          <i class="current-hub-icon"><Cloud :size="25" /></i>
+          <div><h3>AetherX 云端服务</h3><p>数据由你的账号空间保存，并在桌面端与手机版之间同步。</p></div>
+        </div>
+      </section>
+    </template>
 
     <div class="section-heading module-heading"><div><span>CAPABILITIES</span><h2>功能模块</h2></div><Blocks :size="18" /></div>
     <section class="module-control-list">
@@ -952,8 +978,8 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 
     <button class="archive-settings-entry" type="button" @click="openArchiveSettings">
       <i><Archive :size="18" /></i>
-      <span><strong>完整存档</strong><small>导出全部数据，或把当前账号完整恢复到存档状态</small></span>
-      <b>仅完整恢复</b>
+      <span><strong>完整存档</strong><small>导出全部数据，或把存档导入当前账号</small></span>
+      <b>导入存档</b>
       <ChevronRight :size="17" />
     </button>
 
@@ -1088,7 +1114,7 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
           <header><div><span>PERSONAL PROFILE</span><h2>编辑个人资料</h2></div><button type="button" aria-label="关闭" @click="editing = false"><X :size="18"/></button></header>
           <div class="editor-fields">
             <label><span>显示名称</span><input v-model="form.displayName" maxlength="100" required /></label>
-            <label><span>希望小玄怎么称呼你</span><input v-model="form.preferredName" maxlength="100" placeholder="例如：洛尼" /></label>
+            <label><span>希望小玄怎么称呼你</span><input v-model="form.preferredName" maxlength="100" placeholder="输入你喜欢的称呼" /></label>
             <label><span>职业 / 当前身份</span><input v-model="form.occupation" maxlength="200" placeholder="可选" /></label>
             <label><span>关于我</span><textarea v-model="form.bio" maxlength="2000" rows="3" placeholder="写一点想让小玄了解的你…" /></label>
           </div>
@@ -1162,19 +1188,24 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
             <small>密码只用于加密存档。忘记后无法恢复，请单独妥善保存。</small>
           </label>
 
+          <label class="archive-secret-policy">
+            <input v-model="archiveIncludeProviderKeys" type="checkbox" :disabled="archiveBusy || archiveNeedsDesktopHub" />
+            <span><strong>同时迁移 Provider Key</strong><small>默认不导出。启用后，Key 只存在于密码加密的存档中。</small></span>
+          </label>
+
           <button class="archive-export-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub" @click="exportFullArchive">
             <Download :size="18" /><span><strong>导出完整存档</strong><small>生成加密的 .aetherx 文件并交给系统下载</small></span>
           </button>
 
           <div class="archive-restore-card">
-            <div><strong>完整恢复</strong><span>不会合并；当前账号的 AI 数据会整套替换为存档内容。</span></div>
+            <div><strong>导入存档</strong><span>不会合并；当前账号的 AI 数据会整套替换为存档内容。</span></div>
             <input ref="archiveInput" class="archive-file-input" type="file" accept=".aetherx,application/vnd.aetherx.archive" @change="handleArchiveFile" />
             <button class="archive-file-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub" @click="chooseArchiveFile">
               <Upload :size="17" />{{ archiveFile?.name || '选择 .aetherx 存档' }}
             </button>
-            <p>登录密码、当前登录状态与已配对设备会保留；恢复前 Hub 会自动备份现有数据。</p>
+            <p>登录状态会保留；如果存档含 Provider Key，它们会进入当前运行环境并重新加密。恢复前系统会自动备份现有数据。</p>
             <button class="archive-restore-button" type="button" :disabled="archiveBusy || archiveNeedsDesktopHub || !archiveFile" @click="restoreFullArchive">
-              {{ archiveBusy ? '正在处理存档……' : '确认完整恢复' }}
+              {{ archiveBusy ? '正在处理存档……' : '导入存档' }}
             </button>
           </div>
 
@@ -1244,4 +1275,5 @@ void session.requireApi().aiConfig().then((value) => { aiState.value = value; })
 .crop-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:rgba(40,37,56,.34);backdrop-filter:blur(9px)}.avatar-cropper{width:min(100%,390px);padding:18px;border:1px solid rgba(255,255,255,.78);border-radius:28px;background:linear-gradient(145deg,rgba(255,252,254,.98),rgba(243,247,252,.98));box-shadow:0 28px 80px rgba(50,45,69,.3)}.avatar-cropper header{display:flex;align-items:center;justify-content:space-between}.avatar-cropper header span{color:#a07a9e;font-size: calc(7px * var(--font-scale, 1));font-weight:800;letter-spacing:.16em}.avatar-cropper h2{margin:3px 0 0;color:#4d4859;font-size: calc(21px * var(--font-scale, 1));letter-spacing:-.045em}.avatar-cropper header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}.crop-stage{position:relative;width:min(74vw,292px);overflow:hidden;aspect-ratio:1;margin:18px auto 0;border-radius:28px;background:#dedbe5;box-shadow:inset 0 0 0 1px rgba(77,70,98,.1),0 17px 35px rgba(75,68,97,.17)}.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}.crop-stage canvas:active{cursor:grabbing}.crop-guide{position:absolute;inset:10px;border:1px solid rgba(255,255,255,.76);border-radius:21px;box-shadow:0 0 0 1px rgba(68,61,86,.08);pointer-events:none}.avatar-cropper>p{margin:12px 0 0;color:#918a9b;font-size: calc(8px * var(--font-scale, 1));line-height:1.5;text-align:center}.crop-zoom{height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:8px;padding:0 5px;color:#8a8295}.crop-zoom input{width:100%;accent-color:#a785b3}.crop-error{color:#aa5970!important}.crop-actions{display:grid;grid-template-columns:1fr 1.45fr;gap:9px;margin-top:12px}.crop-actions button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:14px;color:#797283;background:rgba(105,97,131,.08);font-size: calc(9px * var(--font-scale, 1));font-weight:700}.crop-actions button:last-child{color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.crop-actions button:disabled,.avatar-cropper header button:disabled{opacity:.55}
 .hub-replication-status{margin-top:12px;padding:11px 12px;border:1px solid rgba(112,105,133,.08);border-radius:15px;background:rgba(255,255,255,.48)}.hub-replication-status>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.hub-replication-status>div span{display:flex;align-items:center;gap:6px;color:#777181;font-size:calc(8px * var(--font-scale,1));font-weight:800}.hub-replication-status>div svg{color:#7897b4}.hub-replication-status>div b{color:#71907f;font-size:calc(8px * var(--font-scale,1))}.hub-replication-status.syncing>div b{color:#718aaa}.hub-replication-status.error>div b{color:#b06f84}.hub-replication-status p{margin:6px 0 0;color:#97909f;font-size:calc(7px * var(--font-scale,1));line-height:1.45}.hub-replication-status>i{height:4px;display:block;overflow:hidden;margin-top:9px;border-radius:999px;background:rgba(113,107,134,.1)}.hub-replication-status>i b{height:100%;display:block;border-radius:inherit;background:linear-gradient(90deg,#79a6c8,#9e8fbd 55%,#ca8cac);transition:width .35s ease}.hub-replication-status.synced>i b{background:linear-gradient(90deg,#7eb69c,#70a58c)}.hub-replication-status.error>i b{background:#c98295}
 .desktop-login-scan-entry{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;margin-top:10px;padding:11px 12px;border:1px solid rgba(102,157,132,.2);border-radius:15px;color:#638d78;background:linear-gradient(120deg,rgba(239,252,245,.88),rgba(240,248,253,.72));text-align:left}.desktop-login-scan-entry>span{display:grid;gap:3px}.desktop-login-scan-entry strong{font-size:calc(9px * var(--font-scale,1))}.desktop-login-scan-entry small{color:#91a098;font-size:calc(7px * var(--font-scale,1))}.desktop-login-scan-entry>svg:last-child{color:#8ca89a}.desktop-login-scan-entry:disabled{opacity:.55}
+.archive-secret-policy{display:grid;grid-template-columns:auto 1fr;align-items:start;gap:9px;margin-top:11px;padding:11px;border-radius:14px;color:#716a7a;background:rgba(112,104,136,.055)}.archive-secret-policy input{width:17px;height:17px;margin-top:1px;accent-color:#9a86b4}.archive-secret-policy>span{display:grid;gap:3px}.archive-secret-policy strong{font-size:calc(9px * var(--font-scale,1))}.archive-secret-policy small{color:#9992a2;font-size:calc(7px * var(--font-scale,1));line-height:1.45}
 </style>

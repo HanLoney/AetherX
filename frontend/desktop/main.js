@@ -34,13 +34,32 @@ const {
   verifyMobileHubEndpoint
 } = require("./mobile-hub-lan-discovery");
 const { inspectWindowsNetworkProfiles } = require("./windows-network-profile");
+const packageMetadata = require("./package.json");
+const {
+  CLOUD_PRODUCT,
+  cloudUserDataPath,
+  isCloudDesktopEdition,
+  resolveDesktopServerUrl
+} = require("./edition-config");
 
 const appIcon = path.join(__dirname, "app-icon-rounded.png");
 const localHubServerUrl = "http://127.0.0.1:4318";
-const defaultServerUrl =
-  process.env.AETHERX_SERVER_URL ||
-  process.env.XUANAI_SERVER_URL ||
-  localHubServerUrl;
+const isCloudEdition = isCloudDesktopEdition({
+  argv: process.argv,
+  env: process.env,
+  packageMetadata
+});
+if (isCloudEdition) {
+  app.setName(CLOUD_PRODUCT.productName);
+  app.setPath("userData", cloudUserDataPath(app.getPath("appData")));
+  app.setAppUserModelId(CLOUD_PRODUCT.appId);
+}
+const defaultServerUrl = resolveDesktopServerUrl({
+  cloudEdition: isCloudEdition,
+  packaged: app.isPackaged,
+  env: process.env,
+  localServerUrl: localHubServerUrl
+});
 let authStore;
 let mainWindow;
 let currentUser = null;
@@ -53,6 +72,8 @@ let hubShutdownPromise = null;
 let desktopControlServer = null;
 let authenticationServerUrl = defaultServerUrl;
 let authenticationToken = "";
+let authenticationRefreshToken = "";
+let authenticationIdentityMode = isCloudEdition ? "email" : "username";
 let latestClusterStatus = null;
 let clusterRecoveryPromise = null;
 let tailscaleManager = null;
@@ -61,6 +82,12 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 const api = new XuanApiClient({
   baseUrl: defaultServerUrl,
+  onSessionChanged: (session) => {
+    authenticationToken = session.token;
+    authenticationRefreshToken = session.refreshToken;
+    if (session.user) currentUser = session.user;
+    saveAuthenticatedState();
+  },
   onConnectionChanged: handleHubConnectionChanged,
   onUnauthorized: () => {
     if (!api.token || !authStore) return;
@@ -71,7 +98,9 @@ const api = new XuanApiClient({
       return;
     }
     api.setToken("");
+    api.setRefreshToken("");
     authenticationToken = "";
+    authenticationRefreshToken = "";
     currentUser = null;
     hubRouting = null;
     desktopSync.stop();
@@ -88,15 +117,9 @@ function currentHubEndpoints() {
 }
 const desktopSync = new DesktopSyncCoordinator({
   api,
+  realtime: true,
   onChanges: async (changes) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (changes.some((change) => change.entityType === "archive_restore" && change.operation === "reset")) {
-      const session = await api.getSession();
-      currentUser = session.user;
-      saveAuthenticatedState();
-      mainWindow.webContents.reload();
-      return;
-    }
     mainWindow.webContents.send("sync:received", changes);
   }
 });
@@ -105,6 +128,10 @@ const desktopControl = new DesktopControlCoordinator({
 });
 
 function startAuthenticatedControl() {
+  if (authenticationIdentityMode === "email") {
+    desktopControl.stop();
+    return;
+  }
   if (!currentUser || !authenticationToken) {
     desktopControl.stop();
     return;
@@ -120,16 +147,31 @@ async function startAuthenticatedSync() {
   if (!currentUser || !api.token) return;
   startAuthenticatedControl();
   const scope = hubRouting?.spaceId || api.baseUrl;
-  await desktopSync.start(`${scope}|${currentUser.username}`);
+  await desktopSync.start(`${scope}|${currentUser.id || currentUser.email || currentUser.username}`);
 }
 
 function saveAuthenticatedState() {
   authStore?.save({
     serverUrl: authenticationServerUrl,
     token: authenticationToken,
+    refreshToken: authenticationRefreshToken,
     user: currentUser,
     routing: hubRouting
   });
+}
+
+async function saveCurrentUserProfile(writeProfile) {
+  const profile = await writeProfile();
+  if (currentUser) {
+    currentUser = {
+      ...currentUser,
+      displayName: String(
+        profile?.displayName || currentUser.email || currentUser.username || "你"
+      )
+    };
+    saveAuthenticatedState();
+  }
+  return profile;
 }
 
 function upsertRoutingNode(routing, node) {
@@ -337,6 +379,7 @@ async function ensureActiveHub() {
 
 async function ensureActiveHubWithDiscovery(onProgress = () => {}) {
   if (!api.token || !currentUser) return null;
+  if (authenticationIdentityMode === "email") return null;
   onProgress({ stage: "checking", message: "正在读取双 Hub 状态…" });
   try {
     const status = await api.getClusterStatus();
@@ -596,7 +639,9 @@ function registerIpcHandlers() {
   ipcMain.handle("auth:state", () => ({
     serverUrl: authenticationServerUrl,
     hasSession: Boolean(authenticationToken),
-    user: currentUser
+    user: currentUser,
+    cloudEdition: isCloudEdition,
+    loginIdentifier: authenticationIdentityMode
   }));
   ipcMain.handle("auth:hub-discovery", (_event, options = {}) =>
     authHubDiscoveryStatus(options.wait === true)
@@ -607,20 +652,25 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("auth:bootstrap", async (event) => {
     if (!api.token) return { authenticated: false };
+    const config = await api.getAuthConfig();
+    authenticationIdentityMode = config.loginIdentifier === "email" ? "email" : "username";
     const session = await api.getSession();
     currentUser = session.user;
-    await ensureActiveHubWithDiscovery((progress) =>
-      sendAuthHubProgress(event.sender, progress)
-    );
+    if (authenticationIdentityMode !== "email") {
+      await ensureActiveHubWithDiscovery((progress) =>
+        sendAuthHubProgress(event.sender, progress)
+      );
+    }
     saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { authenticated: true, user: currentUser };
   });
   ipcMain.handle("auth:config", async (_event, serverUrl) => {
-    const nextServerUrl = isDirectMobileHubUrl(serverUrl)
+    const requestedServerUrl = isCloudEdition ? defaultServerUrl : serverUrl;
+    const nextServerUrl = isDirectMobileHubUrl(requestedServerUrl)
       ? localHubServerUrl
-      : serverUrl;
+      : requestedServerUrl;
     const previousServerUrl = authenticationServerUrl;
     api.setBaseUrl(nextServerUrl);
     authenticationServerUrl = api.baseUrl;
@@ -628,46 +678,61 @@ function registerIpcHandlers() {
       desktopSync.stop();
       desktopControl.stop();
       api.setToken("");
+      api.setRefreshToken("");
       authenticationToken = "";
+      authenticationRefreshToken = "";
       currentUser = null;
       hubRouting = null;
       latestClusterStatus = null;
       authStore.clearSession(api.baseUrl);
     }
+    const authConfig = await api.getAuthConfig();
+    authenticationIdentityMode = authConfig.loginIdentifier === "email" ? "email" : "username";
     return {
-      ...await api.getAuthConfig(),
+      ...authConfig,
       serverUrl: authenticationServerUrl
     };
   });
   ipcMain.handle("auth:login", async (event, input) => {
-    api.setBaseUrl(isDirectMobileHubUrl(input.serverUrl) ? localHubServerUrl : input.serverUrl);
+    const requestedServerUrl = isCloudEdition ? defaultServerUrl : input.serverUrl;
+    api.setBaseUrl(isDirectMobileHubUrl(requestedServerUrl) ? localHubServerUrl : requestedServerUrl);
     authenticationServerUrl = api.baseUrl;
     api.setToken("");
-    const result = await api.login({
-      username: input.username,
-      password: input.password
-    });
+    const result = await api.login(authenticationIdentityMode === "email"
+      ? {
+          email: input.email,
+          password: input.password
+        }
+      : { username: input.username, password: input.password });
     api.setToken(result.token);
+    api.setRefreshToken(result.refreshToken || "");
     authenticationToken = result.token;
+    authenticationRefreshToken = result.refreshToken || "";
     currentUser = result.user;
-    await ensureActiveHubWithDiscovery((progress) =>
-      sendAuthHubProgress(event.sender, progress)
-    );
+    if (authenticationIdentityMode !== "email") {
+      await ensureActiveHubWithDiscovery((progress) =>
+        sendAuthHubProgress(event.sender, progress)
+      );
+    }
     saveAuthenticatedState();
     await startAuthenticatedSync();
     openPage(event.sender, "home.html");
     return { user: result.user };
   });
   ipcMain.handle("auth:register", async (event, input) => {
-    api.setBaseUrl(isDirectMobileHubUrl(input.serverUrl) ? localHubServerUrl : input.serverUrl);
+    const requestedServerUrl = isCloudEdition ? defaultServerUrl : input.serverUrl;
+    api.setBaseUrl(isDirectMobileHubUrl(requestedServerUrl) ? localHubServerUrl : requestedServerUrl);
     authenticationServerUrl = api.baseUrl;
     api.setToken("");
     const result = await api.register({
-      username: input.username,
+      ...(authenticationIdentityMode === "email"
+        ? { email: input.email }
+        : { username: input.username }),
       displayName: input.displayName,
       password: input.password,
       registrationSecret: input.registrationSecret
     });
+    if (result.verificationRequired) return result;
     api.setToken(result.token);
     authenticationToken = result.token;
     currentUser = result.user;
@@ -682,12 +747,44 @@ function registerIpcHandlers() {
       migratedExistingData: result.migratedExistingData
     };
   });
+  ipcMain.handle("auth:verify-email", async (event, input) => {
+    const result = await api.verifyEmail(input.token);
+    api.setToken(result.token);
+    api.setRefreshToken(result.refreshToken || "");
+    authenticationToken = result.token;
+    authenticationRefreshToken = result.refreshToken || "";
+    currentUser = result.user;
+    authenticationIdentityMode = "email";
+    hubRouting = null;
+    saveAuthenticatedState();
+    await startAuthenticatedSync();
+    openPage(event.sender, "home.html");
+    return { user: result.user };
+  });
+  ipcMain.handle("auth:email:resend", async (_event, input) =>
+    api.resendEmailVerification({ email: input.email, password: input.password })
+  );
+  ipcMain.handle("auth:password:forgot", async (_event, input) =>
+    api.requestPasswordReset(input.email)
+  );
+  ipcMain.handle("auth:password:reset", async (_event, input) =>
+    api.resetPassword({ token: input.token, password: input.password })
+  );
   ipcMain.handle("auth:current", () => ({
     user: currentUser,
-    serverUrl: api.baseUrl
+    serverUrl: api.baseUrl,
+    cloudEdition: isCloudEdition || authenticationIdentityMode === "email",
+    loginIdentifier: authenticationIdentityMode
   }));
   ipcMain.handle("hub:status", async () => {
     if (!currentUser || !api.token) return null;
+    if (isCloudEdition || authenticationIdentityMode === "email") {
+      return {
+        edition: "cloud",
+        state: "stable",
+        serviceUrl: api.baseUrl
+      };
+    }
     try {
       let status = await api.getClusterStatus();
       if (api.baseUrl !== localHubServerUrl) {
@@ -708,7 +805,16 @@ function registerIpcHandlers() {
       throw error;
     }
   });
-  ipcMain.handle("connections:status", () => loadConnectionStatus());
+  ipcMain.handle("connections:status", () => {
+    if (isCloudEdition || authenticationIdentityMode === "email") {
+      return {
+        edition: "cloud",
+        authenticated: Boolean(currentUser && api.token),
+        serviceUrl: api.baseUrl
+      };
+    }
+    return loadConnectionStatus();
+  });
   ipcMain.handle("hub:divergence", () =>
     authenticatedLocalHubApi().getHubDivergence(500, 0)
   );
@@ -749,7 +855,9 @@ function registerIpcHandlers() {
       desktopSync.stop();
       desktopControl.stop();
       api.setToken("");
+      api.setRefreshToken("");
       authenticationToken = "";
+      authenticationRefreshToken = "";
       currentUser = null;
       hubRouting = null;
       latestClusterStatus = null;
@@ -801,7 +909,10 @@ function registerIpcHandlers() {
       filters: [{ name: "AetherX 完整存档", extensions: ["aetherx"] }]
     });
     if (selected.canceled || !selected.filePath) return { canceled: true };
-    const exported = await api.createArchiveExport(String(input.password || ""));
+    const exported = await api.createArchiveExport(
+      String(input.password || ""),
+      input.secretPolicy === "password_encrypted" ? "password_encrypted" : "excluded"
+    );
     const response = await fetch(api.archiveDownloadUrl(exported.downloadPath));
     if (!response.ok || !response.body) throw new Error("存档下载失败，请重新导出。");
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(selected.filePath, { flags: "w" }));
@@ -817,10 +928,10 @@ function registerIpcHandlers() {
     if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
     const confirmation = await dialog.showMessageBox(win, {
       type: "warning",
-      title: "确认完整恢复",
+      title: "确认导入存档",
       message: "这会整套替换当前账号的 AI 数据",
-      detail: "聊天、记忆、成长、手记、相册、设置和媒体都会恢复为存档内容。登录密码、当前登录状态和已配对设备会保留；Hub 会先自动备份现有数据。",
-      buttons: ["取消", "完整恢复"],
+      detail: "聊天、记忆、成长、手记、相册、设置和媒体都会导入当前账号。如果存档含 Provider Key，它们会进入当前运行环境并重新加密。登录密码、当前登录状态和已配对设备会保留；系统会先自动备份现有数据。",
+      buttons: ["取消", "导入存档"],
       defaultId: 0,
       cancelId: 0,
       noLink: true
@@ -832,7 +943,7 @@ function registerIpcHandlers() {
     );
     const session = await api.getSession();
     currentUser = session.user;
-    await ensureActiveHub();
+    if (authenticationIdentityMode !== "email") await ensureActiveHub();
     saveAuthenticatedState();
     desktopSync.stop();
     await startAuthenticatedSync();
@@ -901,9 +1012,11 @@ function registerIpcHandlers() {
   );
 
   ipcMain.handle("profile:get", () => api.getProfile());
-  ipcMain.handle("profile:save", (_event, profile) => api.saveProfile(profile));
+  ipcMain.handle("profile:save", (_event, profile) =>
+    saveCurrentUserProfile(() => api.saveProfile(profile))
+  );
   ipcMain.handle("profile:update", (_event, changes) =>
-    api.updateProfile(changes)
+    saveCurrentUserProfile(() => api.updateProfile(changes))
   );
   ipcMain.handle("assistant-profile:get", () => api.getAssistantProfile());
   ipcMain.handle("assistant-profile:update", (_event, changes) =>
@@ -1038,6 +1151,12 @@ function registerIpcHandlers() {
     api.createConversation(title)
   );
   ipcMain.handle("conversations:get", (_event, id) => api.getConversation(id));
+  ipcMain.handle("conversations:message:get", (_event, id, messageId) =>
+    api.getConversationMessage(id, messageId)
+  );
+  ipcMain.handle("conversations:message-page:get", (_event, id, filters) =>
+    api.getConversationMessagePage(id, filters)
+  );
   ipcMain.handle("conversations:messages:save", (_event, id, messages) =>
     api.saveConversationMessages(id, messages)
   );
@@ -1192,33 +1311,43 @@ function authenticatedLocalHubApi() {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
-  mobileHubLanDiscovery.start();
+  if (!isCloudEdition) mobileHubLanDiscovery.start();
   authStore = new AuthStore(path.join(app.getPath("userData"), "auth.json"), safeStorage);
   const storedAuth = authStore.load();
-  const authentication = selectAuthenticationSession(storedAuth, localHubServerUrl);
-  authenticationServerUrl = authentication.serverUrl || localHubServerUrl;
+  const authentication = isCloudEdition
+    ? {
+        serverUrl: defaultServerUrl,
+        token: storedAuth.serverUrl === defaultServerUrl ? storedAuth.token : "",
+        refreshToken: storedAuth.serverUrl === defaultServerUrl ? storedAuth.refreshToken : ""
+      }
+    : selectAuthenticationSession(storedAuth, localHubServerUrl);
+  authenticationServerUrl = authentication.serverUrl || defaultServerUrl;
   authenticationToken = authentication.token;
+  authenticationRefreshToken = authentication.refreshToken || "";
   api.setBaseUrl(authenticationServerUrl);
   api.setToken(authenticationToken);
+  api.setRefreshToken(authenticationRefreshToken);
   currentUser = authenticationToken ? storedAuth.user : null;
-  hubRouting = storedAuth.routing;
-  try {
-    localHub = await startLocalHub({
-      electronApp: app,
-      baseUrl: localHubServerUrl,
-      enableAdbReverse:
-        !app.isPackaged && /^(1|true|on)$/i.test(process.env.AETHERX_ADB_REVERSE || ""),
-      requestQuit: () => app.quit()
-    });
-  } catch (error) {
-    console.error("Unable to start the bundled AetherX Hub.", error);
-    dialog.showErrorBox(
-      "AetherX Hub 启动失败",
-      "本机数据服务没有成功启动。请确认 4318 端口未被其他程序占用，然后重新打开 AetherX。"
-    );
+  hubRouting = isCloudEdition ? null : storedAuth.routing;
+  if (!isCloudEdition) {
+    try {
+      localHub = await startLocalHub({
+        electronApp: app,
+        baseUrl: localHubServerUrl,
+        enableAdbReverse:
+          !app.isPackaged && /^(1|true|on)$/i.test(process.env.AETHERX_ADB_REVERSE || ""),
+        requestQuit: () => app.quit()
+      });
+    } catch (error) {
+      console.error("Unable to start the bundled AetherX Hub.", error);
+      dialog.showErrorBox(
+        "AetherX Hub 启动失败",
+        "本机数据服务没有成功启动。请确认 4318 端口未被其他程序占用，然后重新打开 AetherX。"
+      );
+    }
   }
   registerIpcHandlers();
-  await startDesktopControl();
+  if (!isCloudEdition) await startDesktopControl();
   createTray();
   createWindow();
   app.on("activate", () => {

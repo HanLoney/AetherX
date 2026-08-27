@@ -15,6 +15,7 @@
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
     "start": "electron .",
+    "start:cloud": "electron . --cloud",
     "test": "node --test",
     "verify:backend": "node ../../scripts/verify-packaged-backend.js dist/win-unpacked",
     "verify:signature": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/verify-windows-signature.ps1 dist/win-unpacked/AetherX.exe dist/AetherX-*.exe",
@@ -22,7 +23,11 @@
     "dist": "npm run dist:installer && npm run dist:portable",
     "dist:signed": "npm run dist && npm run verify:signature",
     "dist:installer": "electron-builder --win nsis --publish never --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
-    "dist:portable": "electron-builder --win portable --publish never --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\""
+    "dist:portable": "electron-builder --win portable --publish never --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\"",
+    "dist:cloud:dir": "electron-builder --config electron-builder.cloud.cjs --win dir --publish never",
+    "dist:cloud:installer": "electron-builder --config electron-builder.cloud.cjs --win nsis --publish never --config.artifactName=\"${productName}-安装版-${version}-${arch}.${ext}\"",
+    "dist:cloud:portable": "electron-builder --config electron-builder.cloud.cjs --win portable --publish never --config.artifactName=\"${productName}-免安装版-${version}-${arch}.${ext}\"",
+    "dist:cloud": "npm run dist:cloud:installer && npm run dist:cloud:portable"
   },
   "devDependencies": {
     "electron": "^43.3.0",
@@ -38,6 +43,7 @@
     },
     "files": [
       "main.js",
+      "edition-config.js",
       "desktop-control.js",
       "hub-runtime.js",
       "sync-runtime.js",
@@ -59,6 +65,7 @@
       "pairing-endpoints.js",
       "windows-network-profile.js",
       "emoji-picker.js",
+      "conversation-cache.js",
       "qr-code.js",
       "home.js",
       "ai-providers.js",
@@ -93,6 +100,7 @@
       "wallet.js",
       "profile.html",
       "profile.css",
+      "profile-cache.js",
       "profile.js",
       "journal-pager.js",
       "gallery-layout.js",
@@ -117,6 +125,20 @@
       {
         "from": "../../backend/node_modules/jpeg-js",
         "to": "backend/node_modules/jpeg-js",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../backend/node_modules/undici",
+        "to": "backend/node_modules/undici",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../backend/node_modules/nodemailer",
+        "to": "backend/node_modules/nodemailer",
         "filter": [
           "**/*"
         ]

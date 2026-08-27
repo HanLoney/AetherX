@@ -2,6 +2,8 @@ class DesktopSyncCoordinator {
   constructor(options) {
     this.api = options.api;
     this.onChanges = options.onChanges;
+    this.fetchImpl = options.fetchImpl || globalThis.fetch;
+    this.realtime = options.realtime === true;
     this.pollIntervalMs = Math.max(250, Number(options.pollIntervalMs) || 900);
     this.retryIntervalMs = Math.max(1000, Number(options.retryIntervalMs) || 3000);
     this.cursor = 0;
@@ -10,6 +12,7 @@ class DesktopSyncCoordinator {
     this.primed = false;
     this.generation = 0;
     this.timer = null;
+    this.controller = null;
   }
 
   async start(scope) {
@@ -31,7 +34,8 @@ class DesktopSyncCoordinator {
       console.warn("AetherX desktop sync will retry its initial connection.", error?.message || error);
     }
     if (this.isCurrent(generation)) {
-      this.schedule(generation, this.primed ? 0 : this.retryIntervalMs);
+      if (this.realtime) void this.connect(generation);
+      else this.schedule(generation, this.primed ? 0 : this.retryIntervalMs);
     }
   }
 
@@ -43,6 +47,8 @@ class DesktopSyncCoordinator {
     this.generation += 1;
     clearTimeout(this.timer);
     this.timer = null;
+    this.controller?.abort();
+    this.controller = null;
   }
 
   async pollNow() {
@@ -74,6 +80,57 @@ class DesktopSyncCoordinator {
       await this.onChanges(collected);
     }
     return collected;
+  }
+
+  async connect(generation) {
+    while (this.isCurrent(generation)) {
+      this.controller = new AbortController();
+      try {
+        const query = new URLSearchParams({
+          after: String(this.cursor),
+          client_id: `desktop-sync:${this.scope}`
+        });
+        const response = await this.fetchImpl(
+          `${this.api.baseUrl}/api/v1/sync/events?${query}`,
+          {
+            headers: this.api.token
+              ? { Authorization: `Bearer ${this.api.token}` }
+              : {},
+            signal: this.controller.signal
+          }
+        );
+        if (!response.ok || !response.body) {
+          throw new Error(`Desktop sync stream returned HTTP ${response.status}.`);
+        }
+        await parseEventStream(response.body, async (event) => {
+          if (!this.isCurrent(generation) || event.event !== "change") return;
+          let change;
+          try {
+            change = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          const sequence = Number(change?.seq);
+          if (!Number.isSafeInteger(sequence) || sequence <= this.cursor) return;
+          this.cursor = sequence;
+          this.primed = true;
+          await this.onChanges([change]);
+        });
+      } catch (error) {
+        if (!this.isCurrent(generation) || error?.name === "AbortError") return;
+        console.warn("AetherX desktop realtime sync is retrying.", error?.message || error);
+      } finally {
+        this.controller = null;
+      }
+      if (!this.isCurrent(generation)) return;
+      try {
+        await this.drainChanges(generation, true);
+        this.primed = true;
+      } catch (error) {
+        console.warn("AetherX desktop sync catch-up will retry.", error?.message || error);
+      }
+      await wait(this.retryIntervalMs);
+    }
   }
 
   schedule(generation, delay = this.pollIntervalMs) {

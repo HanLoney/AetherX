@@ -30,10 +30,13 @@ test("single conversation mode exposes no conversation selector", () => {
   assert.match(css, /\.provider-card\s*\{[^}]*flex:\s*0 0 auto;/s);
 });
 
-test("desktop welcome addresses the authenticated account instead of a hard-coded user", () => {
+test("desktop welcome follows the saved profile instead of a hard-coded user", () => {
   assert.match(html, /id="welcomeTitle"/);
   assert.doesNotMatch(html, /嗨，洛尼。今天想一起做什么？/);
   assert.match(javascript, /welcomeTitle\.textContent = `嗨，\$\{name\}。今天想一起做什么？`/);
+  assert.match(javascript, /state\.userProfile\?\.displayName\s*\|\|\s*user\.displayName/);
+  assert.match(javascript, /state\.assistantProfile = assistantProfile;\s*renderAccount\(\);/);
+  assert.doesNotMatch(javascript, /\|\|\s*"洛尼"/);
 });
 
 test("desktop searches the primary conversation in a dedicated result view", () => {
@@ -104,11 +107,13 @@ test("desktop exposes a polished global font size setting", () => {
   assert.match(css, /--font-scale/);
 });
 
-test("desktop settings expose encrypted export and full restore only", () => {
+test("desktop settings expose encrypted export and archive import", () => {
   assert.match(html, /id="archivePasswordInput"/);
+  assert.match(html, /id="archiveProviderKeysInput"/);
+  assert.match(javascript, /secretPolicy:[\s\S]*"password_encrypted"[\s\S]*"excluded"/);
   assert.match(html, /id="exportArchiveBtn"/);
   assert.match(html, /id="restoreArchiveBtn"/);
-  assert.match(html, /仅完整恢复/);
+  assert.match(html, /导入存档/);
   assert.doesNotMatch(html, /合并导入/);
   assert.match(javascript, /window\.desktop\.exportArchive/);
   assert.match(javascript, /window\.desktop\.restoreArchive/);
@@ -133,7 +138,8 @@ test("desktop integrates the Hub connection matrix instead of relying on the lau
   assert.match(html, /id="mobileClientCard"/);
   assert.ok(html.indexOf('src="connection-center.js"') < html.indexOf('src="home.js"'));
   assert.match(preload, /getConnectionStatus:\s*\(\) => ipcRenderer\.invoke\("connections:status"\)/);
-  assert.match(main, /ipcMain\.handle\("connections:status", \(\) => loadConnectionStatus\(\)\)/);
+  assert.match(main, /ipcMain\.handle\("connections:status", \(\) => \{/);
+  assert.match(main, /return loadConnectionStatus\(\)/);
   assert.match(main, /localApi \? settleStatus\(localApi\.listMobileHubs\(\), \{ hubs: \[\] \}\)/);
   assert.match(javascript, /elements\.connectionCenterBtn\.addEventListener\("click"/);
   assert.match(javascript, /isHubRecoveryActionable\(state\.hubStatus\)/);
@@ -180,7 +186,9 @@ test("primary conversation loading is immediate and stale requests cannot win", 
     javascript,
     /if \(loadId !== conversationLoadId \|\| state\.conversationId !== id\) return;/
   );
-  assert.match(javascript, /const cachedMessages = conversationCache\.get\(id\);/);
+  assert.match(javascript, /let cachedMessages = conversationCache\.get\(id\);/);
+  assert.match(javascript, /window\.AetherConversationCache\?\.load\(scope, id\)/);
+  assert.match(javascript, /fetchConversationMessagePages\(id, cachedMessages \|\| \[\]\)/);
 });
 
 test("routing to another Hub refreshes profile avatars without stale responses winning", () => {

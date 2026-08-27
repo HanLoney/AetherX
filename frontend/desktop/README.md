@@ -49,6 +49,14 @@ npm start
 
 兼容旧变量 `XUANAI_SERVER_URL`。远程生产地址应使用 HTTPS，地址中不要附加 `/api/v1`。
 
+## Online Desktop
+
+开发时使用 `npm run start:cloud`，可通过 `AETHERX_CLOUD_SERVER_URL` 显式覆盖测试服务地址。正式 Online 构建使用 `npm run dist:cloud`，产品名为 `AetherX Online`，拥有独立应用 ID、安装输出和用户数据目录；打包后固定连接 `https://api.aetherx.tech`，不会读取运行时服务器地址，也不会携带内置 Hub 后端和本地防火墙安装脚本。
+
+Online 版只使用邮箱账号登录，不显示设备列表或设备管理。短期 Access Token 过期后，客户端使用 `safeStorage` 中加密保存的轮换 Refresh Token 自动续期并重试原请求；只有刷新失败才回到登录页，退出会撤销当前账号会话。
+
+Online 仍允许每个账号接入自己的 OpenAI 兼容 Provider，但 Base URL 必须是公开可访问的 HTTPS 地址；本机、局域网和云元数据地址会被服务端 Egress Guard 拒绝。Local 版连接局域网 Provider 的能力不受影响。
+
 ## 内置 Hub 配置
 
 桌面端会向内置 Hub 传递以下变量：
@@ -68,7 +76,7 @@ npm start
 
 ## 会话与安全
 
-- 登录令牌使用 Electron `safeStorage` 加密后写入 `userData/auth.json`；
+- 登录令牌与 Online Refresh Token 使用 Electron `safeStorage` 加密后写入 `userData/auth.json`；
 - 渲染进程启用 `contextIsolation`，禁用 `nodeIntegration`；
 - 业务操作通过 preload 暴露的有限 IPC 接口访问主进程；
 - AI Provider Key 保存在 Hub，不写入桌面会话文件；

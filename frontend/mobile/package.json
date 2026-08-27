@@ -15,12 +15,16 @@
   "scripts": {
     "postinstall": "node scripts/patch-capacitor-android.mjs",
     "dev": "vite",
+    "dev:cloud": "vite --mode cloud",
     "build": "vue-tsc --noEmit && vite build",
+    "build:cloud": "vue-tsc --noEmit && vite build --mode cloud",
     "test": "vitest run",
-    "android:sync": "node scripts/patch-capacitor-android.mjs && npm run build && cap sync android",
-    "android:test": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest",
-    "android:release": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest assembleRelease bundleRelease",
-    "android:lan-release": "npm run android:sync && cd android && gradlew.bat testDebugUnitTest assembleLanRelease",
+    "android:sync": "node scripts/sync-android.mjs local",
+    "android:sync:cloud": "node scripts/sync-android.mjs cloud",
+    "android:test": "npm run android:sync && cd android && gradlew.bat testLocalDebugUnitTest",
+    "android:release": "npm run android:sync && cd android && gradlew.bat testLocalDebugUnitTest assembleLocalRelease bundleLocalRelease",
+    "android:lan-release": "npm run android:sync && cd android && gradlew.bat testLocalDebugUnitTest assembleLocalLanRelease",
+    "android:cloud:release": "npm run android:sync:cloud && cd android && gradlew.bat testCloudDebugUnitTest assembleCloudRelease bundleCloudRelease",
     "android:open": "cap open android"
   },
   "dependencies": {

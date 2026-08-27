@@ -1,4 +1,8 @@
 import type { AetherApi, AgentChatResult, ChatMessage, Conversation } from "./api";
+import {
+  dedupeConversationMessages,
+  normalizeMessagePositions
+} from "./conversation-cache";
 
 export interface MobileChatInput {
   conversation: Conversation | null;
@@ -15,6 +19,7 @@ export class MobileChat {
     let result = await this.api.agentChat({
       ...(input.conversation?.id ? { conversationId: input.conversation.id } : {}),
       content: input.content,
+      responseMode: "delta",
       runtime: runtimeOptions()
     });
     let toolMutated = result.toolMutated;
@@ -31,10 +36,31 @@ export class MobileChat {
 
     return {
       conversation: result.conversation,
-      displayMessages: result.displayMessages,
+      displayMessages: mergeMessages(input.displayMessages, result.displayMessages),
       toolMutated
     };
   }
+}
+
+function mergeMessages(current: ChatMessage[], delta: ChatMessage[]) {
+  const positionedCurrent = normalizeMessagePositions(current);
+  const highestPosition = positionedCurrent.reduce(
+    (highest, message) => Number.isSafeInteger(Number(message.position))
+      ? Math.max(highest, Number(message.position))
+      : highest,
+    -1
+  );
+  const positionedDelta = delta.map((message, index) => ({
+    ...message,
+    position: Number.isSafeInteger(Number(message.position))
+      ? Number(message.position)
+      : highestPosition + index + 1
+  }));
+  const byId = new Map<string, ChatMessage>();
+  for (const [index, message] of [...positionedCurrent, ...positionedDelta].entries()) {
+    byId.set(message.id || `message:${index}`, message);
+  }
+  return dedupeConversationMessages([...byId.values()]);
 }
 
 function pendingActivity(result: AgentChatResult) {

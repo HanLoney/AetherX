@@ -14,9 +14,12 @@ class XuanApiClient {
   constructor(options = {}) {
     this.setBaseUrl(options.baseUrl || "http://127.0.0.1:4318");
     this.token = String(options.token || "");
+    this.refreshToken = String(options.refreshToken || "");
     this.onUnauthorized = options.onUnauthorized;
+    this.onSessionChanged = options.onSessionChanged;
     this.onConnectionChanged = options.onConnectionChanged;
     this.routePromise = null;
+    this.refreshPromise = null;
   }
 
   setBaseUrl(baseUrl) {
@@ -29,6 +32,10 @@ class XuanApiClient {
 
   setToken(token) {
     this.token = String(token || "");
+  }
+
+  setRefreshToken(refreshToken) {
+    this.refreshToken = String(refreshToken || "");
   }
 
   async request(method, path, body) {
@@ -60,7 +67,7 @@ class XuanApiClient {
     }
   }
 
-  async performRequest(method, path, body, signal, requestId, allowRoute, retryCount = 0) {
+  async performRequest(method, path, body, signal, requestId, allowRoute, retryCount = 0, allowRefresh = true) {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
@@ -93,7 +100,8 @@ class XuanApiClient {
           signal,
           requestId,
           allowRoute,
-          retryCount + 1
+          retryCount + 1,
+          allowRefresh
         );
       }
       if (
@@ -103,7 +111,15 @@ class XuanApiClient {
         path !== "/api/v1/cluster/session-handoff" &&
         await this.routeToActiveHub(signal)
       ) {
-        return this.performRequest(method, path, body, signal, requestId, false);
+        return this.performRequest(method, path, body, signal, requestId, false, retryCount, allowRefresh);
+      }
+      if (
+        allowRefresh &&
+        response.status === 401 &&
+        path !== "/api/v1/auth/refresh" &&
+        await this.refreshAccessSession(signal)
+      ) {
+        return this.performRequest(method, path, body, signal, requestId, allowRoute, retryCount, false);
       }
       if (response.status === 401 && typeof this.onUnauthorized === "function") {
         this.onUnauthorized(error);
@@ -111,6 +127,26 @@ class XuanApiClient {
       throw error;
     }
     return hydrateMediaSources(payload.data, this.baseUrl, this.token);
+  }
+
+  async refreshAccessSession(signal) {
+    if (!this.refreshToken) return false;
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = (async () => {
+      const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: this.refreshToken }),
+        signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.data?.token || !payload?.data?.refreshToken) return false;
+      this.token = payload.data.token;
+      this.refreshToken = payload.data.refreshToken;
+      this.onSessionChanged?.(payload.data);
+      return true;
+    })().finally(() => { this.refreshPromise = null; });
+    return this.refreshPromise;
   }
 
   async routeToActiveHub(signal) {
@@ -233,6 +269,22 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/auth/login", input);
   }
 
+  verifyEmail(token, session = {}) {
+    return this.request("POST", "/api/v1/auth/email/verify", { token, ...session });
+  }
+
+  resendEmailVerification(input) {
+    return this.request("POST", "/api/v1/auth/email/resend", input);
+  }
+
+  requestPasswordReset(email) {
+    return this.request("POST", "/api/v1/auth/password/forgot", { email });
+  }
+
+  resetPassword(input) {
+    return this.request("POST", "/api/v1/auth/password/reset", input);
+  }
+
   getSession() {
     return this.request("GET", "/api/v1/auth/session");
   }
@@ -301,8 +353,8 @@ class XuanApiClient {
     );
   }
 
-  createArchiveExport(password) {
-    return this.request("POST", "/api/v1/archives/export", { password });
+  createArchiveExport(password, secretPolicy = "excluded") {
+    return this.request("POST", "/api/v1/archives/export", { password, secretPolicy });
   }
 
   archiveDownloadUrl(downloadPath) {
@@ -332,7 +384,7 @@ class XuanApiClient {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new ApiError(
-        payload?.error?.message || `完整恢复失败（HTTP ${response.status}）。`,
+        payload?.error?.message || `导入存档失败（HTTP ${response.status}）。`,
         response.status,
         payload?.error?.code,
         payload?.requestId
@@ -854,6 +906,23 @@ class XuanApiClient {
     );
   }
 
+  getConversationMessage(id, messageId) {
+    return this.request(
+      "GET",
+      `/api/v1/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`
+    );
+  }
+
+  getConversationMessagePage(id, filters = {}) {
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")
+    );
+    return this.request(
+      "GET",
+      `/api/v1/conversations/${encodeURIComponent(id)}/message-page${query.size ? `?${query}` : ""}`
+    );
+  }
+
   saveConversationMessages(id, messages) {
     return this.request(
       "PUT",
@@ -877,6 +946,9 @@ function requestTimeoutForPath(path) {
     return 300_000;
   }
   if (value.includes("/ai/image-generations")) return 245_000;
+  if (/^\/api\/v1\/(?:profile|assistant\/(?:profile|personality-events|journals|gallery))(?:[/?]|$)/.test(value)) {
+    return 15_000;
+  }
   return 65_000;
 }
 

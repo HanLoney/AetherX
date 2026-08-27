@@ -162,7 +162,7 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("data.reconnectHub()");
     expect(settingsSource).toContain('class="archive-settings-entry"');
     expect(settingsSource).toContain('class="archive-settings-sheet"');
-    expect(settingsSource).toContain("仅完整恢复");
+    expect(settingsSource).toContain("导入存档");
     expect(settingsSource).not.toContain("合并导入");
     expect(settingsSource).toContain("api.createArchiveExport");
     expect(settingsSource).toContain("restoreArchive(archiveFile.value");
@@ -243,6 +243,8 @@ describe("adaptive mobile shell", () => {
     expect(chatSource).toContain('class="scroll-to-latest"');
     expect(chatSource).toContain('@scroll.passive="updateLatestButton"');
     expect(chatSource).toContain("async function scrollToLatest()");
+    expect(chatSource).toContain('await scrollToBottom("auto")');
+    expect(chatSource).toContain('scrollToBottom(behavior: ScrollBehavior = "smooth")');
     expect(chatSource).toContain("showLatestButton.value");
     expect(chatSource).toContain("CHAT_RENDER_WINDOW = 120");
     expect(chatSource).toContain("renderedMessages");

@@ -28,9 +28,19 @@ const displayName = ref("");
 const password = ref("");
 const registrationSecret = ref("");
 const showPassword = ref(false);
-const mode = ref<"login" | "register" | "pair">("login");
+const mode = ref<"login" | "register" | "pair" | "reset">("login");
 const pairingCode = ref("");
 const authConfig = ref<AuthConfig | null>(null);
+const cloudBuild = import.meta.env.VITE_AETHERX_EDITION === "cloud";
+const emailIdentity = computed(() => cloudBuild || authConfig.value?.loginIdentifier === "email");
+const awaitingVerification = ref(false);
+const verificationToken = ref("");
+const verificationNotice = ref("如果这是新账号，验证邮件会发送到该邮箱；如果邮箱已经注册，请直接返回登录。");
+const pendingEmail = ref("");
+const pendingPassword = ref("");
+const resetRequested = ref(false);
+const resetToken = ref("");
+const resetPassword = ref("");
 const localError = ref("");
 const scanning = ref(false);
 const completePairingBusy = ref(false);
@@ -38,6 +48,17 @@ const completePairingState = ref("");
 const lastCompletedPairingCode = ref("");
 const registrationAvailable = computed(() => authConfig.value?.registrationAvailable !== false);
 const errorMessage = computed(() => localError.value || session.error.value);
+const submitDisabled = computed(() => {
+  if (session.busy.value || completePairingBusy.value) return true;
+  if (awaitingVerification.value) return !verificationToken.value.trim();
+  if (mode.value === "reset") {
+    return resetRequested.value
+      ? !resetToken.value.trim() || resetPassword.value.length < 10
+      : !username.value.trim();
+  }
+  if (mode.value === "pair") return !pairingCode.value.trim();
+  return !username.value.trim() || !password.value;
+});
 
 async function inspectServer() {
   localError.value = "";
@@ -63,27 +84,138 @@ async function selectMode(nextMode: typeof mode.value) {
 }
 
 async function submit() {
+  if (awaitingVerification.value) {
+    const token = extractVerificationToken(verificationToken.value);
+    if (!token) return;
+    try {
+      await session.verifyEmail({ serverUrl: serverUrl.value, token });
+      await router.replace("/home");
+    } catch { /* 错误由 store 呈现 */ }
+    return;
+  }
   if (mode.value === "pair") {
     if (!pairingCode.value.trim()) return;
     try { await connectWithPairingCode(pairingCode.value); } catch { /* store 呈现 */ }
+    return;
+  }
+  if (mode.value === "reset") {
+    localError.value = "";
+    try {
+      if (!resetRequested.value) {
+        await session.requestPasswordReset({
+          serverUrl: serverUrl.value,
+          email: username.value.trim()
+        });
+        resetRequested.value = true;
+        localError.value = "如果邮箱已注册并完成验证，重置邮件已经发送。";
+      } else {
+        const token = extractVerificationToken(resetToken.value);
+        await session.resetPassword({
+          serverUrl: serverUrl.value,
+          token,
+          password: resetPassword.value
+        });
+        mode.value = "login";
+        resetRequested.value = false;
+        resetToken.value = "";
+        resetPassword.value = "";
+        password.value = "";
+        localError.value = "密码已经更新，请使用新密码登录。";
+      }
+    } catch (cause) {
+      localError.value = cause instanceof Error ? cause.message : "密码重置没有完成。";
+    }
     return;
   }
   if (!username.value.trim() || !password.value) return;
   try {
     if (mode.value === "register") {
       if (!(await inspectServer()) || !registrationAvailable.value) return;
-      await session.register({
+      const result = await session.register({
         serverUrl: serverUrl.value,
-        username: username.value.trim(),
+        ...(emailIdentity.value
+          ? { email: username.value.trim() }
+          : { username: username.value.trim() }),
         displayName: displayName.value.trim(),
         password: password.value,
         registrationSecret: registrationSecret.value
       });
+      if (result.verificationRequired) {
+        if (emailIdentity.value) {
+          try {
+            await session.login({
+              serverUrl: serverUrl.value,
+              email: username.value.trim(),
+              password: password.value
+            });
+            await router.replace("/home");
+            return;
+          } catch {
+            session.clearError();
+          }
+        }
+        awaitingVerification.value = true;
+        pendingEmail.value = username.value.trim();
+        pendingPassword.value = password.value;
+        verificationNotice.value = "如果这是新账号，验证邮件会发送到该邮箱；如果邮箱已经注册，请返回登录。为保护账号隐私，页面不会提示邮箱是否已注册。";
+        return;
+      }
     } else {
-      await session.login({ serverUrl: serverUrl.value, username: username.value.trim(), password: password.value });
+      await session.login({
+        serverUrl: serverUrl.value,
+        ...(emailIdentity.value
+          ? { email: username.value.trim() }
+          : { username: username.value.trim() }),
+        password: password.value
+      });
     }
     await router.replace("/home");
   } catch { /* 错误由 store 呈现 */ }
+}
+
+async function resendVerification() {
+  if (!pendingEmail.value || !pendingPassword.value) return;
+  localError.value = "";
+  try {
+    await session.resendEmailVerification({
+      serverUrl: serverUrl.value,
+      email: pendingEmail.value,
+      password: pendingPassword.value
+    });
+    verificationNotice.value = "如果账号尚未验证且凭据正确，新的验证邮件会发送到该邮箱；已验证账号请直接返回登录。";
+  } catch (cause) {
+    localError.value = cause instanceof Error ? cause.message : "验证邮件暂时没有发送成功。";
+  }
+}
+
+function returnToEmailLogin() {
+  awaitingVerification.value = false;
+  verificationToken.value = "";
+  pendingEmail.value = "";
+  pendingPassword.value = "";
+  localError.value = "";
+  session.clearError();
+  mode.value = "login";
+}
+
+function openPasswordReset() {
+  localError.value = "";
+  resetRequested.value = false;
+  resetToken.value = "";
+  resetPassword.value = "";
+  mode.value = "reset";
+}
+
+function closePasswordReset() {
+  localError.value = "";
+  mode.value = "login";
+  resetRequested.value = false;
+}
+
+function extractVerificationToken(value: string) {
+  const raw = value.trim();
+  if (!raw) return "";
+  try { return new URL(raw).searchParams.get("token") || raw; } catch { return raw; }
 }
 
 async function connectWithPairingCode(code: string) {
@@ -182,13 +314,42 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
         <span class="login-mark" aria-hidden="true"><i /><b /></span>
         <h1>AetherX</h1>
       </header>
-      <div class="mode-tabs">
+      <div v-if="!awaitingVerification && mode !== 'reset'" class="mode-tabs" :class="{'email-tabs':emailIdentity}">
         <button type="button" :class="{active:mode==='login'}" @click="selectMode('login')">账号登录</button>
         <button type="button" :class="{active:mode==='register'}" :disabled="!registrationAvailable" @click="selectMode('register')">创建账号</button>
-        <button type="button" :class="{active:mode==='pair'}" @click="selectMode('pair')">配对电脑</button>
+        <button v-if="!emailIdentity" type="button" :class="{active:mode==='pair'}" @click="selectMode('pair')">配对电脑</button>
       </div>
-      <div v-if="mode!=='pair'" class="login-fields">
+      <div v-if="awaitingVerification" class="login-fields verification-fields">
+        <div class="pairing-note"><Link2 :size="19"/><span><strong>验证你的邮箱</strong><small>{{ verificationNotice }}</small></span></div>
         <div class="field icon-field">
+          <label for="verificationToken">验证令牌</label>
+          <div><LockKeyhole :size="18" /><input id="verificationToken" v-model="verificationToken" autocomplete="one-time-code" placeholder="粘贴邮件链接或验证令牌" /></div>
+        </div>
+        <div class="verification-actions">
+          <button class="resend-verification" type="button" @click="resendVerification">重新发送验证邮件</button>
+          <button class="resend-verification" type="button" @click="returnToEmailLogin">返回账号登录</button>
+        </div>
+      </div>
+      <div v-else-if="mode==='reset'" class="login-fields verification-fields">
+        <div class="pairing-note"><LockKeyhole :size="19"/><span><strong>找回登录密码</strong><small>{{ resetRequested ? '粘贴邮件中的链接或令牌，并设置新密码。' : '填写注册邮箱；无论账号是否存在，页面都会显示相同结果。' }}</small></span></div>
+        <div v-if="!resetRequested" class="field icon-field">
+          <label for="resetEmail">邮箱</label>
+          <div><UserRound :size="18" /><input id="resetEmail" v-model="username" type="email" autocomplete="email" placeholder="输入注册邮箱" /></div>
+        </div>
+        <template v-else>
+          <div class="field icon-field">
+            <label for="resetToken">重置令牌</label>
+            <div><LockKeyhole :size="18" /><input id="resetToken" v-model="resetToken" autocomplete="one-time-code" placeholder="粘贴邮件链接或重置令牌" /></div>
+          </div>
+          <div class="field icon-field">
+            <label for="resetPassword">新密码</label>
+            <div><LockKeyhole :size="18" /><input id="resetPassword" v-model="resetPassword" type="password" autocomplete="new-password" placeholder="至少 10 个字符" /></div>
+          </div>
+        </template>
+        <button class="resend-verification" type="button" @click="closePasswordReset">返回登录</button>
+      </div>
+      <div v-else-if="mode!=='pair'" class="login-fields">
+        <div v-if="!cloudBuild" class="field icon-field">
           <label for="server">电脑端地址</label>
           <div><Server :size="18" /><input id="server" v-model="serverUrl" inputmode="url" autocomplete="url" @change="inspectServer" /></div>
         </div>
@@ -197,9 +358,10 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
           <div><UserPlus :size="18" /><input id="displayName" v-model="displayName" autocomplete="name" placeholder="显示名称（可选）" /></div>
         </div>
         <div class="field icon-field">
-          <label for="username">账号名</label>
-          <div><UserRound :size="18" /><input id="username" v-model="username" autocomplete="username" placeholder="输入账号名" /></div>
+          <label for="username">{{ emailIdentity ? "邮箱" : "账号名" }}</label>
+          <div><UserRound :size="18" /><input id="username" v-model="username" :type="emailIdentity?'email':'text'" :autocomplete="emailIdentity?'email':'username'" :placeholder="emailIdentity?'输入邮箱地址':'输入账号名'" /></div>
         </div>
+        <button v-if="emailIdentity && mode==='login'" class="forgot-password" type="button" @click="openPasswordReset">忘记密码？</button>
         <div class="field icon-field">
           <label for="password">密码</label>
           <div>
@@ -223,8 +385,8 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
         <div class="field"><label for="pairingCode">一次性连接码</label><textarea id="pairingCode" v-model="pairingCode" rows="4" placeholder="aetherx://pair?…" /></div>
       </div>
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
-      <button class="primary-button login-button" type="submit" :disabled="session.busy.value || completePairingBusy || (mode==='pair' ? !pairingCode.trim() : !username.trim() || !password)">
-        <span>{{ session.busy.value ? (mode==='pair'?'等待电脑确认…':mode==='register'?'正在创建…':'正在连接…') : (mode==='pair'?'申请配对':mode==='register'?'创建并进入':'进入 AetherX') }}</span><ArrowRight :size="18" />
+      <button class="primary-button login-button" type="submit" :disabled="submitDisabled">
+        <span>{{ session.busy.value ? (awaitingVerification?'正在验证…':mode==='reset'?'正在处理…':mode==='pair'?'等待电脑确认…':mode==='register'?'正在创建…':'正在连接…') : (awaitingVerification?'完成邮箱验证':mode==='reset'?(resetRequested?'更新密码':'发送重置邮件'):mode==='pair'?'申请配对':mode==='register'?'创建并进入':'进入 AetherX') }}</span><ArrowRight :size="18" />
       </button>
       <footer>登录凭证只保存在这台手机的系统安全区中</footer>
     </form>
@@ -256,6 +418,9 @@ onBeforeUnmount(() => window.removeEventListener(PAIRING_DEEP_LINK_EVENT, handle
 .login-mark i { inset: 0; border: 1px solid rgba(157,132,174,.28); background: linear-gradient(145deg,rgba(235,180,211,.38),rgba(153,197,232,.34)); transform: rotate(28deg); }
 .login-mark b { inset: 10px; background: linear-gradient(135deg,var(--pink),var(--blue)); box-shadow: 0 5px 14px rgba(145,118,171,.25); }
 .mode-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:20px 0 0;padding:4px;border-radius:15px;background:rgba(118,110,141,.07)}.mode-tabs button{min-width:0;height:38px;padding:0 4px;border:0;border-radius:11px;color:#8b8597;background:transparent;font-size:calc(10px * var(--font-scale,1));font-weight:700;white-space:nowrap}.mode-tabs button.active{color:#544f6c;background:rgba(255,255,255,.92);box-shadow:0 7px 18px rgba(86,79,112,.1)}.mode-tabs button:disabled{opacity:.38}
+.mode-tabs.email-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.resend-verification{min-height:40px;border:1px solid rgba(var(--blue-rgb),.2);border-radius:13px;color:#6d7891;background:rgba(255,255,255,.82);font-weight:700}
+.verification-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.verification-actions .resend-verification{min-width:0;padding:8px;font-size:calc(9px * var(--font-scale,1))}
+.forgot-password{justify-self:end;margin-top:-6px;padding:2px 0;border:0;color:#817593;background:transparent;font-size:calc(9px * var(--font-scale,1));font-weight:700}
 .login-fields { display: grid; gap: 13px; margin: 21px 0 15px; }
 .icon-field > div { min-height: 51px; display: flex; align-items: center; gap: 11px; padding: 0 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(250,249,252,.74); }
 .icon-field > div:focus-within { border-color: rgba(var(--pink-rgb),.48); background: white; box-shadow: 0 0 0 4px rgba(var(--pink-rgb),.09); }

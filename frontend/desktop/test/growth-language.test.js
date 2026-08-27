@@ -15,7 +15,11 @@ test("growth titles turn internal trait keys into natural Chinese", () => {
 test("growth narration speaks in first person instead of system language", () => {
   assert.equal(
     growthNarration({ content: "助手承诺陪用户玩游戏到底" }),
-    "我承诺陪洛尼玩游戏到底"
+    "我承诺陪你玩游戏到底"
+  );
+  assert.equal(
+    growthNarration({ content: "助手承诺陪用户玩游戏到底" }, "小玄", "久次"),
+    "我承诺陪久次玩游戏到底"
   );
   assert.equal(
     growthNarration({ content: "Assistant promises to test the mood module as soon as it's ready." }),
@@ -31,5 +35,9 @@ test("trait descriptions do not leak English storage values", () => {
   assert.equal(
     growthTraitDescription({ value: "unknown_internal_value" }),
     "这个印记还在相处中慢慢形成。"
+  );
+  assert.equal(
+    growthTraitDescription({ value: "愿意陪用户散步" }, "久次"),
+    "愿意陪久次散步"
   );
 });

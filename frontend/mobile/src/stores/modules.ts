@@ -10,7 +10,7 @@ let loadPromise: Promise<ModuleState[]> | null = null;
 
 function currentScope() {
   const session = useSessionStore();
-  return `${session.spaceId.value || session.serverUrl.value}|${session.user.value?.username || ""}`;
+  return `${session.spaceId.value || session.serverUrl.value}|${session.user.value?.id || session.user.value?.email || session.user.value?.username || ""}`;
 }
 
 async function hydrate(force = false) {

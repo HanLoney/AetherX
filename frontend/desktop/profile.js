@@ -12,6 +12,7 @@ const cropper = new window.AetherAvatarCropper($("#avatarCropModal"));
 const GALLERY_OVERVIEW_LIMIT = 3;
 const GALLERY_PAGE_SIZE = 6;
 let profile = null;
+let userProfile = null;
 let personalityEvents = [];
 let journals = [];
 const journalPager = new window.AetherJournalPager();
@@ -20,6 +21,7 @@ let galleryImages = [];
 let galleryTotal = 0;
 let galleryHasMore = false;
 let galleryLoading = kind === "assistant";
+let galleryHydrated = false;
 let galleryLoadError = "";
 let galleryLoadPromise = null;
 let galleryFilter = "all";
@@ -27,9 +29,109 @@ let galleryLightboxLoadId = 0;
 const galleryOriginalLoads = new Map();
 let assistantView = "overview";
 const assistantContentState = {
-  growth: { loading: kind === "assistant", error: "" },
-  journals: { loading: kind === "assistant", error: "" }
+  growth: { loading: kind === "assistant", hydrated: false, error: "" },
+  journals: { loading: kind === "assistant", hydrated: false, error: "" }
 };
+let profileCacheScope = "";
+
+function hasOwn(value, key) {
+  return Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function blobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("缩略图读取失败。"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function cacheableGalleryImage(image) {
+  const source = String(image?.source || "");
+  if (!source) return null;
+  let cachedSource = source;
+  if (!source.startsWith("data:")) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch(source, { signal: controller.signal });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/") || blob.size > 3 * 1024 * 1024) return null;
+      cachedSource = await blobAsDataUrl(blob);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const { source: _source, originalSource: _originalSource, ...metadata } = image;
+  return { ...metadata, source: cachedSource, originalSource: cachedSource };
+}
+
+async function cacheableGalleryImages(images) {
+  const cached = await Promise.all(
+    (Array.isArray(images) ? images : []).map(cacheableGalleryImage)
+  );
+  return cached.filter(Boolean);
+}
+
+async function resolveProfileCacheScope() {
+  try {
+    const auth = await window.desktop.getCurrentAuth();
+    const user = auth?.user;
+    const identity = user?.id || user?.email || user?.username || "";
+    return identity ? `${auth?.serverUrl || ""}|${identity}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function saveProfileCache(patch) {
+  if (!profileCacheScope) return Promise.resolve(null);
+  return window.AetherProfileCache?.save(profileCacheScope, patch).catch(() => null) ||
+    Promise.resolve(null);
+}
+
+async function saveGalleryCache() {
+  const cachedImages = await cacheableGalleryImages(galleryImages);
+  await saveProfileCache({ galleryImages: cachedImages, galleryTotal });
+}
+
+function applyCachedProfile(snapshot) {
+  if (!snapshot) return false;
+  let restored = false;
+  if (kind === "user" && snapshot.userProfile) {
+    userProfile = snapshot.userProfile;
+    profile = snapshot.userProfile;
+    restored = true;
+  }
+  if (kind === "assistant" && snapshot.assistantProfile) {
+    profile = snapshot.assistantProfile;
+    userProfile = snapshot.userProfile || userProfile;
+    restored = true;
+  }
+  if (kind === "assistant" && hasOwn(snapshot, "personalityEvents")) {
+    personalityEvents = Array.isArray(snapshot.personalityEvents) ? snapshot.personalityEvents : [];
+    assistantContentState.growth.hydrated = true;
+    assistantContentState.growth.loading = false;
+  }
+  if (kind === "assistant" && hasOwn(snapshot, "journals")) {
+    journals = Array.isArray(snapshot.journals) ? snapshot.journals : [];
+    assistantContentState.journals.hydrated = true;
+    assistantContentState.journals.loading = false;
+  }
+  if (kind === "assistant" && hasOwn(snapshot, "galleryTotal")) {
+    galleryImages = Array.isArray(snapshot.galleryImages) ? snapshot.galleryImages : [];
+    galleryTotal = Math.max(0, Number(snapshot.galleryTotal) || 0);
+    galleryHasMore = galleryImages.length < galleryTotal;
+    galleryHydrated = true;
+    galleryLoading = false;
+  }
+  if (restored) render();
+  return restored;
+}
 
 function showNotice(message, error = false) {
   const notice = $("#notice");
@@ -62,7 +164,7 @@ function renderAvatar() {
   const dataUrl = profile?.avatarDataUrl || "";
   const name =
     kind === "user"
-      ? profile?.displayName || profile?.preferredName || "洛尼"
+      ? profile?.displayName || profile?.preferredName || "你"
       : profile?.name || "小玄";
   image.classList.toggle("hidden", !dataUrl);
   fallback.classList.toggle("hidden", Boolean(dataUrl));
@@ -80,7 +182,7 @@ function renderUser() {
   $("#pageTitle").textContent = "个人主页";
   $("#profileRole").textContent = "USER PROFILE";
   $("#heroSummary").textContent =
-    profile.bio || profile.occupation || "属于洛尼的个人空间";
+    profile.bio || profile.occupation || "属于你的个人空间";
   $("#userSection").classList.remove("hidden");
   $("#userDisplayName").value = profile.displayName || "";
   $("#userPreferredName").value = profile.preferredName || "";
@@ -133,7 +235,10 @@ function renderAssistant() {
     percentage.textContent = `${strength}%`;
     heading.append(title, percentage);
     const value = document.createElement("p");
-    value.textContent = window.XuanGrowthLanguage.growthTraitDescription(trait);
+    value.textContent = window.XuanGrowthLanguage.growthTraitDescription(
+      trait,
+      userProfile?.preferredName || userProfile?.displayName || "你"
+    );
     const meter = document.createElement("div");
     meter.className = "trait-meter";
     meter.setAttribute("role", "meter");
@@ -267,6 +372,8 @@ function renderAssistantOverview() {
     galleryHost.innerHTML = '<div class="empty">最近画面正在赶来…</div>';
   } else if (!galleryHost.children.length && galleryLoadError) {
     galleryHost.innerHTML = '<div class="empty">最近画面暂时没有加载成功。</div>';
+  } else if (!galleryHost.children.length && galleryTotal) {
+    galleryHost.innerHTML = '<div class="empty">最近画面会在联网后补齐。</div>';
   } else if (!galleryHost.children.length) {
     galleryHost.innerHTML = '<div class="empty">她还没有画下新的画面。</div>';
   }
@@ -281,7 +388,7 @@ function renderAssistantOverview() {
     content.textContent = window.XuanGrowthLanguage.growthNarration(
       latestGrowth,
       profile?.name || "小玄",
-      "洛尼"
+      userProfile?.preferredName || userProfile?.displayName || "你"
     );
     const meta = document.createElement("small");
     meta.textContent = latestGrowth.status === "candidate" ? "等待确认" : "已经成为她的一部分";
@@ -400,9 +507,11 @@ function renderGallery() {
       ? "正在翻开相册…"
       : galleryLoadError
         ? "这一页暂时没有加载成功，请重试。"
-        : galleryImages.length
-          ? "当前已加载的画面里还没有这一类。"
-          : "相册还是空的。当她在对话或手记里画下画面时，会收进这里。";
+        : galleryTotal
+          ? "画面缩略图会在联网后补齐。"
+          : galleryImages.length
+            ? "当前已加载的画面里还没有这一类。"
+            : "相册还是空的。当她在对话或手记里画下画面时，会收进这里。";
     grid.innerHTML = `<div class="empty">${message}</div>`;
     renderGalleryPagination();
     return;
@@ -552,7 +661,7 @@ function renderPersonalityTimeline() {
     content.textContent = window.XuanGrowthLanguage.growthNarration(
       event,
       profile?.name || "小玄",
-      "洛尼"
+      userProfile?.preferredName || userProfile?.displayName || "你"
     );
     copy.append(heading, content);
     card.append(time, dot, copy);
@@ -596,11 +705,13 @@ function refreshGalleryViews() {
 }
 
 async function loadGrowthContent() {
-  assistantContentState.growth.loading = true;
+  assistantContentState.growth.loading = !assistantContentState.growth.hydrated;
   assistantContentState.growth.error = "";
   refreshGrowthViews();
   try {
     personalityEvents = await window.desktop.listPersonalityEvents();
+    assistantContentState.growth.hydrated = true;
+    void saveProfileCache({ personalityEvents });
   } catch (error) {
     assistantContentState.growth.error = error.message;
     throw error;
@@ -611,11 +722,13 @@ async function loadGrowthContent() {
 }
 
 async function loadJournalContent() {
-  assistantContentState.journals.loading = true;
+  assistantContentState.journals.loading = !assistantContentState.journals.hydrated;
   assistantContentState.journals.error = "";
   refreshJournalViews();
   try {
     journals = await window.desktop.listJournals({ limit: 50 });
+    assistantContentState.journals.hydrated = true;
+    void saveProfileCache({ journals });
   } catch (error) {
     assistantContentState.journals.error = error.message;
     throw error;
@@ -627,7 +740,7 @@ async function loadJournalContent() {
 
 async function loadGallerySummary() {
   if (galleryLoadPromise) return galleryLoadPromise;
-  galleryLoading = true;
+  galleryLoading = !galleryHydrated;
   galleryLoadError = "";
   refreshGalleryViews();
   galleryLoadPromise = (async () => {
@@ -638,10 +751,9 @@ async function loadGallerySummary() {
       galleryImages = Array.isArray(summary?.items) ? summary.items : [];
       galleryTotal = Math.max(0, Number(summary?.total) || 0);
       galleryHasMore = galleryImages.length < galleryTotal;
+      galleryHydrated = true;
+      void saveGalleryCache();
     } catch (error) {
-      galleryImages = [];
-      galleryTotal = 0;
-      galleryHasMore = false;
       galleryLoadError = error.message;
       throw error;
     } finally {
@@ -672,6 +784,8 @@ async function loadMoreGallery() {
       galleryImages = [...galleryImages, ...nextItems];
       galleryTotal = Math.max(galleryImages.length, Number(page?.total) || 0);
       galleryHasMore = Boolean(page?.hasMore);
+      galleryHydrated = true;
+      void saveGalleryCache();
     } catch (error) {
       galleryLoadError = error.message;
       throw error;
@@ -705,12 +819,27 @@ async function loadAssistantContent() {
 
 async function loadProfile() {
   if (kind === "user") {
-    profile = await window.desktop.getProfile();
+    userProfile = await window.desktop.getProfile();
+    profile = userProfile;
+    void saveProfileCache({ userProfile });
   } else {
-    profile = await window.desktop.getAssistantProfile();
+    [profile, userProfile] = await Promise.all([
+      window.desktop.getAssistantProfile(),
+      window.desktop.getProfile()
+    ]);
+    void saveProfileCache({ assistantProfile: profile, userProfile });
   }
   render();
   if (kind === "assistant") await loadAssistantContent();
+}
+
+async function initializeProfile() {
+  profileCacheScope = await resolveProfileCacheScope();
+  if (profileCacheScope) {
+    const cached = await window.AetherProfileCache?.load(profileCacheScope).catch(() => null);
+    applyCachedProfile(cached);
+  }
+  await loadProfile();
 }
 
 async function deleteJournal(journal) {
@@ -718,6 +847,7 @@ async function deleteJournal(journal) {
   try {
     await window.desktop.deleteJournal(journal.id);
     journals = journals.filter((item) => item.id !== journal.id);
+    void saveProfileCache({ journals });
     renderJournals();
     showNotice("手记已经删除。");
   } catch (error) {
@@ -730,6 +860,12 @@ async function saveAvatar(dataUrl) {
     kind === "user"
       ? await window.desktop.updateProfile({ avatarDataUrl: dataUrl })
       : await window.desktop.updateAssistantProfile({ avatarDataUrl: dataUrl });
+  if (kind === "user") {
+    userProfile = profile;
+    void saveProfileCache({ userProfile: profile });
+  } else {
+    void saveProfileCache({ assistantProfile: profile });
+  }
   renderAvatar();
   window.parent?.postMessage(
     { type: "aether:profile-updated", kind },
@@ -788,6 +924,7 @@ async function savePersonaImage(dataUrl) {
   profile = await window.desktop.updateAssistantProfile({
     personaImageDataUrl: dataUrl
   });
+  void saveProfileCache({ assistantProfile: profile });
   renderPersonaImage();
   showNotice(dataUrl ? "人设参考图已经更新。" : "人设参考图已经移除。");
 }
@@ -955,6 +1092,8 @@ $("#userProfileForm").addEventListener("submit", async (event) => {
         .map((item) => item.trim())
         .filter(Boolean)
     });
+    userProfile = profile;
+    void saveProfileCache({ userProfile: profile });
     render();
     window.parent?.postMessage(
       { type: "aether:profile-updated", kind },
@@ -976,6 +1115,7 @@ $("#assistantProfileForm").addEventListener("submit", async (event) => {
       relationshipSummary: $("#assistantRelationship").value,
       values: parseKeyValueLines($("#assistantValues").value)
     });
+    void saveProfileCache({ assistantProfile: profile });
     render();
     window.parent?.postMessage(
       { type: "aether:profile-updated", kind },
@@ -989,4 +1129,4 @@ $("#assistantProfileForm").addEventListener("submit", async (event) => {
   }
 });
 
-loadProfile().catch((error) => showNotice(error.message, true));
+initializeProfile().catch((error) => showNotice(error.message, true));

@@ -13,18 +13,20 @@ class AuthStore {
       return {
         serverUrl: normalizeServerUrl(stored.serverUrl),
         token: this.decryptToken(stored.encryptedToken),
+        refreshToken: this.decryptToken(stored.encryptedRefreshToken),
         user: sanitizeUser(stored.user),
         routing: sanitizeRouting(this.decryptJson(stored.encryptedRouting))
       };
     } catch {
-      return { serverUrl: "", token: "", user: null, routing: null };
+      return { serverUrl: "", token: "", refreshToken: "", user: null, routing: null };
     }
   }
 
-  save({ serverUrl, token, user, routing = null }) {
+  save({ serverUrl, token, refreshToken = "", user, routing = null }) {
     const payload = {
       serverUrl: normalizeServerUrl(serverUrl),
       encryptedToken: this.encryptToken(token),
+      encryptedRefreshToken: this.encryptToken(refreshToken),
       user: sanitizeUser(user),
       encryptedRouting: this.encryptJson(sanitizeRouting(routing))
     };
@@ -35,7 +37,7 @@ class AuthStore {
   }
 
   clearSession(serverUrl = "") {
-    this.save({ serverUrl, token: "", user: null, routing: null });
+    this.save({ serverUrl, token: "", refreshToken: "", user: null, routing: null });
   }
 
   encryptToken(token) {
@@ -75,12 +77,19 @@ function normalizeServerUrl(value) {
 }
 
 function sanitizeUser(user) {
-  if (!user?.id || !user?.username) return null;
-  return {
+  const identifier = user?.email || user?.username;
+  if (!user?.id || !identifier) return null;
+  const sanitized = {
     id: String(user.id),
-    username: String(user.username),
-    displayName: String(user.displayName || user.username)
+    displayName: String(user.displayName || identifier)
   };
+  if (user.email) {
+    sanitized.email = String(user.email);
+    sanitized.emailVerified = user.emailVerified === true;
+  } else {
+    sanitized.username = String(user.username);
+  }
+  return sanitized;
 }
 
 function sanitizeRouting(routing) {

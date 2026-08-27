@@ -6,6 +6,10 @@ const state = {
   qrLogin: null,
   qrPollTimer: 0,
   qrCountdownTimer: 0,
+  cloudEdition: false,
+  pendingEmail: "",
+  pendingPassword: "",
+  passwordResetActive: false,
   hub: {
     computer: "checking",
     mobile: "searching",
@@ -25,6 +29,8 @@ const elements = {
   displayNameField: document.querySelector("#displayNameField"),
   displayName: document.querySelector("#displayName"),
   username: document.querySelector("#username"),
+  loginIdentifierLabel: document.querySelector("#loginIdentifierLabel"),
+  advancedServer: document.querySelector("#advancedServer"),
   password: document.querySelector("#password"),
   passwordHelp: document.querySelector("#passwordHelp"),
   registrationSecretField: document.querySelector("#registrationSecretField"),
@@ -47,8 +53,42 @@ const elements = {
   qrLoginStatus: document.querySelector("#qrLoginStatus"),
   qrLoginCountdown: document.querySelector("#qrLoginCountdown"),
   refreshQrLoginBtn: document.querySelector("#refreshQrLoginBtn"),
-  passwordLoginDivider: document.querySelector("#passwordLoginDivider")
+  passwordLoginDivider: document.querySelector("#passwordLoginDivider"),
+  emailVerificationPanel: document.querySelector("#emailVerificationPanel"),
+  emailVerificationMessage: document.querySelector("#emailVerificationMessage"),
+  emailVerificationToken: document.querySelector("#emailVerificationToken"),
+  verifyEmailBtn: document.querySelector("#verifyEmailBtn"),
+  resendEmailBtn: document.querySelector("#resendEmailBtn"),
+  verificationLoginBtn: document.querySelector("#verificationLoginBtn"),
+  forgotPasswordBtn: document.querySelector("#forgotPasswordBtn"),
+  passwordResetPanel: document.querySelector("#passwordResetPanel"),
+  passwordResetMessage: document.querySelector("#passwordResetMessage"),
+  passwordResetToken: document.querySelector("#passwordResetToken"),
+  passwordResetNewPassword: document.querySelector("#passwordResetNewPassword"),
+  completePasswordResetBtn: document.querySelector("#completePasswordResetBtn"),
+  cancelPasswordResetBtn: document.querySelector("#cancelPasswordResetBtn")
 };
+
+function usesEmailIdentity() {
+  return state.config?.loginIdentifier === "email";
+}
+
+function applyIdentityMode() {
+  const email = usesEmailIdentity();
+  document.body.classList.toggle("cloud-auth", email);
+  elements.loginIdentifierLabel.textContent = email ? "邮箱" : "账号名";
+  elements.username.type = email ? "email" : "text";
+  elements.username.autocomplete = email ? "email" : "username";
+  elements.username.placeholder = email ? "输入邮箱地址" : "输入账号名";
+  elements.hubRoutePanel.classList.toggle("hidden", email);
+  elements.qrLoginPanel.classList.toggle("hidden", email || state.mode === "register");
+  elements.passwordLoginDivider.classList.toggle("hidden", email || state.mode === "register");
+  if (state.cloudEdition) elements.advancedServer.classList.add("hidden");
+  elements.forgotPasswordBtn.classList.toggle(
+    "hidden",
+    !email || state.mode !== "login" || state.passwordResetActive
+  );
+}
 
 const hubStateText = {
   checking: "正在检查…",
@@ -150,6 +190,7 @@ function renderHubProgress(progress = {}) {
 }
 
 async function scanHubs() {
+  if (state.cloudEdition || usesEmailIdentity()) return;
   if (state.scanning || state.loading) return;
   state.scanning = true;
   elements.scanHubBtn.disabled = true;
@@ -168,6 +209,9 @@ async function scanHubs() {
 
 function setMode(mode) {
   state.mode = mode;
+  state.passwordResetActive = false;
+  elements.passwordResetPanel.classList.add("hidden");
+  elements.submitBtn.classList.remove("hidden");
   const registering = mode === "register";
   document.body.classList.toggle("register-mode", registering);
   elements.loginTab.classList.toggle("active", !registering);
@@ -191,7 +235,8 @@ function setMode(mode) {
   elements.password.autocomplete = registering ? "new-password" : "current-password";
   elements.qrLoginPanel.classList.toggle("hidden", registering);
   elements.passwordLoginDivider.classList.toggle("hidden", registering);
-  if (!registering && (!state.qrLogin || state.qrLogin.expiresAt <= Date.now())) {
+  applyIdentityMode();
+  if (!usesEmailIdentity() && !registering && (!state.qrLogin || state.qrLogin.expiresAt <= Date.now())) {
     createQrLogin().catch(() => undefined);
   }
   hideError();
@@ -237,6 +282,7 @@ async function pollQrLogin() {
 }
 
 async function createQrLogin() {
+  if (state.cloudEdition || usesEmailIdentity()) return;
   stopQrLoginTimers();
   elements.refreshQrLoginBtn.disabled = true;
   elements.qrLoginStatus.textContent = "正在生成一次性登录码…";
@@ -267,6 +313,7 @@ async function inspectServer() {
   }
   try {
     state.config = await window.desktop.getAuthConfig(serverUrl);
+    applyIdentityMode();
     if (state.config.serverUrl && state.config.serverUrl !== serverUrl) {
       elements.serverUrl.value = state.config.serverUrl;
     }
@@ -293,20 +340,43 @@ async function submit(event) {
 
   const input = {
     serverUrl: elements.serverUrl.value.trim(),
-    username: elements.username.value.trim(),
     password: elements.password.value,
     displayName: elements.displayName.value.trim(),
-    registrationSecret: elements.registrationSecret.value
+    registrationSecret: elements.registrationSecret.value,
+    ...(usesEmailIdentity()
+      ? { email: elements.username.value.trim() }
+      : { username: elements.username.value.trim() })
   };
-  if (!input.username || !input.password) {
-    showError("把账号名和密码填完整再进去吧。");
+  if (!(input.email || input.username) || !input.password) {
+    showError(usesEmailIdentity()
+      ? "把邮箱和密码填完整再进去吧。"
+      : "把账号名和密码填完整再进去吧。");
     return;
   }
 
   setLoading(true);
   try {
-    if (state.mode === "register") await window.desktop.register(input);
-    else await window.desktop.login(input);
+    if (state.mode === "register") {
+      const result = await window.desktop.register(input);
+      if (result?.verificationRequired) {
+        if (usesEmailIdentity()) {
+          try {
+            await window.desktop.login(input);
+            return;
+          } catch {
+            // A new or unverified account continues through the neutral verification flow.
+          }
+        }
+        state.pendingEmail = input.email;
+        state.pendingPassword = input.password;
+        elements.emailVerificationMessage.textContent =
+          "新账号：请查收验证邮件并粘贴令牌。\n已有账号：无需再次验证，直接返回登录。";
+        elements.emailVerificationPanel.classList.remove("hidden");
+        setLoading(false);
+      }
+    } else {
+      await window.desktop.login(input);
+    }
   } catch (error) {
     showError(error.message || "没有成功进入，请稍后再试。");
     setLoading(false);
@@ -321,6 +391,119 @@ function setLoading(loading) {
   elements.submitText.textContent = loading
     ? state.mode === "register" ? "正在创建空间…" : "正在登录…"
     : state.mode === "register" ? "创建并进入" : "进入 AetherX";
+}
+
+function extractVerificationToken(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).searchParams.get("token") || raw;
+  } catch {
+    return raw;
+  }
+}
+
+async function verifyEmail() {
+  const token = extractVerificationToken(elements.emailVerificationToken.value);
+  if (!token) {
+    showError("请粘贴验证邮件中的链接或令牌。");
+    return;
+  }
+  hideError();
+  setLoading(true);
+  try {
+    await window.desktop.verifyEmail({ token });
+  } catch (error) {
+    showError(error.message || "邮箱验证没有成功，请重新发送后再试。");
+    setLoading(false);
+  }
+}
+
+async function resendEmailVerification() {
+  if (!state.pendingEmail || !state.pendingPassword) {
+    showError("请先填写邮箱和密码，再重新发送验证邮件。");
+    return;
+  }
+  hideError();
+  elements.resendEmailBtn.disabled = true;
+  try {
+    await window.desktop.resendEmailVerification({
+      email: state.pendingEmail,
+      password: state.pendingPassword
+    });
+    elements.emailVerificationMessage.textContent =
+      "尚未验证：凭据正确时会发送新的验证邮件。\n已经验证：无需再次收信，直接返回登录。";
+  } catch (error) {
+    showError(error.message || "验证邮件暂时没有发送成功。");
+  } finally {
+    elements.resendEmailBtn.disabled = false;
+  }
+}
+
+function returnToEmailLogin() {
+  state.pendingEmail = "";
+  state.pendingPassword = "";
+  elements.emailVerificationToken.value = "";
+  elements.emailVerificationPanel.classList.add("hidden");
+  hideError();
+  setMode("login");
+}
+
+async function requestPasswordReset() {
+  const email = elements.username.value.trim();
+  if (!email) {
+    showError("请先填写需要找回的邮箱。");
+    return;
+  }
+  hideError();
+  elements.forgotPasswordBtn.disabled = true;
+  try {
+    await window.desktop.requestPasswordReset({ email });
+    state.passwordResetActive = true;
+    elements.passwordResetMessage.textContent =
+      "如果这个邮箱已注册并完成验证，重置邮件已经发送。请粘贴邮件中的链接或令牌。";
+    elements.passwordResetPanel.classList.remove("hidden");
+    elements.submitBtn.classList.add("hidden");
+    applyIdentityMode();
+  } catch (error) {
+    showError(error.message || "密码重置邮件暂时没有发送成功。");
+  } finally {
+    elements.forgotPasswordBtn.disabled = false;
+  }
+}
+
+async function completePasswordReset() {
+  const token = extractVerificationToken(elements.passwordResetToken.value);
+  const password = elements.passwordResetNewPassword.value;
+  if (!token || password.length < 10) {
+    showError("请粘贴有效的重置链接，并填写至少 10 个字符的新密码。");
+    return;
+  }
+  hideError();
+  elements.completePasswordResetBtn.disabled = true;
+  try {
+    await window.desktop.resetPassword({ token, password });
+    state.passwordResetActive = false;
+    elements.passwordResetPanel.classList.add("hidden");
+    elements.submitBtn.classList.remove("hidden");
+    elements.password.value = "";
+    elements.passwordResetToken.value = "";
+    elements.passwordResetNewPassword.value = "";
+    elements.formHint.textContent = "密码已经更新，请使用新密码登录";
+    applyIdentityMode();
+  } catch (error) {
+    showError(error.message || "密码没有重置成功，请重新申请链接。");
+  } finally {
+    elements.completePasswordResetBtn.disabled = false;
+  }
+}
+
+function cancelPasswordReset() {
+  state.passwordResetActive = false;
+  elements.passwordResetPanel.classList.add("hidden");
+  elements.submitBtn.classList.remove("hidden");
+  applyIdentityMode();
+  hideError();
 }
 
 function showError(message) {
@@ -341,6 +524,12 @@ elements.serverUrl.addEventListener("change", inspectServer);
 elements.form.addEventListener("submit", submit);
 elements.scanHubBtn.addEventListener("click", scanHubs);
 elements.refreshQrLoginBtn.addEventListener("click", createQrLogin);
+elements.verifyEmailBtn.addEventListener("click", verifyEmail);
+elements.resendEmailBtn.addEventListener("click", resendEmailVerification);
+elements.verificationLoginBtn.addEventListener("click", returnToEmailLogin);
+elements.forgotPasswordBtn.addEventListener("click", requestPasswordReset);
+elements.completePasswordResetBtn.addEventListener("click", completePasswordReset);
+elements.cancelPasswordResetBtn.addEventListener("click", cancelPasswordReset);
 elements.togglePassword.addEventListener("click", () => {
   const visible = elements.password.type === "text";
   elements.password.type = visible ? "password" : "text";
@@ -354,9 +543,12 @@ async function initialize() {
   const removeHubProgressListener = window.desktop.onAuthHubProgress(renderHubProgress);
   window.addEventListener("beforeunload", removeHubProgressListener, { once: true });
   const auth = await window.desktop.getAuthState();
+  state.cloudEdition = auth.cloudEdition === true;
   elements.serverUrl.value = auth.serverUrl || "http://127.0.0.1:4318";
-  await scanHubs();
-  await createQrLogin();
+  if (!state.cloudEdition) {
+    await scanHubs();
+    await createQrLogin();
+  }
   if (auth.hasSession) {
     setLoading(true);
     try {

@@ -2298,6 +2298,11 @@ button { color: inherit; cursor: pointer; }
   outline: none; color: #514b5a; background: rgba(255, 255, 255, .8); font-size: calc(9px * var(--font-scale, 1));
 }
 .archive-password-field input:focus { border-color: rgba(132, 151, 191, .46); box-shadow: 0 0 0 3px rgba(132, 151, 191, .09); }
+.archive-secret-policy { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; margin-top: 10px; padding: 10px 11px; border-radius: 12px; color: #6f6979; background: rgba(111, 103, 136, .055); }
+.archive-secret-policy input { width: 16px; height: 16px; margin-top: 2px; accent-color: #9f7898; }
+.archive-secret-policy > span { display: grid; gap: 3px; }
+.archive-secret-policy strong { font-size: calc(8px * var(--font-scale, 1)); }
+.archive-secret-policy small { color: #9992a2; font-size: calc(7px * var(--font-scale, 1)); line-height: 1.45; }
 .archive-warning { margin: 11px 0 0; color: #9a7b84; font-size: calc(8px * var(--font-scale, 1)); line-height: 1.6; }
 .archive-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 13px; }
 .archive-actions button { height: 39px; border: 0; border-radius: 12px; color: #68778b; background: rgba(121, 161, 201, .12); font-size: calc(9px * var(--font-scale, 1)); font-weight: 700; cursor: pointer; }

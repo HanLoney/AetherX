@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld("desktop", {
   getAuthConfig: (serverUrl) => ipcRenderer.invoke("auth:config", serverUrl),
   login: (input) => ipcRenderer.invoke("auth:login", input),
   register: (input) => ipcRenderer.invoke("auth:register", input),
+  verifyEmail: (input) => ipcRenderer.invoke("auth:verify-email", input),
+  resendEmailVerification: (input) =>
+    ipcRenderer.invoke("auth:email:resend", input),
+  requestPasswordReset: (input) => ipcRenderer.invoke("auth:password:forgot", input),
+  resetPassword: (input) => ipcRenderer.invoke("auth:password:reset", input),
   onAuthHubProgress: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, progress) => callback(progress);
@@ -192,6 +197,10 @@ contextBridge.exposeInMainWorld("desktop", {
   createConversation: (title) =>
     ipcRenderer.invoke("conversations:create", title),
   getConversation: (id) => ipcRenderer.invoke("conversations:get", id),
+  getConversationMessage: (id, messageId) =>
+    ipcRenderer.invoke("conversations:message:get", id, messageId),
+  getConversationMessagePage: (id, filters) =>
+    ipcRenderer.invoke("conversations:message-page:get", id, filters),
   saveConversationMessages: (id, messages) =>
     ipcRenderer.invoke("conversations:messages:save", id, messages),
   deleteConversation: (id) => ipcRenderer.invoke("conversations:delete", id)

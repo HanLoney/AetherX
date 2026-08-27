@@ -375,7 +375,7 @@ describe("Android Local Hub replication envelope", () => {
     expect(mainActivitySource.indexOf("LocalHubService.get")).toBeGreaterThan(
       mainActivitySource.indexOf("super.onCreate(savedInstanceState)")
     );
-    expect(capacitorConfigSource).toContain('androidScheme: "http"');
+    expect(capacitorConfigSource).toContain('cloudEdition ? "https" : "http"');
     expect(capacitorConfigSource).toContain("allowMixedContent: false");
     expect(localHubServiceSource).toContain('.put("allowInsecureLan", BuildConfig.ALLOW_INSECURE_LAN)');
   });

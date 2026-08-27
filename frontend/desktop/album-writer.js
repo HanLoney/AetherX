@@ -5,7 +5,7 @@
       this.getConfig = options.getConfig;
       this.requestAI = options.requestAI;
       this.createMoment = options.createMoment;
-      this.getUserName = options.getUserName || (() => "洛尼");
+      this.getUserName = options.getUserName || (() => "你");
       this.getAssistantName = options.getAssistantName || (() => "小玄");
     }
 
@@ -13,7 +13,7 @@
       if (!this.isEnabled() || !sharedMemories.length) return null;
       const config = this.getConfig();
       if (!config?.hasApiKey) return null;
-      const userName = text(this.getUserName(), 40) || "洛尼";
+      const userName = text(this.getUserName(), 40) || "你";
       const assistantName = text(this.getAssistantName(), 40) || "小玄";
       const sources = sharedMemories
         .filter((item) => item?.id && item?.content)

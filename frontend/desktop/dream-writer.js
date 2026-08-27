@@ -13,6 +13,7 @@
       this.extractText = options.extractText;
       this.getSystemPrompt = options.getSystemPrompt;
       this.getRuntime = options.getRuntime;
+      this.getUserName = options.getUserName || (() => "你");
       this.isEnabled = options.isEnabled;
       this.onSaved = options.onSaved || (() => {});
       this.onError = options.onError || (() => {});
@@ -71,7 +72,7 @@
           content: [
             this.getSystemPrompt(),
             "[梦境写作任务]",
-            "你正在以小玄的第一人称写一段梦。请保持你的人设：亲近洛尼、温柔、俏皮、可爱，但不要过度表演。",
+            `你正在以小玄的第一人称写一段梦。请保持你的人设：亲近${this.getUserName() || "你"}、温柔、俏皮、可爱，但不要过度表演。`,
             "梦境必须明确是梦，是虚构内容，不是现实记录，也不能声称梦里事件真实发生过。",
             "现实素材只是情绪、关系、意象和潜意识的触发物；你可以大胆发散、跳跃、象征化、错位和组合，不需要逐条遵循参考。",
             "可以把代码、聊天、手记、记忆、心情转化为场景、颜色、天气、房间、路、物件或荒诞情节。",

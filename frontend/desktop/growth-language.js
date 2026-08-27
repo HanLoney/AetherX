@@ -56,7 +56,7 @@
     medium: "开始更清楚地认识自己",
     high: "已经成为稳定的倾向",
     promised: "愿意认真坚持",
-    playful: "愿意陪洛尼尽兴"
+    playful: "愿意陪你尽兴"
   };
 
   function isNaturalChinese(value) {
@@ -70,7 +70,7 @@
     return CATEGORY_LABELS[event.category] || "新的成长";
   }
 
-  function growthNarration(event = {}, companionName = "小玄", userName = "洛尼") {
+  function growthNarration(event = {}, companionName = "小玄", userName = "你") {
     const raw = String(event.content || "").trim();
     if (!raw) return "我在这次相处里，又多认识了自己一点。";
     if (KNOWN_TRANSLATIONS.has(raw)) return KNOWN_TRANSLATIONS.get(raw);
@@ -91,11 +91,11 @@
     return narration;
   }
 
-  function growthTraitDescription(trait = {}) {
+  function growthTraitDescription(trait = {}, userName = "你") {
     const value = String(trait.value || trait.traitValue || "").trim();
     if (!value) return "这个印记还在相处中慢慢形成。";
     if (TRAIT_VALUE_LABELS[value]) return TRAIT_VALUE_LABELS[value];
-    if (isNaturalChinese(value)) return value.replaceAll("用户", "洛尼").replace(/^助手/u, "我");
+    if (isNaturalChinese(value)) return value.replaceAll("用户", userName).replace(/^助手/u, "我");
     return "这个印记还在相处中慢慢形成。";
   }
 

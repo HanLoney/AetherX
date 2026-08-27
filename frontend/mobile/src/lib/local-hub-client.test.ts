@@ -221,10 +221,14 @@ describe.sequential("Android Local Hub Agent", () => {
     const client = new LocalHubClient(USER, hub as never);
     await expect(client.listConversations()).resolves.toMatchObject([{ id: "conversation-b" }]);
     const result = await client.conversation("conversation-b");
+    const page = await client.conversationMessagePage("conversation-b", 0, 10);
 
     expect(result.displayMessages.map((message) => message.id)).toEqual(["message-a", "message-b"]);
     expect(result.displayMessages.map((message) => message.createdAt)).toEqual([1, 2]);
     expect(result.modelMessages.map((message) => message.id)).toEqual(["message-model"]);
+    expect(page.items.map((message) => [message.id, message.position])).toEqual([["message-b", 1]]);
+    expect(page.nextPosition).toBe(1);
+    expect(page.hasMore).toBe(false);
     expect(hub.rows("conversations").map((row) => row.id)).toEqual(["conversation-b"]);
     expect(hub.rows("messages").map((row) => [row.id, row.conversation_id, row.position])).toEqual([
       ["message-a", "conversation-b", 0],

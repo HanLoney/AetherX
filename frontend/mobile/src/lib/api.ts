@@ -1,6 +1,8 @@
 export interface AuthUser {
   id: string;
-  username: string;
+  username?: string;
+  email?: string;
+  emailVerified?: boolean;
   displayName: string;
 }
 
@@ -9,6 +11,10 @@ export interface AuthConfig {
   firstUser: boolean;
   registrationMode: "open" | "invite" | "closed";
   requiresRegistrationSecret: boolean;
+  loginIdentifier: "username" | "email";
+  emailVerification: boolean;
+  passwordReset: boolean;
+  refreshSession: boolean;
 }
 
 export interface ClusterStatus {
@@ -169,6 +175,7 @@ export interface ChatActivityItem {
 
 export interface ChatMessage {
   id?: string;
+  position?: number;
   role: "system" | "user" | "assistant" | "tool" | "memory";
   content: string | null;
   createdAt?: number;
@@ -211,22 +218,39 @@ export class ApiError extends Error {
 
 type UnauthorizedHandler = () => void;
 type ConnectionChangedHandler = (connection: HubConnectionChange) => void | Promise<void>;
+type SessionChangedHandler = (session: AuthSessionResult) => void | Promise<void>;
+
+export interface AuthSessionResult {
+  token: string;
+  refreshToken?: string;
+  refreshExpiresAt?: number;
+  sessionId?: string;
+  user: AuthUser;
+  expiresAt: number;
+}
 
 export class AetherApi {
   private baseUrl = "";
   private token = "";
+  private refreshToken = "";
   private onUnauthorized?: UnauthorizedHandler;
+  private onSessionChanged?: SessionChangedHandler;
   private onConnectionChanged?: ConnectionChangedHandler;
   private routePromise: Promise<boolean> | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
 
   constructor(options: {
     baseUrl: string;
     token?: string;
+    refreshToken?: string;
     onUnauthorized?: UnauthorizedHandler;
+    onSessionChanged?: SessionChangedHandler;
     onConnectionChanged?: ConnectionChangedHandler;
   }) {
     this.setConnection(options.baseUrl, options.token || "");
+    this.refreshToken = options.refreshToken || "";
     this.onUnauthorized = options.onUnauthorized;
+    this.onSessionChanged = options.onSessionChanged;
     this.onConnectionChanged = options.onConnectionChanged;
   }
 
@@ -243,6 +267,10 @@ export class AetherApi {
 
   get accessToken() {
     return this.token;
+  }
+
+  get sessionRefreshToken() {
+    return this.refreshToken;
   }
 
   async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -279,7 +307,8 @@ export class AetherApi {
     body: unknown,
     signal: AbortSignal | undefined,
     requestId: string,
-    allowRoute: boolean
+    allowRoute: boolean,
+    allowRefresh = true
   ): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
@@ -306,12 +335,41 @@ export class AetherApi {
         path !== "/api/v1/cluster/session-handoff" &&
         await this.routeToActiveHub(signal)
       ) {
-        return this.performRequest<T>(method, path, body, signal, requestId, false);
+        return this.performRequest<T>(method, path, body, signal, requestId, false, allowRefresh);
+      }
+      if (
+        allowRefresh &&
+        response.status === 401 &&
+        path !== "/api/v1/auth/refresh" &&
+        await this.refreshAccessSession(signal)
+      ) {
+        return this.performRequest<T>(method, path, body, signal, requestId, allowRoute, false);
       }
       if (response.status === 401) this.onUnauthorized?.();
       throw error;
     }
     return hydrateMediaSources(payload.data, this.baseUrl, this.token) as T;
+  }
+
+  private async refreshAccessSession(signal?: AbortSignal) {
+    if (!this.refreshToken) return false;
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = (async () => {
+      const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: this.refreshToken }),
+        signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      const session = payload?.data as AuthSessionResult | undefined;
+      if (!response.ok || !session?.token || !session.refreshToken) return false;
+      this.token = session.token;
+      this.refreshToken = session.refreshToken;
+      await this.onSessionChanged?.(session);
+      return true;
+    })().finally(() => { this.refreshPromise = null; });
+    return this.refreshPromise;
   }
 
   async routeToActiveHub(signal?: AbortSignal) {
@@ -369,11 +427,31 @@ export class AetherApi {
 
   health(signal?: AbortSignal) { return this.request<{ status: string; service: string }>("GET", "/health", undefined, signal); }
   authConfig() { return this.request<AuthConfig>("GET", "/api/v1/auth/config"); }
-  register(input: { username: string; displayName?: string; password: string; registrationSecret?: string }) {
-    return this.request<{ token: string; user: AuthUser; expiresAt: number; migratedExistingData: boolean }>("POST", "/api/v1/auth/register", input);
+  register(input: { username?: string; email?: string; displayName?: string; password: string; registrationSecret?: string }) {
+    return this.request<{
+      token?: string;
+      user?: AuthUser;
+      expiresAt?: number;
+      migratedExistingData?: boolean;
+      accepted?: boolean;
+      verificationRequired?: boolean;
+      email?: string;
+    }>("POST", "/api/v1/auth/register", input);
   }
-  login(input: { username: string; password: string }) {
-    return this.request<{ token: string; user: AuthUser; expiresAt: number }>("POST", "/api/v1/auth/login", input);
+  login(input: { username?: string; email?: string; password: string }) {
+    return this.request<AuthSessionResult>("POST", "/api/v1/auth/login", input);
+  }
+  verifyEmail(token: string) {
+    return this.request<AuthSessionResult>("POST", "/api/v1/auth/email/verify", { token });
+  }
+  resendEmailVerification(input: { email: string; password: string }) {
+    return this.request<{ accepted: boolean }>("POST", "/api/v1/auth/email/resend", input);
+  }
+  requestPasswordReset(email: string) {
+    return this.request<{ accepted: boolean }>("POST", "/api/v1/auth/password/forgot", { email });
+  }
+  resetPassword(input: { token: string; password: string }) {
+    return this.request<{ reset: boolean }>("POST", "/api/v1/auth/password/reset", input);
   }
   session(signal?: AbortSignal) { return this.request<{ user: AuthUser }>("GET", "/api/v1/auth/session", undefined, signal); }
   clusterStatus(signal?: AbortSignal) { return this.request<ClusterStatus>("GET", "/api/v1/cluster/status", undefined, signal); }
@@ -452,7 +530,7 @@ export class AetherApi {
     );
   }
   aiConfig() { return this.request<{ hasApiKey: boolean; model?: string }>("GET", "/api/v1/ai/config"); }
-  agentChat(input: { conversationId?: string; content: string; runtime?: Record<string, unknown> }) {
+  agentChat(input: { conversationId?: string; content: string; responseMode?: "full" | "delta"; runtime?: Record<string, unknown> }) {
     return this.request<AgentChatResult>("POST", "/api/v1/agent/chat", input);
   }
   approveAgentRun(id: string, approved: boolean) {
@@ -479,6 +557,12 @@ export class AetherApi {
   conversation(id: string) {
     return this.request<{ conversation: Conversation; displayMessages: ChatMessage[]; modelMessages: ChatMessage[] }>("GET", `/api/v1/conversations/${encodeURIComponent(id)}`);
   }
+  conversationMessagePage(id: string, afterPosition = -1, limit = 500) {
+    return this.request<{ items: ChatMessage[]; nextPosition: number; hasMore: boolean }>(
+      "GET",
+      `/api/v1/conversations/${encodeURIComponent(id)}/message-page?afterPosition=${encodeURIComponent(afterPosition)}&limit=${encodeURIComponent(limit)}`
+    );
+  }
   syncChanges(after: number, limit = 200) {
     return this.request<{ changes: SyncChange[]; nextCursor: number; hasMore: boolean }>("GET", `/api/v1/sync/changes?after=${after}&limit=${limit}`);
   }
@@ -488,14 +572,20 @@ export class AetherApi {
       `/api/v1/sync/commands?client_id=${encodeURIComponent(clientId)}`
     );
   }
-  createArchiveExport(password: string) {
+  createArchiveExport(password: string, secretPolicy: "excluded" | "password_encrypted" = "excluded") {
     return this.request<{
       ticket: string;
       fileName: string;
       expiresAt: number;
       downloadPath: string;
-      summary: { continuityDigest: string; totalMediaBytes: number };
-    }>("POST", "/api/v1/archives/export", { password });
+      summary: {
+        continuityDigest: string;
+        totalMediaBytes: number;
+        formatVersion: number;
+        sourceEdition: "local" | "cloud";
+        secretPolicy: "excluded" | "password_encrypted";
+      };
+    }>("POST", "/api/v1/archives/export", { password, secretPolicy });
   }
   archiveDownloadUrl(downloadPath: string) {
     const value = String(downloadPath || "");
@@ -518,7 +608,7 @@ export class AetherApi {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const error = new ApiError(
-          payload?.error?.message || `完整恢复失败（HTTP ${response.status}）。`,
+          payload?.error?.message || `导入存档失败（HTTP ${response.status}）。`,
           response.status,
           payload?.error?.code || "ARCHIVE_RESTORE_FAILED",
           payload?.requestId || ""
@@ -534,7 +624,7 @@ export class AetherApi {
       };
     } catch (error) {
       if (error instanceof ApiError) throw error;
-      throw new ApiError(`完整恢复时无法连接 Hub：${(error as Error).message}`, 0, "BACKEND_UNAVAILABLE");
+      throw new ApiError(`导入存档时无法连接 Hub：${(error as Error).message}`, 0, "BACKEND_UNAVAILABLE");
     }
   }
 }

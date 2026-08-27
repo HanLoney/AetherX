@@ -146,6 +146,7 @@ const elements = {
   desktopFontScaleRange: document.querySelector("#desktopFontScaleRange"),
   desktopFontScaleValue: document.querySelector("#desktopFontScaleValue"),
   archivePasswordInput: document.querySelector("#archivePasswordInput"),
+  archiveProviderKeysInput: document.querySelector("#archiveProviderKeysInput"),
   exportArchiveBtn: document.querySelector("#exportArchiveBtn"),
   restoreArchiveBtn: document.querySelector("#restoreArchiveBtn"),
   archiveOperationResult: document.querySelector("#archiveOperationResult"),
@@ -760,6 +761,18 @@ function isHubRecoveryActionable(status) {
 
 function renderHubStatus() {
   const status = state.hubStatus;
+  if (state.auth?.cloudEdition || status?.edition === "cloud") {
+    elements.hubPill.className = "hub-pill desktop";
+    elements.hubLabel.textContent = "云端服务";
+    elements.hubStateLabel.textContent = state.hubStatusError ? "连接异常" : "已连接";
+    elements.hubPill.title = state.hubStatusError
+      ? "暂时无法读取云端服务状态"
+      : `数据正通过 ${state.auth?.serverUrl || status?.serviceUrl || "云端服务"} 同步`;
+    elements.hubPill.setAttribute("aria-disabled", "true");
+    elements.hubPill.setAttribute("aria-label", "云端服务已连接");
+    elements.hubPill.tabIndex = -1;
+    return;
+  }
   if (state.hubStatusError || !status) {
     elements.hubPill.className = "hub-pill error";
     elements.hubLabel.textContent = "Hub";
@@ -826,6 +839,16 @@ function renderHubStatus() {
 }
 
 async function refreshHubStatus() {
+  if (state.auth?.cloudEdition) {
+    state.hubStatus = {
+      edition: "cloud",
+      state: "stable",
+      serviceUrl: state.auth.serverUrl
+    };
+    state.hubStatusError = false;
+    renderHubStatus();
+    return;
+  }
   try {
     state.hubStatus = await window.desktop.getHubStatus();
     state.hubStatusError = !state.hubStatus;
@@ -1107,6 +1130,7 @@ function setArchiveBusy(busy) {
   elements.exportArchiveBtn.disabled = busy;
   elements.restoreArchiveBtn.disabled = busy;
   elements.archivePasswordInput.disabled = busy;
+  elements.archiveProviderKeysInput.disabled = busy;
 }
 
 function showArchiveResult(message, error = false) {
@@ -1130,7 +1154,12 @@ async function exportArchive() {
   setArchiveBusy(true);
   showArchiveResult("正在加密并整理完整存档，请稍候……");
   try {
-    const result = await window.desktop.exportArchive({ password });
+    const result = await window.desktop.exportArchive({
+      password,
+      secretPolicy: elements.archiveProviderKeysInput.checked
+        ? "password_encrypted"
+        : "excluded"
+    });
     if (result.canceled) showArchiveResult("已取消导出。", true);
     else showArchiveResult(`完整存档已保存到：${result.filePath}`);
   } catch (error) {
@@ -1144,15 +1173,15 @@ async function restoreArchive() {
   const password = requireArchivePassword();
   if (!password) return;
   setArchiveBusy(true);
-  showArchiveResult("正在检查存档，确认后将执行完整恢复……");
+  showArchiveResult("正在检查存档，确认后将导入存档……");
   try {
     const result = await window.desktop.restoreArchive({ password });
     if (result.canceled) {
-      showArchiveResult("已取消完整恢复。", true);
+      showArchiveResult("已取消导入存档。", true);
       setArchiveBusy(false);
     }
   } catch (error) {
-    showArchiveResult(error.message || "完整恢复失败，现有数据没有变化。", true);
+    showArchiveResult(error.message || "导入存档失败，现有数据没有变化。", true);
     setArchiveBusy(false);
   }
 }
@@ -1221,7 +1250,7 @@ function messageSearchDate(value) {
 function messageSearchSender(role) {
   const profile = role === "user" ? state.userProfile : state.assistantProfile;
   return role === "user"
-    ? profile?.preferredName || profile?.displayName || "洛尼"
+    ? profile?.displayName || profile?.preferredName || "你"
     : profile?.name || "小玄";
 }
 
@@ -1587,7 +1616,7 @@ async function syncReminderRuntime() {
       getUserName: () =>
         state.userProfile?.preferredName ||
         state.userProfile?.displayName ||
-        "洛尼",
+        "你",
       canUseAI: () => Boolean(state.config?.hasApiKey),
       onError: (error) =>
         console.warn("Unable to generate a personalized reminder:", error.message)
@@ -1635,6 +1664,10 @@ async function syncJournalRuntime() {
       extractText: extractResponse,
       getSystemPrompt: () => systemPrompt,
       getRuntime: runtimeOptions,
+      getUserName: () =>
+        state.userProfile?.preferredName ||
+        state.userProfile?.displayName ||
+        "你",
       generateImage: (payload) => traceModuleActivity(
         "autonomous-journal",
         "image-generation",
@@ -1706,6 +1739,10 @@ async function syncDreamRuntime() {
       extractText: extractResponse,
       getSystemPrompt: () => systemPrompt,
       getRuntime: runtimeOptions,
+      getUserName: () =>
+        state.userProfile?.preferredName ||
+        state.userProfile?.displayName ||
+        "你",
       isEnabled: () =>
         Boolean(state.config?.hasApiKey) &&
         window.XuanModules.isEnabled("dreams"),
@@ -1726,7 +1763,7 @@ function profileAvatar(role) {
     role === "user" ? state.userProfile : state.assistantProfile;
   const name =
     role === "user"
-      ? profile?.displayName || profile?.preferredName || "洛尼"
+      ? profile?.displayName || profile?.preferredName || "你"
       : profile?.name || "小玄";
   return {
     dataUrl: profile?.avatarDataUrl || "",
@@ -1771,6 +1808,14 @@ async function refreshProfiles() {
   if (refreshId !== profileRefreshId) return;
   state.userProfile = userProfile;
   state.assistantProfile = assistantProfile;
+  renderAccount();
+  const cacheScope = conversationCacheScope();
+  if (cacheScope) {
+    void window.AetherProfileCache?.save(cacheScope, {
+      userProfile,
+      assistantProfile
+    }).catch(() => undefined);
+  }
   applyAvatarSurface(elements.brandMark, "assistant");
   applyAvatarSurface(elements.orbCore, "assistant");
   const assistantName = assistantProfile.name || "小玄";
@@ -1785,10 +1830,111 @@ async function refreshConversationHistory() {
   state.conversations = (await window.desktop.listConversations()).slice(0, 1);
 }
 
+function conversationCacheScope() {
+  const user = state.auth?.user;
+  const identity = user?.id || user?.email || user?.username || "";
+  return identity ? `${state.auth?.serverUrl || ""}|${identity}` : "";
+}
+
+function withMessagePositions(messages) {
+  return (Array.isArray(messages) ? messages : []).map((message, index) => ({
+    ...message,
+    position: Number.isSafeInteger(Number(message.position))
+      ? Number(message.position)
+      : index
+  }));
+}
+
+function dedupeConversationMessages(messages) {
+  const result = [];
+  const ids = new Set();
+  const positions = new Map();
+  const ordered = withMessagePositions(messages).sort(compareConversationMessages);
+  for (const message of ordered) {
+    if (message.id && ids.has(message.id)) continue;
+    const position = Number(message.position);
+    if (Number.isSafeInteger(position) && positions.has(position)) {
+      result[positions.get(position)] = message;
+      if (message.id) ids.add(message.id);
+      continue;
+    }
+    const previous = result.at(-1);
+    if (
+      previous &&
+      previous.role === message.role &&
+      String(previous.content || "") === String(message.content || "") &&
+      Math.abs(Number(previous.createdAt || 0) - Number(message.createdAt || 0)) <= 2_000
+    ) {
+      if (message.id) ids.add(message.id);
+      continue;
+    }
+    if (message.id) ids.add(message.id);
+    if (Number.isSafeInteger(position)) positions.set(position, result.length);
+    result.push(message);
+  }
+  return result.sort(compareConversationMessages);
+}
+
+function compareConversationMessages(left, right) {
+  const leftCreatedAt = Number(left.createdAt);
+  const rightCreatedAt = Number(right.createdAt);
+  if (
+    Number.isFinite(leftCreatedAt) && leftCreatedAt > 0 &&
+    Number.isFinite(rightCreatedAt) && rightCreatedAt > 0 &&
+    leftCreatedAt !== rightCreatedAt
+  ) {
+    return leftCreatedAt - rightCreatedAt;
+  }
+  return Number(left.position) - Number(right.position);
+}
+
+async function fetchConversationMessagePages(id, cachedMessages = []) {
+  const normalizedCache = withMessagePositions(cachedMessages);
+  const highestPosition = normalizedCache.reduce(
+    (highest, message) => Math.max(highest, Number(message.position) || 0),
+    -1
+  );
+  const overlapStart = highestPosition >= 0 ? Math.max(-1, highestPosition - 30) : -1;
+  const retained = normalizedCache.filter(
+    (message) => Number(message.position) <= overlapStart
+  );
+  const received = [];
+  let afterPosition = overlapStart;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await window.desktop.getConversationMessagePage(id, {
+      afterPosition,
+      limit: 500
+    });
+    const items = withMessagePositions(page?.items || []);
+    received.push(...items);
+    const nextPosition = Number(page?.nextPosition);
+    hasMore = Boolean(page?.hasMore);
+    if (hasMore && (!Number.isSafeInteger(nextPosition) || nextPosition <= afterPosition)) {
+      throw new Error("聊天增量游标没有继续前进。");
+    }
+    afterPosition = Number.isSafeInteger(nextPosition) ? nextPosition : afterPosition;
+  }
+  const byId = new Map();
+  for (const [index, message] of [...retained, ...received].entries()) {
+    const key = message.id || `position:${Number(message.position)}:${index}`;
+    byId.set(key, message);
+  }
+  return dedupeConversationMessages([...byId.values()].sort(
+    (left, right) => Number(left.position) - Number(right.position)
+  ));
+}
+
 async function loadConversation(id, options = {}) {
   if (state.sending || (!options.force && id === state.conversationId)) return;
   const loadId = ++conversationLoadId;
-  const cachedMessages = conversationCache.get(id);
+  const scope = conversationCacheScope();
+  let cachedMessages = conversationCache.get(id);
+  if (!cachedMessages && scope) {
+    const persisted = await window.AetherConversationCache?.load(scope, id);
+    cachedMessages = persisted?.messages || null;
+    if (cachedMessages) conversationCache.set(id, cachedMessages);
+  }
   state.conversationId = id;
   state.conversationLoading = true;
   state.conversationError = "";
@@ -1797,11 +1943,20 @@ async function loadConversation(id, options = {}) {
   renderMessages();
   if (!options.fromSync) showChatWorkspace();
   try {
-    const result = await window.desktop.getConversation(id);
+    let messages;
+    try {
+      messages = await fetchConversationMessagePages(id, cachedMessages || []);
+    } catch (incrementalError) {
+      console.warn("Unable to use incremental conversation cache:", incrementalError.message);
+      const result = await window.desktop.getConversation(id);
+      messages = withMessagePositions(result.displayMessages || []);
+    }
     if (loadId !== conversationLoadId || state.conversationId !== id) return;
-    const messages = result.displayMessages || [];
     conversationCache.set(id, messages);
     state.messages = messages;
+    if (scope) {
+      void window.AetherConversationCache?.save(scope, id, messages).catch(() => undefined);
+    }
   } catch (error) {
     if (loadId !== conversationLoadId || state.conversationId !== id) return;
     state.conversationError = error.message || "这段对话暂时没有加载成功。";
@@ -2228,10 +2383,22 @@ async function saveImageConfig() {
   }
 }
 
-function applyAgentResult(result) {
+function applyAgentResult(result, optimisticMessageId = "") {
   state.conversationId = result.conversation.id;
-  state.messages = result.displayMessages || [];
+  const byId = new Map();
+  for (const [index, message] of [
+    ...state.messages.filter((item) => item.id !== optimisticMessageId),
+    ...(result.displayMessages || [])
+  ].entries()) {
+    byId.set(message.id || `message:${index}`, message);
+  }
+  state.messages = dedupeConversationMessages([...byId.values()]);
   conversationCache.set(state.conversationId, state.messages);
+  const scope = conversationCacheScope();
+  if (scope) {
+    void window.AetherConversationCache?.save(scope, state.conversationId, state.messages)
+      .catch(() => undefined);
+  }
   renderMessages();
 }
 
@@ -2259,17 +2426,19 @@ async function sendMessage() {
   elements.messageInput.value = "";
   elements.sendBtn.disabled = true;
   state.sending = true;
-  state.messages.push(createMessage("user", content));
+  const optimisticMessage = createMessage("user", content);
+  state.messages.push(optimisticMessage);
   renderMessages();
 
   try {
     let result = await window.desktop.agentChat({
       ...(state.conversationId ? { conversationId: state.conversationId } : {}),
       content,
+      responseMode: "delta",
       runtime: runtimeOptions()
     });
     let toolMutated = Boolean(result.toolMutated);
-    applyAgentResult(result);
+    applyAgentResult(result, optimisticMessage.id);
 
     while (result.status === "approval_required" && result.runId) {
       const approved = await requestHubApproval(result);
@@ -2401,6 +2570,7 @@ document.querySelector("#interfaceSettingsBtn").addEventListener("click", openIn
 document.querySelector("#settingsBtn").addEventListener("click", openSettings);
 elements.providerCard.addEventListener("click", openSettings);
 elements.hubPill.addEventListener("click", () => {
+  if (state.auth?.cloudEdition) return;
   if (isHubRecoveryActionable(state.hubStatus)) {
     void openHubRecovery();
     return;
@@ -2413,11 +2583,13 @@ elements.accountBtn.addEventListener("click", () => {
   elements.accountBtn.setAttribute("aria-expanded", String(opening));
 });
 elements.deviceManagerBtn.addEventListener("click", () => {
+  if (state.auth?.cloudEdition) return;
   elements.accountMenu.classList.add("hidden");
   elements.accountBtn.setAttribute("aria-expanded", "false");
   deviceManager.open();
 });
 elements.connectionCenterBtn.addEventListener("click", () => {
+  if (state.auth?.cloudEdition) return;
   elements.accountMenu.classList.add("hidden");
   elements.accountBtn.setAttribute("aria-expanded", "false");
   connectionCenter.open();
@@ -2592,14 +2764,21 @@ async function initialize() {
 function renderAccount() {
   const user = state.auth?.user;
   if (!user) return;
-  const name = user.displayName || user.username;
+  const name =
+    state.userProfile?.displayName ||
+    user.displayName ||
+    user.email ||
+    user.username ||
+    "你";
   const initial = Array.from(name)[0] || "你";
   elements.accountInitial.textContent = initial;
   elements.accountMenuInitial.textContent = initial;
   elements.accountName.textContent = name;
   elements.accountMenuName.textContent = name;
-  elements.accountUsername.textContent = `@${user.username}`;
+  elements.accountUsername.textContent = user.email || `@${user.username}`;
   elements.accountServer.textContent = state.auth.serverUrl || "";
+  elements.deviceManagerBtn.classList.toggle("hidden", Boolean(state.auth.cloudEdition));
+  elements.connectionCenterBtn.classList.toggle("hidden", Boolean(state.auth.cloudEdition));
   elements.welcomeTitle.textContent = `嗨，${name}。今天想一起做什么？`;
 }
 
@@ -2637,6 +2816,17 @@ const pendingRemoteEntityTypes = new Set();
 let remoteSyncTimer = null;
 
 function queueRemoteRefresh(changes) {
+  if ((Array.isArray(changes) ? changes : []).some(
+    (change) => change?.entityType === "archive_restore" && change?.operation === "reset"
+  )) {
+    const scope = conversationCacheScope();
+    conversationCache.clear();
+    void Promise.allSettled([
+      window.AetherConversationCache?.clearScope(scope),
+      window.AetherProfileCache?.clear(scope)
+    ]).finally(() => location.reload());
+    return;
+  }
   for (const change of Array.isArray(changes) ? changes : []) {
     if (change?.entityType) pendingRemoteEntityTypes.add(change.entityType);
   }

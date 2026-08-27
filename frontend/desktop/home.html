@@ -495,18 +495,22 @@
             </i>
             <div>
               <strong>完整存档</strong>
-              <span>保存或完整恢复聊天、记忆、成长、手记、相册、AI 设置与原始媒体</span>
+              <span>导出或导入聊天、记忆、成长、手记、相册、AI 设置与原始媒体</span>
             </div>
-            <b>仅完整恢复</b>
+            <b>导入存档</b>
           </div>
           <label class="archive-password-field">
             <span>存档密码</span>
             <input id="archivePasswordInput" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" />
           </label>
-          <p class="archive-warning">恢复会整套替换当前账号的 AI 数据；登录密码、当前会话和已配对设备不会被覆盖。操作前 Hub 会自动备份现有数据。</p>
+          <label class="archive-secret-policy">
+            <input id="archiveProviderKeysInput" type="checkbox" />
+            <span><strong>同时迁移 Provider Key</strong><small>默认不导出。启用后，Key 只存在于密码加密的存档中，导入目标可重新接入这些服务。</small></span>
+          </label>
+          <p class="archive-warning">导入不会合并数据，而是用存档内容替换当前账号的 AI 数据；登录密码、当前会话和已配对设备不会被覆盖。如果存档含 Provider Key，它们会进入当前运行环境并重新加密；操作前 Hub 会自动备份现有数据。</p>
           <div class="archive-actions">
             <button id="exportArchiveBtn" type="button">导出完整存档</button>
-            <button id="restoreArchiveBtn" type="button">完整恢复</button>
+            <button id="restoreArchiveBtn" type="button">导入存档</button>
           </div>
           <div id="archiveOperationResult" class="archive-operation-result hidden" aria-live="polite"></div>
         </article>
@@ -609,6 +613,8 @@
     <script src="module-settings.js"></script>
     <script src="markdown-renderer.js"></script>
     <script src="emoji-picker.js"></script>
+    <script src="profile-cache.js"></script>
+    <script src="conversation-cache.js"></script>
     <script src="home.js"></script>
   </body>
 </html>

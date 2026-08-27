@@ -14,9 +14,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SecureSessionPlugin.class);
-        registerPlugin(LocalHubPlugin.class);
+        if (!BuildConfig.CLOUD_EDITION) registerPlugin(LocalHubPlugin.class);
 
         super.onCreate(savedInstanceState);
+
+        if (BuildConfig.CLOUD_EDITION) return;
 
         startForegroundService(new Intent(this, LocalHubForegroundService.class));
 

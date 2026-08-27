@@ -41,6 +41,41 @@ test("运行后合并分页变更并广播一次", async () => {
   assert.deepEqual(received, [[{ seq: 4 }, { seq: 5 }]]);
 });
 
+test("desktop sync receives cloud changes from the realtime SSE stream", async () => {
+  const encoder = new TextEncoder();
+  const received = [];
+  let request;
+  const coordinator = new DesktopSyncCoordinator({
+    api: {
+      baseUrl: "https://api.aetherx.test",
+      token: "desktop-token",
+      listSyncChanges: async () => ({ changes: [], nextCursor: 8, hasMore: false })
+    },
+    fetchImpl: async (url, options) => {
+      request = { url: String(url), options };
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            "id: 9\nevent: change\ndata: {\"seq\":9,\"entityType\":\"messages\"}\n\n"
+          ));
+        }
+      }), { status: 200 });
+    },
+    onChanges: (changes) => {
+      received.push(...changes);
+      coordinator.stop();
+    },
+    realtime: true
+  });
+
+  await coordinator.start("cloud:user-1");
+  await waitFor(() => received.length === 1);
+
+  assert.match(request.url, /\/api\/v1\/sync\/events\?after=8/);
+  assert.equal(request.options.headers.Authorization, "Bearer desktop-token");
+  assert.equal(received[0].seq, 9);
+});
+
 test("desktop control stream parses split SSE events", async () => {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

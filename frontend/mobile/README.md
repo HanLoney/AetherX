@@ -60,6 +60,19 @@ npm run android:open
 
 `android:sync` 会先执行 TypeScript 检查和 Vite 生产构建，再把 Web 资源同步到 Android 工程。
 
+Online Android 使用独立构建入口：
+
+```powershell
+npm run android:sync:cloud
+npm run android:cloud:release
+```
+
+Online 变体使用 `com.xuanxiaotech.aetherx.online`、`AetherX Online` 和 `aetherx-online` 深链，与 Local 版的数据目录、Preferences 和缓存天然隔离。正式签名通过 `AETHERX_CLOUD_ANDROID_KEYSTORE`、`AETHERX_CLOUD_ANDROID_KEYSTORE_PASSWORD`、`AETHERX_CLOUD_ANDROID_KEY_ALIAS`、`AETHERX_CLOUD_ANDROID_KEY_PASSWORD` 单独注入；Cloud Web 资源固定连接 `.env.cloud` 中的 HTTPS 地址。
+
+Online 版只使用邮箱账号登录，不要求用户配对或管理设备。Access Token 过期后会使用 Android Keystore 保护的轮换 Refresh Token 自动续期并重试；刷新失败才清除登录状态。下面的设备配对、Hub 和 USB 说明只适用于 Local 版。
+
+Online 自定义 Provider Base URL 只接受公开 HTTPS 地址；本机、局域网、保留地址和云元数据网络会被云端 Egress Guard 拒绝。Local 版仍可连接用户自己的局域网 Provider。
+
 Android Studio 打开后可连接真机运行，也可以在命令行安装 Debug 包：
 
 ```powershell

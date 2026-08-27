@@ -13,10 +13,19 @@ const SERVER_KEY = "aetherx.server";
 const CURSOR_KEY = "aetherx.sync.cursor";
 const INSTALLATION_KEY = "aetherx.mobile.installation";
 const HUB_ROUTING_KEY = "aetherx.hub.routing";
+const CLOUD_EDITION = import.meta.env.VITE_AETHERX_EDITION === "cloud";
+const BUILT_IN_SERVER_URL = String(import.meta.env.VITE_AETHERX_SERVER_URL || "").replace(/\/+$/, "");
 
 export interface StoredSession {
   token: string;
-  user: { id: string; username: string; displayName: string };
+  refreshToken?: string;
+  user: {
+    id: string;
+    username?: string;
+    email?: string;
+    emailVerified?: boolean;
+    displayName: string;
+  };
 }
 
 export interface StoredHubNode {
@@ -35,11 +44,22 @@ export interface StoredHubRouting {
 }
 
 export async function saveServerUrl(serverUrl: string) {
-  await Preferences.set({ key: SERVER_KEY, value: serverUrl });
+  await Preferences.set({
+    key: SERVER_KEY,
+    value: CLOUD_EDITION ? requiredCloudServerUrl() : serverUrl
+  });
 }
 
 export async function loadServerUrl() {
+  if (CLOUD_EDITION) return requiredCloudServerUrl();
   return (await Preferences.get({ key: SERVER_KEY })).value || import.meta.env.VITE_AETHERX_SERVER_URL || "http://127.0.0.1:4318";
+}
+
+function requiredCloudServerUrl() {
+  if (!/^https:\/\/[^/]+/i.test(BUILT_IN_SERVER_URL)) {
+    throw new Error("AetherX Online 构建缺少固定的 HTTPS 服务地址。");
+  }
+  return BUILT_IN_SERVER_URL;
 }
 
 export async function saveSession(session: StoredSession) {

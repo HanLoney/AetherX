@@ -9,21 +9,44 @@ def productVersionCode = versionParts[0] * 1000000 + versionParts[1] * 1000 + ve
 def signingValue = { String environmentName, String propertyName ->
     System.getenv(environmentName) ?: (project.findProperty(propertyName) as String)
 }
-def releaseKeystore = signingValue("AETHERX_ANDROID_KEYSTORE", "aetherxAndroidKeystore")
-def releaseKeystorePassword = signingValue("AETHERX_ANDROID_KEYSTORE_PASSWORD", "aetherxAndroidKeystorePassword")
-def releaseKeyAlias = signingValue("AETHERX_ANDROID_KEY_ALIAS", "aetherxAndroidKeyAlias")
-def releaseKeyPassword = signingValue("AETHERX_ANDROID_KEY_PASSWORD", "aetherxAndroidKeyPassword")
-def releaseSigningValues = [releaseKeystore, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword]
-def releaseSigningReady = releaseSigningValues.every { it != null && !it.trim().isEmpty() }
-def releaseSigningPartiallyConfigured = releaseSigningValues.any { it != null && !it.trim().isEmpty() }
+def localReleaseKeystore = signingValue("AETHERX_ANDROID_KEYSTORE", "aetherxAndroidKeystore")
+def localReleaseKeystorePassword = signingValue("AETHERX_ANDROID_KEYSTORE_PASSWORD", "aetherxAndroidKeystorePassword")
+def localReleaseKeyAlias = signingValue("AETHERX_ANDROID_KEY_ALIAS", "aetherxAndroidKeyAlias")
+def localReleaseKeyPassword = signingValue("AETHERX_ANDROID_KEY_PASSWORD", "aetherxAndroidKeyPassword")
+def localReleaseSigningValues = [localReleaseKeystore, localReleaseKeystorePassword, localReleaseKeyAlias, localReleaseKeyPassword]
+def localReleaseSigningReady = localReleaseSigningValues.every { it != null && !it.trim().isEmpty() }
+def localReleaseSigningPartiallyConfigured = localReleaseSigningValues.any { it != null && !it.trim().isEmpty() }
+def cloudReleaseKeystore = signingValue("AETHERX_CLOUD_ANDROID_KEYSTORE", "aetherxCloudAndroidKeystore")
+def cloudReleaseKeystorePassword = signingValue("AETHERX_CLOUD_ANDROID_KEYSTORE_PASSWORD", "aetherxCloudAndroidKeystorePassword")
+def cloudReleaseKeyAlias = signingValue("AETHERX_CLOUD_ANDROID_KEY_ALIAS", "aetherxCloudAndroidKeyAlias")
+def cloudReleaseKeyPassword = signingValue("AETHERX_CLOUD_ANDROID_KEY_PASSWORD", "aetherxCloudAndroidKeyPassword")
+def cloudReleaseSigningValues = [cloudReleaseKeystore, cloudReleaseKeystorePassword, cloudReleaseKeyAlias, cloudReleaseKeyPassword]
+def cloudReleaseSigningReady = cloudReleaseSigningValues.every { it != null && !it.trim().isEmpty() }
+def cloudReleaseSigningPartiallyConfigured = cloudReleaseSigningValues.any { it != null && !it.trim().isEmpty() }
 def releaseSigningRequired = (System.getenv("AETHERX_REQUIRE_SIGNING") ?: "false").toBoolean()
+def requestedTasks = gradle.startParameter.taskNames.collect { it.toLowerCase() }
+def cloudReleaseRequested = requestedTasks.any { it.contains("cloudrelease") }
+def localReleaseRequested = requestedTasks.any { it.contains("localrelease") || it.contains("locallanrelease") }
 
-if ((releaseSigningPartiallyConfigured || releaseSigningRequired) && !releaseSigningReady) {
+if (localReleaseSigningPartiallyConfigured && !localReleaseSigningReady) {
     throw new GradleException(
         "Android release signing requires AETHERX_ANDROID_KEYSTORE, " +
         "AETHERX_ANDROID_KEYSTORE_PASSWORD, AETHERX_ANDROID_KEY_ALIAS and " +
         "AETHERX_ANDROID_KEY_PASSWORD"
     )
+}
+if (cloudReleaseSigningPartiallyConfigured && !cloudReleaseSigningReady) {
+    throw new GradleException(
+        "Android Online signing requires AETHERX_CLOUD_ANDROID_KEYSTORE, " +
+        "AETHERX_CLOUD_ANDROID_KEYSTORE_PASSWORD, AETHERX_CLOUD_ANDROID_KEY_ALIAS and " +
+        "AETHERX_CLOUD_ANDROID_KEY_PASSWORD"
+    )
+}
+if (releaseSigningRequired && localReleaseRequested && !localReleaseSigningReady) {
+    throw new GradleException("A signed Local Android release was requested without the Local signing profile")
+}
+if (releaseSigningRequired && cloudReleaseRequested && !cloudReleaseSigningReady) {
+    throw new GradleException("A signed Online Android release was requested without the Online signing profile")
 }
 
 android {
@@ -33,7 +56,6 @@ android {
         buildConfig = true
     }
     defaultConfig {
-        applicationId "com.xuanxiaotech.aetherx.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode productVersionCode
@@ -46,13 +68,42 @@ android {
         }
     }
     signingConfigs {
-        if (releaseSigningReady) {
-            create("release") {
-                storeFile file(releaseKeystore)
-                storePassword releaseKeystorePassword
-                keyAlias releaseKeyAlias
-                keyPassword releaseKeyPassword
+        if (localReleaseSigningReady) {
+            create("localRelease") {
+                storeFile file(localReleaseKeystore)
+                storePassword localReleaseKeystorePassword
+                keyAlias localReleaseKeyAlias
+                keyPassword localReleaseKeyPassword
             }
+        }
+        if (cloudReleaseSigningReady) {
+            create("cloudRelease") {
+                storeFile file(cloudReleaseKeystore)
+                storePassword cloudReleaseKeystorePassword
+                keyAlias cloudReleaseKeyAlias
+                keyPassword cloudReleaseKeyPassword
+            }
+        }
+    }
+    flavorDimensions += "edition"
+    productFlavors {
+        local {
+            dimension "edition"
+            applicationId "com.xuanxiaotech.aetherx.mobile"
+            resValue "string", "app_name", "AetherX"
+            resValue "string", "title_activity_main", "AetherX"
+            manifestPlaceholders = [aetherxDeepLinkScheme: "aetherx"]
+            buildConfigField "boolean", "CLOUD_EDITION", "false"
+            if (localReleaseSigningReady) signingConfig signingConfigs.localRelease
+        }
+        cloud {
+            dimension "edition"
+            applicationId "com.xuanxiaotech.aetherx.online"
+            resValue "string", "app_name", "AetherX Online"
+            resValue "string", "title_activity_main", "AetherX Online"
+            manifestPlaceholders = [aetherxDeepLinkScheme: "aetherx-online"]
+            buildConfigField "boolean", "CLOUD_EDITION", "true"
+            if (cloudReleaseSigningReady) signingConfig signingConfigs.cloudRelease
         }
     }
     buildTypes {
@@ -63,13 +114,11 @@ android {
             buildConfigField "boolean", "ALLOW_INSECURE_LAN", "false"
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (releaseSigningReady) signingConfig signingConfigs.release
         }
         lanRelease {
             initWith release
             buildConfigField "boolean", "ALLOW_INSECURE_LAN", "true"
             matchingFallbacks = ["release"]
-            if (releaseSigningReady) signingConfig signingConfigs.release
         }
     }
 }

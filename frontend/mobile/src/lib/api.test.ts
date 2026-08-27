@@ -58,6 +58,53 @@ describe("mobile health api", () => {
   });
 });
 
+describe("cloud session refresh", () => {
+  it("rotates an expired session and retries with the new access token", async () => {
+    vi.stubGlobal("window", { setTimeout, clearTimeout });
+    const requests: Array<{ url: string; authorization: string }> = [];
+    const changed = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      requests.push({ url, authorization: headers.get("Authorization") || "" });
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        expect(JSON.parse(String(init?.body))).toEqual({ refreshToken: "old-refresh" });
+        return new Response(JSON.stringify({ data: {
+          token: "new-access",
+          refreshToken: "new-refresh",
+          expiresAt: 123,
+          refreshExpiresAt: 456,
+          user: { id: "u1", email: "loney@example.com", displayName: "洛尼" }
+        } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (requests.length === 1) {
+        return new Response(JSON.stringify({
+          error: { code: "SESSION_EXPIRED", message: "登录状态已过期。" }
+        }), { status: 401, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ data: { displayName: "洛尼" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }));
+    const api = new AetherApi({
+      baseUrl: "https://api.aetherx.tech",
+      token: "old-access",
+      refreshToken: "old-refresh",
+      onSessionChanged: changed
+    });
+    await expect(api.profile()).resolves.toEqual({ displayName: "洛尼" });
+    expect(requests).toEqual([
+      { url: "https://api.aetherx.tech/api/v1/profile", authorization: "Bearer old-access" },
+      { url: "https://api.aetherx.tech/api/v1/auth/refresh", authorization: "" },
+      { url: "https://api.aetherx.tech/api/v1/profile", authorization: "Bearer new-access" }
+    ]);
+    expect(api.accessToken).toBe("new-access");
+    expect(api.sessionRefreshToken).toBe("new-refresh");
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: "new-refresh" }));
+  });
+});
+
 describe("conversation pagination api", () => {
   it("exposes a paged conversation method", () => {
     expect(AetherApi.prototype.conversationPage).toBeTypeOf("function");

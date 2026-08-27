@@ -527,6 +527,27 @@ export class LocalHubClient extends AetherApi {
     };
   }
 
+  async conversationMessagePage(id: string, afterPosition = -1, limit = 500) {
+    const current = await this.conversation(id);
+    const boundedLimit = Math.max(1, Math.min(500, Math.trunc(Number(limit) || 500)));
+    const after = Number.isFinite(Number(afterPosition)) ? Math.trunc(Number(afterPosition)) : -1;
+    const messages = (await this.rows("messages", {
+      payloadField: "conversation_id",
+      payloadValue: id
+    }))
+      .filter((row) => row.stream_type === "display")
+      .sort((left, right) => Number(left.position) - Number(right.position) || Number(left.created_at) - Number(right.created_at));
+    const rows = messages.filter((row) => Number(row.position) > after);
+    const pageRows = rows.slice(0, boundedLimit);
+    const items = pageRows.map(messageFromRow);
+    return {
+      items,
+      nextPosition: items.at(-1)?.position ?? after,
+      hasMore: rows.length > boundedLimit,
+      conversation: current.conversation
+    };
+  }
+
   async createConversation(title = "新对话") {
     const primary = (await this.listConversations())[0];
     if (primary) return primary;
@@ -2189,12 +2210,12 @@ function todoFromRow(row: Record<string, any>): Todo {
 function todoPayload(todo: Todo) { return { id: todo.id, text: todo.text, start_at: todo.startAt, end_at: todo.endAt, completed: todo.completed, created_at: todo.createdAt, updated_at: todo.updatedAt }; }
 function todoRow(todo: Todo) { return { ...todoPayload(todo), user_id: CURRENT_USER, completed: todo.completed ? 1 : 0 }; }
 function profileFromRow(row: Record<string, any> = {}) { return { displayName: String(row.display_name || ""), preferredName: String(row.preferred_name || ""), birthday: String(row.birthday || ""), bio: String(row.bio || ""), occupation: String(row.occupation || ""), goals: array(row.goals_json), avatarDataUrl: String(row.avatar_data_url || ""), updatedAt: numberOrNull(row.updated_at) }; }
-function assistantFromRow(row: Record<string, any> = {}) { return { name: String(row.name || "小玄"), gender: String(row.gender || "女"), selfDefinition: String(row.self_definition || "会持续成长的全能助手"), relationshipSummary: String(row.relationship_summary || "洛尼亲密无间的伙伴和得力编程助手"), traits: array(row.traits_json), values: array(row.values_json), avatarDataUrl: String(row.avatar_data_url || ""), personaImageDataUrl: String(row.persona_image_data_url || ""), updatedAt: numberOrNull(row.updated_at) }; }
+function assistantFromRow(row: Record<string, any> = {}) { return { name: String(row.name || "小玄"), gender: String(row.gender || "女"), selfDefinition: String(row.self_definition || "会持续成长的全能助手"), relationshipSummary: String(row.relationship_summary || "亲密可靠的数字伙伴"), traits: array(row.traits_json), values: array(row.values_json), avatarDataUrl: String(row.avatar_data_url || ""), personaImageDataUrl: String(row.persona_image_data_url || ""), updatedAt: numberOrNull(row.updated_at) }; }
 function memoryFromRow(row: Record<string, any>): Memory { return { id: String(row.id), domain: String(row.domain), type: String(row.memory_type), content: String(row.content), sourceExcerpt: String(row.source_excerpt || ""), source: row.source || "inferred", confidence: Number(row.confidence), importance: Number(row.importance), status: row.status || "candidate", updatedAt: Number(row.updated_at), entities: array(row.entities_json), sourceMessageId: row.source_message_id, memoryKey: row.memory_key || "", mergeCount: Number(row.merge_count || 1), sensitivity: row.sensitivity, validFrom: row.valid_from, validUntil: row.valid_until, lastConfirmedAt: row.last_confirmed_at, createdAt: Number(row.created_at) } as Memory; }
 function memoryPayload(memory: Memory & Record<string, any>) { return { id: memory.id, domain: memory.domain, memory_type: memory.type, content: memory.content, entities: memory.entities || [], source_message_id: memory.sourceMessageId || null, source_excerpt: memory.sourceExcerpt || "", memory_key: memory.memoryKey || "", merge_count: memory.mergeCount || 1, source: memory.source, confidence: memory.confidence, importance: memory.importance, sensitivity: memory.sensitivity || "normal", valid_from: memory.validFrom || null, valid_until: memory.validUntil || null, last_confirmed_at: memory.lastConfirmedAt || null, status: memory.status, created_at: memory.createdAt, updated_at: memory.updatedAt }; }
 function memoryRow(memory: Memory & Record<string, any>) { const payload = memoryPayload(memory); const { entities, ...row } = payload; return { ...row, user_id: CURRENT_USER, entities_json: canonicalJson(entities) }; }
 function conversationFromRow(row: Record<string, any>): Conversation { return { id: String(row.id), title: String(row.title || ""), summary: String(row.summary || ""), createdAt: Number(row.created_at), updatedAt: Number(row.updated_at) }; }
-function messageFromRow(row: Record<string, any>): ChatMessage { return { id: String(row.id), role: row.role, content: row.content == null ? null : String(row.content), ...object(row.payload_json), createdAt: Number(row.created_at) }; }
+function messageFromRow(row: Record<string, any>): ChatMessage { return { id: String(row.id), position: Number(row.position), role: row.role, content: row.content == null ? null : String(row.content), ...object(row.payload_json), createdAt: Number(row.created_at) }; }
 function conversationMigration(conversation: Conversation): LocalMutation {
   const payload = {
     id: conversation.id,

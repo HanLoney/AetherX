@@ -38,12 +38,28 @@ let bootstrapPromise: Promise<void> | null = null;
 let discoveredHubRecovery: Promise<void> | null = null;
 let discoveryListenerRegistered = false;
 
-function createApi(url: string, token = "", invalidateOnUnauthorized = true, routeChanges = true) {
+function createApi(
+  url: string,
+  token = "",
+  invalidateOnUnauthorized = true,
+  routeChanges = true,
+  refreshToken = ""
+) {
   let instance: AetherApi;
   instance = new AetherApi({
     baseUrl: url,
     token,
+    refreshToken,
     ...(invalidateOnUnauthorized ? { onUnauthorized: () => void invalidate() } : {}),
+    onSessionChanged: async (session) => {
+      if (api !== instance) return;
+      user.value = session.user;
+      await saveSession({
+        token: session.token,
+        refreshToken: session.refreshToken,
+        user: session.user
+      });
+    },
     ...(routeChanges ? { onConnectionChanged: (connection: HubConnectionChange) => applyRoutedConnection(instance, connection) } : {})
   });
   return instance;
@@ -57,6 +73,23 @@ async function bootstrap() {
     routing.value = await loadHubRouting();
     serverUrl.value = await loadServerUrl();
     const stored = await loadSession();
+    if (stored?.token && stored.user.email) {
+      api = createApi(serverUrl.value, stored.token, true, true, stored.refreshToken || "");
+      user.value = stored.user;
+      try {
+        const current = await api.session();
+        user.value = current.user;
+        await saveSession({
+          token: api.accessToken,
+          refreshToken: api.sessionRefreshToken,
+          user: current.user
+        });
+      } catch {
+        await invalidate();
+      }
+      ready.value = true;
+      return;
+    }
     const local = useLocalHub().status.value;
     if (
       stored?.user &&
@@ -177,14 +210,17 @@ async function validateStoredSession(
   }
 }
 
-async function login(input: { serverUrl: string; username: string; password: string }) {
+async function login(input: { serverUrl: string; username?: string; email?: string; password: string }) {
   busy.value = true;
   error.value = "";
   try {
     const candidate = createApi(input.serverUrl);
     await candidate.health();
-    const result = await candidate.login({ username: input.username, password: input.password });
-    await establishAuthenticatedSession(candidate, result.token, result.user);
+    const result = await candidate.login({
+      ...(input.email ? { email: input.email } : { username: input.username }),
+      password: input.password
+    });
+    await establishAuthenticatedSession(candidate, result.token, result.user, result.refreshToken || "");
     return result.user;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "没有成功连接到 AetherX。";
@@ -196,7 +232,8 @@ async function login(input: { serverUrl: string; username: string; password: str
 
 async function register(input: {
   serverUrl: string;
-  username: string;
+  username?: string;
+  email?: string;
   displayName: string;
   password: string;
   registrationSecret?: string;
@@ -207,15 +244,74 @@ async function register(input: {
     const candidate = createApi(input.serverUrl);
     await candidate.health();
     const result = await candidate.register({
-      username: input.username,
+      ...(input.email ? { email: input.email } : { username: input.username }),
       displayName: input.displayName,
       password: input.password,
       registrationSecret: input.registrationSecret
     });
+    if (result.verificationRequired) return result;
+    if (!result.token || !result.user) throw new Error("账号创建结果不完整，请重新尝试。");
     await establishAuthenticatedSession(candidate, result.token, result.user);
     return result;
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "账号没有创建成功。";
+    throw cause;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function verifyEmail(input: { serverUrl: string; token: string }) {
+  busy.value = true;
+  error.value = "";
+  try {
+    const candidate = createApi(input.serverUrl);
+    await candidate.health();
+    const result = await candidate.verifyEmail(input.token);
+    await establishAuthenticatedSession(candidate, result.token, result.user, result.refreshToken || "");
+    return result.user;
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "邮箱验证没有成功。";
+    throw cause;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function resendEmailVerification(input: { serverUrl: string; email: string; password: string }) {
+  const candidate = createApi(input.serverUrl);
+  await candidate.health();
+  return candidate.resendEmailVerification({ email: input.email, password: input.password });
+}
+
+function clearError() {
+  error.value = "";
+}
+
+async function requestPasswordReset(input: { serverUrl: string; email: string }) {
+  busy.value = true;
+  error.value = "";
+  try {
+    const candidate = createApi(input.serverUrl);
+    await candidate.health();
+    return await candidate.requestPasswordReset(input.email);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "密码重置邮件暂时没有发送成功。";
+    throw cause;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function resetPassword(input: { serverUrl: string; token: string; password: string }) {
+  busy.value = true;
+  error.value = "";
+  try {
+    const candidate = createApi(input.serverUrl);
+    await candidate.health();
+    return await candidate.resetPassword({ token: input.token, password: input.password });
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : "密码重置没有完成。";
     throw cause;
   } finally {
     busy.value = false;
@@ -228,14 +324,36 @@ async function inspectRegistration(server: string): Promise<AuthConfig> {
   return candidate.authConfig();
 }
 
-async function establishAuthenticatedSession(candidate: AetherApi, token: string, authenticatedUser: AuthUser) {
-  api = createApi(candidate.serverUrl, token);
+async function establishAuthenticatedSession(
+  candidate: AetherApi,
+  token: string,
+  authenticatedUser: AuthUser,
+  refreshToken = ""
+) {
+  api = createApi(candidate.serverUrl, token, true, true, refreshToken);
   user.value = authenticatedUser;
   serverUrl.value = api.serverUrl;
   await Promise.all([
     saveServerUrl(serverUrl.value),
-    saveSession({ token, user: authenticatedUser })
+    saveSession({ token, refreshToken, user: authenticatedUser })
   ]);
+  if (authenticatedUser.email) {
+    routing.value = null;
+    spaceId.value = "";
+    localNodeId.value = "";
+    activeNodeId.value = "";
+    epoch.value = 1;
+    hubRole.value = "active";
+    await clearHubRouting();
+    const current = await api.session();
+    user.value = current.user;
+    await saveSession({
+      token: api.accessToken,
+      refreshToken: api.sessionRefreshToken,
+      user: current.user
+    });
+    return;
+  }
   const status = await api.ensureActiveHub();
   await rememberCluster(api, status);
   const current = await api.session();
@@ -243,7 +361,11 @@ async function establishAuthenticatedSession(candidate: AetherApi, token: string
   serverUrl.value = api.serverUrl;
   await Promise.all([
     saveServerUrl(serverUrl.value),
-    saveSession({ token: api.accessToken, user: current.user })
+    saveSession({
+      token: api.accessToken,
+      refreshToken: api.sessionRefreshToken,
+      user: current.user
+    })
   ]);
 }
 
@@ -322,7 +444,7 @@ async function reconnect(nextServerUrl: string) {
         throw cause;
       }
     });
-    if (current.user.username !== previousUser.username) {
+    if (authUserIdentity(current.user) !== authUserIdentity(previousUser)) {
       throw new Error("这台 Hub 返回了另一个账号，请使用新的配对码确认连接。 ");
     }
     await establishAuthenticatedSession(candidate, token, current.user);
@@ -339,7 +461,11 @@ async function refreshCurrentUser() {
   if (!api || !user.value || !api.accessToken) return null;
   const current = await api.session();
   user.value = current.user;
-  await saveSession({ token: api.accessToken, user: current.user });
+  await saveSession({
+    token: api.accessToken,
+    refreshToken: api.sessionRefreshToken,
+    user: current.user
+  });
   return current.user;
 }
 
@@ -420,7 +546,7 @@ async function activateDesktopHub() {
     const connection = await connectStoredHub(route, currentUser);
     const candidate = connection.api;
     const current = { user: connection.user };
-    if (current.user.username !== currentUser.username) {
+    if (authUserIdentity(current.user) !== authUserIdentity(currentUser)) {
       throw new Error("电脑 Hub 返回了另一个账号，请重新配对。 ");
     }
     await establishAuthenticatedSession(candidate, route.token, current.user);
@@ -497,6 +623,11 @@ export function useSessionStore() {
     bootstrap,
     login,
     register,
+    verifyEmail,
+    resendEmailVerification,
+    clearError,
+    requestPasswordReset,
+    resetPassword,
     inspectRegistration,
     pair,
     reconnect,
@@ -620,12 +751,16 @@ async function validateHubConnection(candidate: AetherApi, expectedUser: AuthUse
   return withConnectionTimeout(async (signal) => {
     await candidate.health(signal);
     const current = await candidate.session(signal);
-    if (expectedUser && current.user.username !== expectedUser.username) {
+    if (expectedUser && authUserIdentity(current.user) !== authUserIdentity(expectedUser)) {
       throw new Error("The Hub returned a different account.");
     }
     const status = await candidate.clusterStatus(signal);
     return { user: current.user, status };
   }, 8_000);
+}
+
+function authUserIdentity(value: AuthUser | null | undefined) {
+  return String(value?.id || value?.email || value?.username || "");
 }
 
 interface PairingCode {

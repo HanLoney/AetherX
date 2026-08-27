@@ -8,6 +8,16 @@ import EmptyState from "../components/EmptyState.vue";
 import MarkdownMessage from "../components/MarkdownMessage.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
 import { normalizeStoredDisplayMessages } from "../lib/chat-history";
+import {
+  dedupeConversationMessages,
+  loadConversationCache,
+  loadLatestConversationCache,
+  mergeConversationTail,
+  normalizeMessagePositions,
+  peekConversationCache,
+  peekLatestConversationCache,
+  saveConversationCache
+} from "../lib/conversation-cache";
 import { MobileChat } from "../lib/hub-chat";
 import { NATIVE_BACK_EVENT } from "../lib/native-back";
 import type { ChatMessage, Conversation } from "../lib/api";
@@ -33,7 +43,9 @@ const searchInput = ref<HTMLInputElement | null>(null);
 const searchOpen = ref(false);
 const searchQuery = ref("");
 const showLatestButton = ref(false);
+const conversationLoading = ref(false);
 let conversationRefreshPending = false;
+let conversationLoadGeneration = 0;
 const CHAT_RENDER_WINDOW = 120;
 const renderStart = ref(0);
 const renderEnd = ref(0);
@@ -51,6 +63,44 @@ function messageTimestamp(value?: number) {
   return {
     label: messageTimestampFormatter.format(date),
     iso: date.toISOString()
+  };
+}
+
+function conversationCacheScope() {
+  const api = session.requireApi();
+  const identity = session.user.value?.id || session.user.value?.email || "";
+  return `${session.spaceId.value || api.serverUrl}|${identity}`;
+}
+
+async function loadConversationIncrementally(conversation: Conversation) {
+  const scope = conversationCacheScope();
+  const cached = await loadConversationCache(scope, conversation.id);
+  const cachedMessages = normalizeMessagePositions(cached?.messages || []);
+  const overlapStart = cachedMessages.length
+    ? Math.max(-1, Math.max(...cachedMessages.map((message) => Number(message.position) || 0)) - 30)
+    : -1;
+  const retained = cachedMessages.filter((message) => Number(message.position) <= overlapStart);
+  const received: ChatMessage[] = [];
+  let afterPosition = overlapStart;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await session.requireApi().conversationMessagePage(
+      conversation.id,
+      afterPosition,
+      500
+    );
+    received.push(...page.items);
+    hasMore = page.hasMore;
+    if (hasMore && page.nextPosition <= afterPosition) {
+      throw new Error("聊天增量游标没有继续前进。");
+    }
+    afterPosition = page.nextPosition;
+  }
+    const messages = mergeConversationTail(retained, received, overlapStart);
+  return {
+    conversation,
+    messages,
+    scope
   };
 }
 const assistantName = computed(() => String(data.assistant.value.name || "小玄"));
@@ -140,7 +190,7 @@ function showLatestMessageWindow() {
 }
 
 function replaceDisplayMessages(messages: ChatMessage[]) {
-  displayMessages.value = messages;
+  displayMessages.value = dedupeConversationMessages(messages);
   showLatestMessageWindow();
 }
 
@@ -225,15 +275,47 @@ function handleNativeBack(event: Event) {
   }
 }
 
+const initialCachedConversation = peekLatestConversationCache(conversationCacheScope());
+if (initialCachedConversation) {
+  current.value = initialCachedConversation.conversation;
+  replaceDisplayMessages(normalizeStoredDisplayMessages(initialCachedConversation.messages));
+}
+
 onMounted(async () => {
   document.addEventListener("pointerdown", closeEmojiOnOutsidePointer, true);
   window.addEventListener(NATIVE_BACK_EVENT, handleNativeBack);
   void prepareCompactEmojiPicker();
-  await data.refreshConversationPage(true).catch(() => undefined);
-  if (data.conversations.value[0]) {
-    await openConversation(data.conversations.value[0]).catch((cause) => {
-      error.value = cause instanceof Error ? cause.message : "最新对话暂时没有打开。";
-    });
+  try {
+    const latestCached = initialCachedConversation ||
+      await loadLatestConversationCache(conversationCacheScope());
+    if (latestCached) {
+      current.value = latestCached.conversation;
+      replaceDisplayMessages(normalizeStoredDisplayMessages(latestCached.messages));
+      conversationLoading.value = false;
+      await scrollToBottom("auto");
+    }
+
+    await data.restoreCache();
+    const cachedConversation = latestCached
+      ? data.conversations.value.find((item) => item.id === latestCached.conversationId) ||
+        latestCached.conversation
+      : null;
+    const localConversation = cachedConversation || data.conversations.value[0];
+    if (localConversation) {
+      void openConversation(localConversation).catch(() => undefined);
+      void data.refreshConversationPage(true).catch(() => undefined);
+    } else {
+      conversationLoading.value = !displayMessages.value.length;
+      await data.refreshConversationPage(true);
+      if (data.conversations.value[0]) {
+        void openConversation(data.conversations.value[0]).catch(() => undefined);
+      } else {
+        conversationLoading.value = false;
+      }
+    }
+  } catch (cause) {
+    conversationLoading.value = false;
+    error.value = cause instanceof Error ? cause.message : "最新对话暂时没有打开。";
   }
 });
 
@@ -243,10 +325,51 @@ onBeforeUnmount(() => {
 });
 
 async function openConversation(conversation: Conversation) {
-  const result = await session.requireApi().conversation(conversation.id);
-  current.value = result.conversation;
-  replaceDisplayMessages(normalizeStoredDisplayMessages(result.displayMessages));
-  await scrollToBottom();
+  const generation = ++conversationLoadGeneration;
+  const scope = conversationCacheScope();
+  let cached = peekConversationCache(scope, conversation.id);
+  if (cached) {
+    current.value = cached.conversation || conversation;
+    replaceDisplayMessages(normalizeStoredDisplayMessages(cached.messages));
+    conversationLoading.value = false;
+  }
+  try {
+    cached ||= await loadConversationCache(scope, conversation.id);
+    if (generation !== conversationLoadGeneration) return;
+    if (cached) {
+      current.value = cached.conversation || conversation;
+      replaceDisplayMessages(normalizeStoredDisplayMessages(cached.messages));
+      // Cached history is the interactive source. Remote reconciliation continues
+      // in the background and must not put the chat back into a loading state.
+      conversationLoading.value = false;
+      await scrollToBottom("auto");
+    } else {
+      conversationLoading.value = true;
+    }
+    const result = await loadConversationIncrementally(conversation);
+    if (generation !== conversationLoadGeneration) return;
+    current.value = result.conversation || conversation;
+    replaceDisplayMessages(normalizeStoredDisplayMessages(result.messages));
+    await saveConversationCache(result.scope, current.value, result.messages);
+  } catch (cause) {
+    if (generation !== conversationLoadGeneration) return;
+    try {
+      const result = await session.requireApi().conversation(conversation.id);
+      if (generation !== conversationLoadGeneration) return;
+      current.value = result.conversation;
+      const messages = normalizeMessagePositions(result.displayMessages || []);
+      replaceDisplayMessages(normalizeStoredDisplayMessages(messages));
+      await saveConversationCache(conversationCacheScope(), current.value, messages).catch(() => undefined);
+    } catch (fallbackCause) {
+      error.value = fallbackCause instanceof Error ? fallbackCause.message :
+        (cause instanceof Error ? cause.message : "最新对话暂时没有打开。");
+    }
+  } finally {
+    if (generation === conversationLoadGeneration) {
+      conversationLoading.value = false;
+      await scrollToBottom("auto");
+    }
+  }
 }
 
 watch(() => data.conversationRevision.value, async () => {
@@ -257,9 +380,13 @@ watch(() => data.conversationRevision.value, async () => {
   }
   const latest = data.conversations.value.find((item) => item.id === current.value?.id);
   if (!latest) {
-    resolveAllApprovals(false);
-    current.value = null;
-    replaceDisplayMessages([]);
+    // Archive restore and Hub refresh briefly reset the in-memory conversation
+    // list. Keep the visible conversation during that gap and reopen the
+    // newest one once the refreshed page arrives instead of erasing history.
+    conversationLoading.value = data.loading.value ||
+      data.conversationPageLoading.value || data.syncState.value === "syncing";
+    const fallback = data.conversations.value[0];
+    if (fallback) await openConversation(fallback).catch(() => undefined);
     return;
   }
   if ((latest.updatedAt || 0) <= (current.value.updatedAt || 0)) return;
@@ -270,6 +397,9 @@ async function send() {
   const content = draft.value.trim();
   if (!content || sending.value) return;
   emojiOpen.value = false;
+  // A background cache reconciliation started while entering the page must
+  // never overwrite the optimistic message or the result of this send.
+  conversationLoadGeneration += 1;
   sending.value = true;
   error.value = "";
   draft.value = "";
@@ -288,6 +418,7 @@ async function send() {
     });
     current.value = result.conversation;
     replaceDisplayMessages(result.displayMessages);
+    await saveConversationCache(conversationCacheScope(), current.value, result.displayMessages).catch(() => undefined);
     conversationRefreshPending = false;
     sending.value = false;
     void data.refreshConversationPage(true).catch(() => undefined);
@@ -345,10 +476,10 @@ function resolveAllApprovals(approved: boolean) {
   pendingApprovals.clear();
 }
 
-async function scrollToBottom() {
+async function scrollToBottom(behavior: ScrollBehavior = "smooth") {
   await nextTick();
   showLatestButton.value = false;
-  messageList.value?.scrollTo({ top: messageList.value.scrollHeight, behavior: "smooth" });
+  messageList.value?.scrollTo({ top: messageList.value.scrollHeight, behavior });
 }
 </script>
 
@@ -406,6 +537,9 @@ async function scrollToBottom() {
     </section>
 
     <section v-show="!searchOpen" ref="messageList" class="message-list" @scroll.passive="updateLatestButton">
+      <div v-if="conversationLoading && !displayMessages.length" class="chat-loading" role="status" aria-live="polite">
+        <i /><span>正在加载聊天记录…</span>
+      </div>
       <EmptyState v-if="!displayMessages.length" :title="`和 ${assistantName} 说点什么`" description="你们会一直在这一段对话里延续共同的上下文。" />
       <button v-if="hasEarlierMessages" class="chat-load-earlier" type="button" @click="loadEarlierMessages">查看更早消息</button>
       <template v-for="entry in renderedMessages" :key="entry.message.id || entry.index">
@@ -504,6 +638,9 @@ async function scrollToBottom() {
 .chat-search-empty { min-height:230px; display:grid; place-items:center; color:#aaa5ae; font-size:calc(12px * var(--font-scale, 1)); }
 .message-list { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding:calc(max(12px,env(safe-area-inset-top)) + 58px) 2px calc(var(--bottom-dock-height) + 34px); scrollbar-width: none; }
 .message-list::-webkit-scrollbar { display: none; }
+.chat-loading { display:flex; align-items:center; justify-content:center; gap:8px; margin:8px auto 18px; color:#9993a2; font-size:calc(11px * var(--font-scale, 1)); }
+.chat-loading i { width:12px; height:12px; border:2px solid rgba(122,145,180,.22); border-top-color:#7895b8; border-radius:50%; animation:chat-loading-spin .8s linear infinite; }
+@keyframes chat-loading-spin { to { transform:rotate(360deg); } }
 .chat-load-earlier { display:block; margin:0 auto 18px; padding:8px 14px; border:1px solid rgba(255,255,255,.76); border-radius:999px; color:#777083; background:rgba(255,255,255,.62); font-size:calc(10px * var(--font-scale,1)); box-shadow:0 7px 20px rgba(80,72,104,.08); }
 .message-row { display:flex; align-items:flex-end; gap:7px; margin:0 0 14px; }
 .message-row.user { justify-content: flex-end; }

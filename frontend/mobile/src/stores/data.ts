@@ -60,9 +60,9 @@ const CONVERSATION_PAGE_SIZE = 12;
 
 function currentCacheScope() {
   const session = useSessionStore();
-  const userName = session.user.value?.username;
-  if (!userName) return "";
-  return `${session.spaceId.value || session.requireApi().serverUrl}|${userName}`;
+  const identity = session.user.value?.id || session.user.value?.email || session.user.value?.username;
+  if (!identity) return "";
+  return `${session.spaceId.value || session.requireApi().serverUrl}|${identity}`;
 }
 
 function snapshot() {
@@ -319,7 +319,7 @@ async function startSync() {
     }
     const groups = changeGroups(changes);
     if (groups.size) await refreshGroups(groups);
-  }, `${session.spaceId.value || api.serverUrl}|${session.user.value?.username || userId}`, (status) => {
+  }, `${session.spaceId.value || api.serverUrl}|${session.user.value?.id || session.user.value?.email || session.user.value?.username || userId}`, (status) => {
     syncCursor = status.cursor;
     sseConnected = status.connected;
     if (status.state === "online") syncState.value = "online";
@@ -372,7 +372,7 @@ async function startControlSync(
   const coordinator = new SyncCoordinator(
     connection.api,
     () => undefined,
-    `${session.spaceId.value || connection.api.serverUrl}|control|${connection.nodeId}|${session.user.value?.username || userId}`,
+    `${session.spaceId.value || connection.api.serverUrl}|control|${connection.nodeId}|${session.user.value?.id || session.user.value?.email || session.user.value?.username || userId}`,
     (status) => {
       controlSyncCursor = status.cursor;
       controlSseConnected = status.connected;

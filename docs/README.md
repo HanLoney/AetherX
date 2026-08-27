@@ -23,6 +23,7 @@
 
 ## 架构与决策
 
+- [AetherX Online 完整执行方案](cloud-edition-execution-plan.md)；
 - [家庭节点与多端同步架构](architecture/home-hub-sync.md)；
 - [双 Hub 复制与安全切换实现方案](architecture/dual-hub-replication.md)；
 - [工具系统架构](architecture/tool-system.md)；

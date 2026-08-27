@@ -26,8 +26,55 @@ describe("MobileChat Agent Hub client", () => {
       displayMessages: [],
       content: "在吗"
     });
-    expect(api.agentChat).toHaveBeenCalledWith(expect.objectContaining({ content: "在吗" }));
+    expect(api.agentChat).toHaveBeenCalledWith(expect.objectContaining({ content: "在吗", responseMode: "delta" }));
     expect(response.displayMessages.at(-1)?.content).toBe("完成啦");
+  });
+
+  it("merges a delta response into locally cached history", async () => {
+    const api = {
+      agentChat: vi.fn(async () => result("completed")),
+      approveAgentRun: vi.fn()
+    } as unknown as AetherApi;
+    const response = await new MobileChat(api).send({
+      conversation: null,
+      displayMessages: [{ id: "old", role: "user", content: "旧消息" }],
+      content: "继续"
+    });
+
+    expect(response.displayMessages.map((message) => message.id)).toEqual(["old", "assistant-1"]);
+  });
+
+  it("places an unpositioned delta after the highest cached position instead of the deduped count", async () => {
+    const api = {
+      agentChat: vi.fn(async () => result("completed")),
+      approveAgentRun: vi.fn()
+    } as unknown as AetherApi;
+    const response = await new MobileChat(api).send({
+      conversation: null,
+      displayMessages: [
+        { id: "old-a", position: 0, role: "user", content: "旧消息 A", createdAt: 1 },
+        { id: "old-b", position: 9, role: "assistant", content: "旧消息 B", createdAt: 2 }
+      ],
+      content: "继续"
+    });
+
+    expect(response.displayMessages.find((message) => message.id === "assistant-1")?.position).toBe(10);
+  });
+
+  it("preserves authoritative positions returned by the Hub", async () => {
+    const completed = result("completed");
+    completed.displayMessages[0].position = 23;
+    const api = {
+      agentChat: vi.fn(async () => completed),
+      approveAgentRun: vi.fn()
+    } as unknown as AetherApi;
+    const response = await new MobileChat(api).send({
+      conversation: null,
+      displayMessages: [{ id: "old", position: 9, role: "user", content: "旧消息", createdAt: 1 }],
+      content: "继续"
+    });
+
+    expect(response.displayMessages.find((message) => message.id === "assistant-1")?.position).toBe(23);
   });
 
   it("returns write approval decisions to the same Hub run", async () => {

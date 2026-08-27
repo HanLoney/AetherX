@@ -110,6 +110,14 @@ export async function dispatchLocalHubNetworkRequest(request: NetworkRequest) {
     return api.conversationPage(number(query.offset, 0), number(query.limit, 12));
   }
   if (method === "POST" && path === "/api/v1/conversations") return api.createConversation(body.title);
+  match = path.match(/^\/api\/v1\/conversations\/([^/]+)\/message-page$/);
+  if (method === "GET" && match) {
+    return api.conversationMessagePage(
+      decode(match[1]),
+      number(query.afterPosition, -1),
+      number(query.limit, 500)
+    );
+  }
   match = path.match(/^\/api\/v1\/conversations\/([^/]+)\/messages$/);
   if (method === "PUT" && match) {
     return api.saveConversationMessages(decode(match[1]), Array.isArray(body.messages) ? body.messages : []);
