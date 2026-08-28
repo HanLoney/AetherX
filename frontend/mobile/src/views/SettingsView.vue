@@ -37,6 +37,11 @@ import AppShell from "../components/AppShell.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
 import type { AiConfig, AiConfigInput, AiProviderProfile } from "../lib/api";
+import openAiIcon from "../assets/provider-icons/openai.svg";
+import deepSeekIcon from "../assets/provider-icons/deepseek.svg";
+import qwenIcon from "../assets/provider-icons/qwen.svg";
+import zhipuIcon from "../assets/provider-icons/zhipu.png";
+import siliconFlowIcon from "../assets/provider-icons/siliconflow.ico";
 import { DEFAULT_FONT_SCALE, useInterfaceSettings } from "../lib/interface-settings";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
@@ -107,12 +112,12 @@ let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offset
 let hubStatusTimer: number | null = null;
 
 const aiProviders = [
-  { id: "openai", name: "OpenAI", shortName: "OA", baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini" },
-  { id: "deepseek", name: "DeepSeek", shortName: "DS", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
-  { id: "qwen", name: "通义千问", shortName: "QW", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-  { id: "zhipu", name: "智谱 GLM", shortName: "GL", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.1" },
-  { id: "siliconflow", name: "硅基流动", shortName: "SF", baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3-32B" },
-  { id: "custom", name: "自定义", shortName: "+", baseUrl: "", model: "" }
+  { id: "openai", name: "OpenAI", icon: openAiIcon, baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini" },
+  { id: "deepseek", name: "DeepSeek", icon: deepSeekIcon, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  { id: "qwen", name: "通义千问", icon: qwenIcon, baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { id: "zhipu", name: "智谱 GLM", icon: zhipuIcon, baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.1" },
+  { id: "siliconflow", name: "硅基流动", icon: siliconFlowIcon, baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3-32B" },
+  { id: "custom", name: "自定义", icon: "", baseUrl: "", model: "" }
 ] as const;
 
 const displayName = computed(() => String(
@@ -127,6 +132,9 @@ const cloudEdition = computed(() =>
 );
 const selectedAiProfile = computed(() =>
   aiProfiles.value.find((item) => item.providerId === aiForm.providerId) || null
+);
+const activeAiProvider = computed(() =>
+  aiProviders.find((item) => item.id === aiState.value?.providerId) || aiProviders[aiProviders.length - 1]
 );
 const aiKeyCanRemain = computed(() => Boolean(
   selectedAiProfile.value?.hasApiKey &&
@@ -1319,7 +1327,7 @@ async function toggleModule(id: string, enabled: boolean) {
             </header>
 
             <div class="ai-editor-intro">
-              <i><Sparkles :size="21" /></i>
+              <i><img v-if="activeAiProvider.icon" :src="activeAiProvider.icon" alt="" aria-hidden="true"><Link2 v-else :size="20" /></i>
               <div><strong>当前使用：{{ aiState?.providerName || '尚未选择' }}</strong><span>{{ aiState?.model || '还没有选择模型' }} · {{ activeAiStatusLabel }}</span></div>
               <b :class="aiState?.verificationStatus || 'untested'">{{ aiState?.verificationStatus === 'verified' ? '已验证' : aiState?.verificationStatus === 'failed' ? '异常' : '未测试' }}</b>
             </div>
@@ -1333,7 +1341,7 @@ async function toggleModule(id: string, enabled: boolean) {
                 :disabled="aiSaving || aiTesting"
                 @click="selectAiProvider(provider)"
               >
-                <i>{{ provider.shortName }}</i>
+                <i><img v-if="provider.icon" :src="provider.icon" alt="" aria-hidden="true"><Link2 v-else :size="17" /></i>
                 <span>{{ provider.name }}</span>
                 <small v-if="aiProfiles.find(item => item.providerId === provider.id)?.active" class="active">当前使用</small>
                 <small v-else-if="aiProfiles.find(item => item.providerId === provider.id)?.verificationStatus === 'verified'" class="verified">已连接</small>
@@ -1533,8 +1541,8 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-settings-entry:active{background:rgba(var(--pink-rgb),.045)!important}
 .ai-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 94% 4%,rgba(var(--blue-rgb),.16),transparent 32%),radial-gradient(circle at 2% 88%,rgba(var(--pink-rgb),.13),transparent 36%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}
 .ai-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.ai-settings-sheet header span{color:#a07a9e;font-size:calc(7px * var(--font-scale,1));font-weight:800;letter-spacing:.16em}.ai-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.ai-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}
-.ai-editor-intro{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(255,255,255,.82);border-radius:20px 20px 20px 8px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.095),rgba(var(--blue-rgb),.11));box-shadow:0 12px 32px rgba(75,70,103,.07)}.ai-editor-intro>i{width:43px;height:43px;display:grid;place-items:center;border-radius:15px;color:#9179a2;background:rgba(255,255,255,.66)}.ai-editor-intro>div{display:grid;gap:4px}.ai-editor-intro strong{color:#5c5565;font-size:calc(10px * var(--font-scale,1))}.ai-editor-intro span{color:#958e9d;font-size:calc(7px * var(--font-scale,1));line-height:1.5}.ai-editor-intro>b{padding:5px 8px;border-radius:999px;color:#8b7f91;background:rgba(116,108,137,.08);font-size:calc(7px * var(--font-scale,1));white-space:nowrap}.ai-editor-intro>b.verified{color:#5d8b76;background:rgba(89,173,133,.12)}.ai-editor-intro>b.failed{color:#aa6175;background:rgba(202,103,132,.11)}
-.ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:29px;height:29px;display:grid;place-items:center;border-radius:10px;color:#8d7595;background:linear-gradient(140deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.15));font-size:calc(7px * var(--font-scale,1));font-style:normal;font-weight:900}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
+.ai-editor-intro{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(255,255,255,.82);border-radius:20px 20px 20px 8px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.095),rgba(var(--blue-rgb),.11));box-shadow:0 12px 32px rgba(75,70,103,.07)}.ai-editor-intro>i{width:43px;height:43px;display:grid;place-items:center;border:1px solid rgba(118,108,139,.08);border-radius:15px;color:#9179a2;background:rgba(255,255,255,.78)}.ai-editor-intro>i img{width:27px;height:27px;object-fit:contain}.ai-editor-intro>div{display:grid;gap:4px}.ai-editor-intro strong{color:#5c5565;font-size:calc(10px * var(--font-scale,1))}.ai-editor-intro span{color:#958e9d;font-size:calc(7px * var(--font-scale,1));line-height:1.5}.ai-editor-intro>b{padding:5px 8px;border-radius:999px;color:#8b7f91;background:rgba(116,108,137,.08);font-size:calc(7px * var(--font-scale,1));white-space:nowrap}.ai-editor-intro>b.verified{color:#5d8b76;background:rgba(89,173,133,.12)}.ai-editor-intro>b.failed{color:#aa6175;background:rgba(202,103,132,.11)}
+.ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:32px;height:32px;display:grid;place-items:center;border:1px solid rgba(115,107,136,.08);border-radius:10px;color:#8d7595;background:rgba(255,255,255,.8);font-style:normal}.ai-provider-grid button>i img{width:22px;height:22px;object-fit:contain}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button>i>svg{position:static;color:#8d7595}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
 .ai-editor-fields{display:grid;gap:11px;margin-top:15px}.ai-editor-fields label{display:grid;gap:6px}.ai-editor-fields label>span{color:#70697d;font-size:calc(9px * var(--font-scale,1));font-weight:700}.ai-editor-fields input{width:100%;height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale,1))}.ai-editor-fields input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.ai-editor-fields input:disabled{opacity:.6}.ai-editor-fields small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
 .ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
 </style>

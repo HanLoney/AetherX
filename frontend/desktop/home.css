@@ -870,6 +870,9 @@ button { color: inherit; cursor: pointer; }
   font-weight: 700;
 }
 
+.provider-logo .provider-icon { width: 22px; height: 22px; object-fit: contain; }
+.provider-logo .provider-icon-fallback { color: #fff; font-size: calc(10px * var(--font-scale, 1)); }
+
 .hub-pill.mobile {
   border-color: rgba(178, 123, 166, .15);
   background: linear-gradient(135deg, rgba(249, 239, 246, .82), rgba(235, 239, 251, .8));
@@ -2897,6 +2900,9 @@ button { color: inherit; cursor: pointer; }
   font-style: normal;
   font-weight: 700;
 }
+
+.provider-option i .provider-icon { width: 24px; height: 24px; object-fit: contain; }
+.provider-option i .provider-icon-fallback { color: #fff; font-size: calc(9px * var(--font-scale, 1)); }
 
 .provider-option span { min-width: 0; }
 .provider-option strong,

@@ -23,6 +23,16 @@ const dataBootstrapSource = readFileSync(new URL("./mobile-data-bootstrap.ts", i
 const connectionPillSource = readFileSync(new URL("../components/ConnectionPill.vue", import.meta.url), "utf8");
 
 describe("adaptive mobile shell", () => {
+  it("uses bundled official brand icons in the AI provider editor", () => {
+    expect(settingsSource).toContain('provider-icons/openai.svg');
+    expect(settingsSource).toContain('provider-icons/deepseek.svg');
+    expect(settingsSource).toContain('provider-icons/qwen.svg');
+    expect(settingsSource).toContain('provider-icons/zhipu.png');
+    expect(settingsSource).toContain('provider-icons/siliconflow.ico');
+    expect(settingsSource).toContain(':src="provider.icon"');
+    expect(settingsSource).not.toContain('{{ provider.shortName }}');
+  });
+
   it("recovers the mobile client route from authenticated native LAN discovery", () => {
     expect(localHubSource).toContain('"peerEndpointDiscovered"');
     expect(localHubSource).toContain('new CustomEvent("aetherx:peer-endpoint-discovered"');

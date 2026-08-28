@@ -589,8 +589,8 @@ function renderProviderGrid() {
     button.type = "button";
 
     const logo = document.createElement("i");
-    logo.textContent = provider.shortName;
-    logo.style.background = provider.color;
+    logo.append(window.providerIconElement(provider));
+    logo.style.background = provider.icon ? "rgba(255,255,255,.78)" : provider.color;
     const copy = document.createElement("span");
     const name = document.createElement("strong");
     name.textContent = provider.name;
@@ -646,8 +646,8 @@ function renderImageProviderGrid() {
     button.type = "button";
 
     const logo = document.createElement("i");
-    logo.textContent = provider.shortName;
-    logo.style.background = provider.color;
+    logo.append(window.providerIconElement(provider));
+    logo.style.background = provider.icon ? "rgba(255,255,255,.78)" : provider.color;
     const copy = document.createElement("span");
     const name = document.createElement("strong");
     name.textContent = provider.name;
@@ -719,8 +719,8 @@ function collectImageDraft() {
 
 function renderHeader() {
   const provider = providerById(state.config.providerId);
-  elements.providerLogo.textContent = provider.shortName;
-  elements.providerLogo.style.background = provider.color;
+  elements.providerLogo.replaceChildren(window.providerIconElement(provider, "provider-icon provider-icon-header"));
+  elements.providerLogo.style.background = provider.icon ? "rgba(255,255,255,.78)" : provider.color;
   elements.providerName.textContent = state.config.providerName;
   elements.providerModel.textContent = state.config.model || "未选择模型";
   elements.composerTip.textContent = `当前使用 ${state.config.providerName} · ${

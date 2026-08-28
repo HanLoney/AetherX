@@ -8,6 +8,7 @@ const css = fs.readFileSync(path.join(__dirname, "..", "home.css"), "utf8");
 const javascript = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
 const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+const providers = fs.readFileSync(path.join(__dirname, "..", "ai-providers.js"), "utf8");
 
 test("sidebar navigation is grouped into clear functional areas", () => {
   ["dailyNavLabel", "spaceNavGroup", "createNavGroup", "systemNavLabel"].forEach(
@@ -146,6 +147,17 @@ test("desktop keeps one saved connection profile per AI provider", () => {
   assert.match(javascript, /已连接 · \$\{saved\.model\}/);
   assert.match(javascript, /window\.desktop\.testAIProvider\(draft\)/);
   assert.match(javascript, /window\.desktop\.activateAIProvider\(profile\.providerId\)/);
+});
+
+test("desktop AI provider selectors use bundled official brand icons", () => {
+  ["openai.svg", "deepseek.svg", "qwen.svg", "zhipu.png", "siliconflow.ico", "volcengine.png"].forEach(
+    (icon) => assert.match(providers, new RegExp(`provider-icons/${icon.replace(".", "\\.")}`))
+  );
+  assert.match(providers, /window\.providerIconElement/);
+  assert.match(javascript, /providerIconElement\(provider\)/);
+  assert.doesNotMatch(javascript, /logo\.textContent = provider\.shortName/);
+  const packageMetadata = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  assert.ok(packageMetadata.build.files.includes("provider-icons/**/*"));
 });
 
 test("desktop integrates the Hub connection matrix instead of relying on the launcher", () => {

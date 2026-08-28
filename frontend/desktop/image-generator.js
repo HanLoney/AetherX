@@ -70,7 +70,8 @@ function renderProviderGrid() {
       state.draft.providerId === provider.id ? " active" : ""
     }`;
     const logo = document.createElement("i");
-    logo.textContent = provider.shortName;
+    logo.append(window.providerIconElement(provider));
+    logo.style.background = provider.icon ? "rgba(255,255,255,.78)" : provider.color;
     const copy = document.createElement("span");
     const name = document.createElement("strong");
     name.textContent = provider.name;

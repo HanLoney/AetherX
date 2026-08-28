@@ -69,6 +69,7 @@
       "qr-code.js",
       "home.js",
       "ai-providers.js",
+      "provider-icons/**/*",
       "module-settings.js",
       "xuan-mood.js",
       "mood-heartbeat.js",
