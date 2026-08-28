@@ -106,6 +106,7 @@ const aiTesting = ref(false);
 const aiError = ref("");
 const aiNotice = ref("");
 const aiProfiles = ref<AiProviderProfile[]>([]);
+const tokenDanceEnabled = ref(false);
 const aiForm = reactive({ providerId: "custom", providerName: "自定义", baseUrl: "", model: "", apiKey: "" });
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
@@ -117,6 +118,7 @@ const aiProviders = [
   { id: "qwen", name: "通义千问", icon: qwenIcon, baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
   { id: "zhipu", name: "智谱 GLM", icon: zhipuIcon, baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.1" },
   { id: "siliconflow", name: "硅基流动", icon: siliconFlowIcon, baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3-32B" },
+  { id: "tokendance", name: "TokenDance", icon: "", baseUrl: "https://tokendance.space/gateway/v1", model: "deepseek-v4-flash" },
   { id: "custom", name: "自定义", icon: "", baseUrl: "", model: "" }
 ] as const;
 
@@ -135,6 +137,9 @@ const selectedAiProfile = computed(() =>
 );
 const activeAiProvider = computed(() =>
   aiProviders.find((item) => item.id === aiState.value?.providerId) || aiProviders[aiProviders.length - 1]
+);
+const visibleAiProviders = computed(() =>
+  aiProviders.filter((provider) => provider.id !== "tokendance" || tokenDanceEnabled.value)
 );
 const aiKeyCanRemain = computed(() => Boolean(
   selectedAiProfile.value?.hasApiKey &&
@@ -283,6 +288,7 @@ async function refreshAiState(updateOpenEditor = false) {
   ]);
   aiState.value = current;
   aiProfiles.value = profiles.items;
+  tokenDanceEnabled.value = Boolean(profiles.integrations?.some((item) => item.id === "tokendance"));
   if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value && !aiTesting.value) applyAiConfigToForm(current);
   return current;
 }
@@ -729,6 +735,28 @@ async function saveAiConfig() {
     aiError.value = (reason as Error).message || "AI 配置暂时没有保存成功。";
   } finally {
     aiSaving.value = false;
+  }
+}
+
+async function authorizeTokenDance() {
+  if (aiSaving.value || aiTesting.value || !tokenDanceEnabled.value) return;
+  aiError.value = "";
+  aiNotice.value = "正在打开 TokenDance 授权页……";
+  try {
+    const flow = await session.requireApi().startProviderOAuth("tokendance");
+    await Browser.open({ url: flow.authorizationUrl });
+    let status: { status: string; errorMessage?: string } | null = null;
+    for (let index = 0; index < 90; index += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      status = await session.requireApi().providerOAuthStatus("tokendance", flow.flowId);
+      if (status.status !== "pending") break;
+    }
+    if (status?.status !== "authorized") throw new Error(status?.errorMessage || "TokenDance 授权没有完成。");
+    await refreshAiState(false);
+    aiNotice.value = "TokenDance 已授权并切换为当前 AI 服务商。";
+  } catch (reason) {
+    aiError.value = (reason as Error).message || "TokenDance 授权失败。";
+    aiNotice.value = "";
   }
 }
 
@@ -1334,7 +1362,7 @@ async function toggleModule(id: string, enabled: boolean) {
 
             <div class="ai-provider-grid" aria-label="选择 AI 服务商">
               <button
-                v-for="provider in aiProviders"
+                v-for="provider in visibleAiProviders"
                 :key="provider.id"
                 type="button"
                 :class="{ active: aiForm.providerId === provider.id }"
@@ -1371,6 +1399,10 @@ async function toggleModule(id: string, enabled: boolean) {
                 <small>{{ aiKeyCanRemain ? '密钥不会回显。只有输入新值时才会替换原密钥。' : '更换服务商或接口后需要填写新密钥；密钥会加密保存在云端。' }}</small>
               </label>
             </div>
+
+            <button v-if="aiForm.providerId === 'tokendance'" class="test-ai-config" type="button" :disabled="aiSaving || aiTesting" @click="authorizeTokenDance">
+              <Link2 :size="17" />一键授权 TokenDance
+            </button>
 
             <p v-if="aiNotice" class="ai-editor-notice"><Check :size="15" />{{ aiNotice }}</p>
             <p v-if="aiError" class="ai-editor-error">{{ aiError }}</p>

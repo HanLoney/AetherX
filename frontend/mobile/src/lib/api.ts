@@ -213,7 +213,8 @@ export class ApiError extends Error {
     message: string,
     readonly status = 0,
     readonly code = "API_ERROR",
-    readonly requestId = ""
+    readonly requestId = "",
+    readonly details: Record<string, unknown> | null = null
   ) {
     super(message);
     this.name = "ApiError";
@@ -356,7 +357,8 @@ export class AetherApi {
         payload?.error?.message || `请求失败（HTTP ${response.status}）`,
         response.status,
         payload?.error?.code || "API_ERROR",
-        payload?.requestId || ""
+        payload?.requestId || "",
+        payload?.error?.details || null
       );
       if (
         allowRoute &&
@@ -582,7 +584,16 @@ export class AetherApi {
     return this.request<AiConfig>("PUT", "/api/v1/ai/config", input);
   }
   aiProviderProfiles() {
-    return this.request<{ activeProviderId: string; items: AiProviderProfile[] }>("GET", "/api/v1/ai/providers");
+    return this.request<{ activeProviderId: string; items: AiProviderProfile[]; integrations?: Array<{ id: string }> }>("GET", "/api/v1/ai/providers");
+  }
+  listProviderIntegrations() {
+    return this.request<{ items: Array<Record<string, unknown>> }>("GET", "/api/v1/ai/provider-integrations");
+  }
+  startProviderOAuth(integrationId: string) {
+    return this.request<{ flowId: string; authorizationUrl: string }>("POST", `/api/v1/ai/provider-integrations/${encodeURIComponent(integrationId)}/oauth/start`, {});
+  }
+  providerOAuthStatus(integrationId: string, flowId: string) {
+    return this.request<{ status: string; errorMessage?: string }>("GET", `/api/v1/ai/provider-integrations/${encodeURIComponent(integrationId)}/oauth/status/${encodeURIComponent(flowId)}`);
   }
   saveAiProviderProfile(input: AiConfigInput) {
     return this.request<AiProviderProfile>(

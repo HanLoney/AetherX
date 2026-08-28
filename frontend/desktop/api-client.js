@@ -1,12 +1,13 @@
 const { randomUUID } = require("node:crypto");
 
 class ApiError extends Error {
-  constructor(message, status = 0, code = "API_ERROR", requestId = "") {
+  constructor(message, status = 0, code = "API_ERROR", requestId = "", details = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.details = details;
   }
 }
 
@@ -86,7 +87,8 @@ class XuanApiClient {
         payload?.error?.message || `后端请求失败（HTTP ${response.status}）`,
         response.status,
         payload?.error?.code || "API_ERROR",
-        payload?.requestId || ""
+        payload?.requestId || "",
+        payload?.error?.details || null
       );
       if (
         retryCount < 3 &&
@@ -434,6 +436,25 @@ class XuanApiClient {
       "POST",
       `/api/v1/ai/providers/${encodeURIComponent(providerId)}/activate`,
       {}
+    );
+  }
+
+  listProviderIntegrations() {
+    return this.request("GET", "/api/v1/ai/provider-integrations");
+  }
+
+  startProviderOAuth(integrationId) {
+    return this.request(
+      "POST",
+      `/api/v1/ai/provider-integrations/${encodeURIComponent(integrationId)}/oauth/start`,
+      {}
+    );
+  }
+
+  providerOAuthStatus(integrationId, flowId) {
+    return this.request(
+      "GET",
+      `/api/v1/ai/provider-integrations/${encodeURIComponent(integrationId)}/oauth/status/${encodeURIComponent(flowId)}`
     );
   }
 

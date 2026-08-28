@@ -2540,7 +2540,7 @@ function sanitizeLocalProviderMessages(messages: Array<Record<string, any>>) {
   return [...systems, ...history];
 }
 async function providerCompletion(
-  config: { baseUrl: string; model: string; apiKey: string },
+  config: { providerId?: string; baseUrl: string; model: string; apiKey: string },
   messages: Array<Record<string, any>>,
   tools: Array<Record<string, unknown>>
 ) {
@@ -2551,7 +2551,11 @@ async function providerCompletion(
     const boundedMessages = sanitizeLocalProviderMessages(messages);
     const response = await fetch(/\/chat\/completions$/i.test(baseUrl) ? baseUrl : `${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        ...(config.providerId === "tokendance" ? { "X-App-URL": "https://api.aetherx.tech" } : {})
+      },
       body: JSON.stringify({
         model: config.model,
         messages: boundedMessages,
@@ -2582,7 +2586,7 @@ async function providerCompletion(
 }
 
 async function providerImage(
-  config: { baseUrl: string; model: string; apiKey: string },
+  config: { providerId?: string; baseUrl: string; model: string; apiKey: string },
   payload: Record<string, unknown>
 ) {
   const controller = new AbortController();
@@ -2591,7 +2595,11 @@ async function providerImage(
     const baseUrl = String(config.baseUrl || "").replace(/\/+$/, "");
     const response = await fetch(/\/images\/generations$/i.test(baseUrl) ? baseUrl : `${baseUrl}/images/generations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        ...(config.providerId === "tokendance" ? { "X-App-URL": "https://api.aetherx.tech" } : {})
+      },
       body: JSON.stringify({ model: config.model, ...payload }),
       signal: controller.signal
     });

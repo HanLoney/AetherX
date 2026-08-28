@@ -6,6 +6,7 @@ const state = {
   config: null,
   draft: null,
   providerProfiles: [],
+  providerIntegrations: [],
   imageConfig: null,
   imageDraft: null,
   messages: [],
@@ -218,6 +219,7 @@ const elements = {
   archiveOperationResult: document.querySelector("#archiveOperationResult"),
   settingsMask: document.querySelector("#settingsMask"),
   providerGrid: document.querySelector("#providerGrid"),
+  authorizeTokenDanceBtn: document.querySelector("#authorizeTokenDanceBtn"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   modelInput: document.querySelector("#modelInput"),
@@ -681,6 +683,7 @@ function renderProviderGrid() {
         state.draft = { ...saved, apiKey: "" };
         state.connectionStatus = saved.verificationStatus === "verified" ? "success" : "idle";
         syncDraftInputs();
+        syncTokenDancePreset();
         renderProviderGrid();
         return;
       }
@@ -697,10 +700,30 @@ function renderProviderGrid() {
         state.draft.model = provider.model;
       }
       syncDraftInputs();
+      syncTokenDancePreset();
       renderProviderGrid();
     });
     elements.providerGrid.append(button);
   });
+}
+
+function syncTokenDancePreset(integrations = state.providerIntegrations) {
+  state.providerIntegrations = Array.isArray(integrations) ? integrations : [];
+  const enabled = state.providerIntegrations.some((item) => item.id === "tokendance");
+  const index = window.AI_PROVIDER_PRESETS.findIndex((item) => item.id === "tokendance");
+  if (enabled && index < 0) {
+    window.AI_PROVIDER_PRESETS.splice(1, 0, {
+      id: "tokendance", name: "TokenDance", shortName: "TD",
+      baseUrl: "https://tokendance.space/gateway/v1", model: "deepseek-v4-flash",
+      color: "#6d5dfc", icon: "", description: "统一模型网关 · 一键授权"
+    });
+  } else if (!enabled && index >= 0) {
+    window.AI_PROVIDER_PRESETS.splice(index, 1);
+  }
+  elements.authorizeTokenDanceBtn?.classList.toggle(
+    "hidden",
+    !enabled || state.draft.providerId !== "tokendance"
+  );
 }
 
 function renderImageProviderGrid() {
@@ -2548,7 +2571,7 @@ async function sendMessage() {
     state.messages.push(
       createMessage(
         "assistant",
-        `这次没有连接上：${error.message || "请求失败"}`,
+        `这次没有连接上：${recoveryMessage(error)}`,
         true
       )
     );
@@ -2559,6 +2582,14 @@ async function sendMessage() {
     renderHeader();
     renderMessages();
   }
+}
+
+function recoveryMessage(error) {
+  const action = error?.details?.recoveryAction;
+  if (action === "top_up_balance") return "TokenDance 余额不足，请充值后重试。";
+  if (action === "reauthorize_api_key") return "TokenDance 授权已失效，请在 AI 接入设置中重新授权。";
+  if (action === "api_key_quota") return "TokenDance Key 已达到周期额度，请等待刷新或重新授权。";
+  return error?.message || "请求失败";
 }
 
 function conversationRecord(item, stream, position) {
@@ -2700,6 +2731,29 @@ document.querySelector("#closeSettingsBtn").addEventListener("click", closeSetti
 document.querySelector("#cancelSettingsBtn").addEventListener("click", closeSettings);
 document.querySelector("#testConnectionBtn").addEventListener("click", testConnection);
 document.querySelector("#saveConfigBtn").addEventListener("click", saveConfig);
+elements.authorizeTokenDanceBtn?.addEventListener("click", async () => {
+  elements.authorizeTokenDanceBtn.disabled = true;
+  showTestResult("idle", "正在打开 TokenDance 授权页…");
+  try {
+    const flow = await window.desktop.startProviderOAuth("tokendance");
+    let status = null;
+    for (let index = 0; index < 90; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      status = await window.desktop.providerOAuthStatus("tokendance", flow.flowId);
+      if (status.status !== "pending") break;
+    }
+    if (status?.status !== "authorized") throw new Error(status?.errorMessage || "TokenDance 授权没有完成。");
+    await refreshCoreHubData();
+    state.draft = { ...state.config, apiKey: "" };
+    syncDraftInputs();
+    renderProviderGrid();
+    showTestResult("success", "TokenDance 已授权并切换为当前 AI 服务商");
+  } catch (error) {
+    showTestResult("error", error.message || "TokenDance 授权失败");
+  } finally {
+    elements.authorizeTokenDanceBtn.disabled = false;
+  }
+});
 elements.saveImageConfigBtn.addEventListener("click", saveImageConfig);
 document.querySelector("#showKeyBtn").addEventListener("click", () => {
   const showing = elements.apiKeyInput.type === "text";
@@ -2808,6 +2862,7 @@ async function refreshCoreHubData(options = {}) {
   }
   if (providersResult.status === "fulfilled") {
     state.providerProfiles = providersResult.value.items;
+    syncTokenDancePreset(providersResult.value.integrations);
   } else {
     console.warn("Unable to refresh AI provider profiles:", providersResult.reason?.message);
   }
@@ -2978,6 +3033,7 @@ async function refreshRemoteAiConfig() {
   ]);
   state.config = config;
   state.providerProfiles = providers.items;
+  syncTokenDancePreset(providers.integrations);
   state.draft = { ...config, apiKey: "" };
   state.connectionStatus = config.verificationStatus === "verified" ? "success" : "idle";
   renderHeader();

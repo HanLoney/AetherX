@@ -177,8 +177,8 @@ interface LocalHubPlugin {
     completedAt: number;
   }>;
   media(input: { mediaId: string }): Promise<{ mediaId: string; mimeType: string; path: string; uri: string }>;
-  providerCredentials(): Promise<{ baseUrl: string; model: string; apiKey: string }>;
-  imageProviderCredentials(): Promise<{ baseUrl: string; model: string; apiKey: string }>;
+  providerCredentials(): Promise<{ providerId?: string; baseUrl: string; model: string; apiKey: string }>;
+  imageProviderCredentials(): Promise<{ providerId?: string; baseUrl: string; model: string; apiKey: string }>;
   storeMedia(input: { dataUrl: string; mediaId?: string }): Promise<{
     mediaId: string; mimeType: string; fileName: string; byteSize: number; contentHash: string; localPath: string;
   }>;

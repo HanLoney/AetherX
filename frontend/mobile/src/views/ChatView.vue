@@ -434,7 +434,14 @@ async function send() {
     displayMessages.value = displayMessages.value.filter((message) => message !== optimistic);
     showLatestMessageWindow();
     draft.value = content;
-    error.value = cause instanceof Error ? cause.message : "消息没有发出去。";
+    const action = (cause as { details?: { recoveryAction?: string } })?.details?.recoveryAction;
+    error.value = action === "top_up_balance"
+      ? "TokenDance 余额不足，请充值后重试。"
+      : action === "reauthorize_api_key"
+        ? "TokenDance 授权已失效，请到设置中重新授权。"
+        : action === "api_key_quota"
+          ? "TokenDance Key 已达到周期额度，请等待刷新或重新授权。"
+          : cause instanceof Error ? cause.message : "消息没有发出去。";
     void recordClientEvent(session.requireApi(), "reply_failed", { module: "chat", durationMs: performance.now() - startedAt, errorCode: cause instanceof Error ? cause.name : "unknown" }, traceId).catch(() => undefined);
   } finally {
     sending.value = false;

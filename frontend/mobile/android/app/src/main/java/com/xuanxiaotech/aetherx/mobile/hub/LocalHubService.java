@@ -650,6 +650,7 @@ public final class LocalHubService {
                 throw new IllegalStateException("LOCAL_HUB_AI_KEY_UNAVAILABLE");
             }
             return new JSONObject()
+                .put("providerId", config.optString("provider_id", "openai"))
                 .put("baseUrl", config.optString("base_url", "https://api.openai.com/v1"))
                 .put("model", config.optString("model", "gpt-5.4-mini"))
                 .put("apiKey", credentials.getString("aiApiKey"));
@@ -672,6 +673,7 @@ public final class LocalHubService {
                 throw new IllegalStateException("LOCAL_HUB_IMAGE_KEY_UNAVAILABLE");
             }
             return new JSONObject()
+                .put("providerId", config.optString("provider_id", "openai"))
                 .put("baseUrl", config.optString("base_url", "https://api.openai.com/v1"))
                 .put("model", config.optString("model", "gpt-image-1"))
                 .put("apiKey", credentials.getString("imageApiKey"));

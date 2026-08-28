@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld("desktop", {
   saveAIProvider: (config) => ipcRenderer.invoke("ai:providers:save", config),
   testAIProvider: (config) => ipcRenderer.invoke("ai:providers:test", config),
   activateAIProvider: (providerId) => ipcRenderer.invoke("ai:providers:activate", providerId),
+  listProviderIntegrations: () => ipcRenderer.invoke("ai:integrations:list"),
+  startProviderOAuth: (integrationId) =>
+    ipcRenderer.invoke("ai:integration:oauth:start", integrationId),
+  providerOAuthStatus: (integrationId, flowId) =>
+    ipcRenderer.invoke("ai:integration:oauth:status", integrationId, flowId),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),
   agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
   approveAgentRun: (id, approved) =>

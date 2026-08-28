@@ -7,7 +7,8 @@ const {
   safeStorage,
   Tray,
   dialog,
-  clipboard
+  clipboard,
+  shell
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -1007,6 +1008,15 @@ function registerIpcHandlers() {
   ipcMain.handle("ai:providers:test", (_event, input) => api.testAiProvider(input));
   ipcMain.handle("ai:providers:activate", (_event, providerId) =>
     api.activateAiProvider(providerId)
+  );
+  ipcMain.handle("ai:integrations:list", () => api.listProviderIntegrations());
+  ipcMain.handle("ai:integration:oauth:start", async (_event, integrationId) => {
+    const result = await api.startProviderOAuth(integrationId);
+    await shell.openExternal(result.authorizationUrl);
+    return result;
+  });
+  ipcMain.handle("ai:integration:oauth:status", (_event, integrationId, flowId) =>
+    api.providerOAuthStatus(integrationId, flowId)
   );
   ipcMain.handle("ai:chat", (_event, payload) => api.requestAi(payload));
   ipcMain.handle("agent:chat", (_event, payload) => api.agentChat(payload));
