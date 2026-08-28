@@ -138,6 +138,16 @@ test("desktop refreshes account AI configuration after a remote device changes i
   assert.match(javascript, /已同步另一台设备保存的最新 AI 配置/);
 });
 
+test("desktop keeps one saved connection profile per AI provider", () => {
+  assert.match(preload, /listAIProviders/);
+  assert.match(preload, /testAIProvider/);
+  assert.match(preload, /activateAIProvider/);
+  assert.match(javascript, /providerProfiles/);
+  assert.match(javascript, /已连接 · \$\{saved\.model\}/);
+  assert.match(javascript, /window\.desktop\.testAIProvider\(draft\)/);
+  assert.match(javascript, /window\.desktop\.activateAIProvider\(profile\.providerId\)/);
+});
+
 test("desktop integrates the Hub connection matrix instead of relying on the launcher", () => {
   assert.match(html, /id="connectionCenterMask"/);
   assert.match(html, /id="computerHubNode"[\s\S]*id="hubPeerBridge"[\s\S]*id="mobileHubNode"/);

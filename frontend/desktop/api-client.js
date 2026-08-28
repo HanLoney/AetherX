@@ -401,6 +401,34 @@ class XuanApiClient {
     return this.request("PUT", "/api/v1/ai/config", config);
   }
 
+  listAiProviders() {
+    return this.request("GET", "/api/v1/ai/providers");
+  }
+
+  saveAiProvider(config) {
+    return this.request(
+      "PUT",
+      `/api/v1/ai/providers/${encodeURIComponent(config.providerId)}`,
+      config
+    );
+  }
+
+  testAiProvider(config) {
+    return this.request(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(config.providerId)}/test`,
+      config
+    );
+  }
+
+  activateAiProvider(providerId) {
+    return this.request(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(providerId)}/activate`,
+      {}
+    );
+  }
+
   requestAi(payload) {
     return this.request("POST", "/api/v1/ai/chat", payload);
   }

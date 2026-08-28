@@ -5,6 +5,7 @@ let systemPrompt = FALLBACK_SYSTEM_PROMPT;
 const state = {
   config: null,
   draft: null,
+  providerProfiles: [],
   imageConfig: null,
   imageDraft: null,
   messages: [],
@@ -594,11 +595,28 @@ function renderProviderGrid() {
     const name = document.createElement("strong");
     name.textContent = provider.name;
     const description = document.createElement("small");
-    description.textContent = provider.description;
+    const saved = state.providerProfiles.find((item) => item.providerId === provider.id);
+    description.textContent = saved?.active
+      ? `当前使用 · ${saved.model}`
+      : saved?.verificationStatus === "verified"
+        ? `已连接 · ${saved.model}`
+        : saved?.verificationStatus === "failed"
+          ? "连接异常"
+          : saved?.hasApiKey
+            ? `已保存 · ${saved.model}`
+            : provider.description;
     copy.append(name, description);
     button.append(logo, copy);
 
     button.addEventListener("click", () => {
+      const saved = state.providerProfiles.find((item) => item.providerId === provider.id);
+      if (saved) {
+        state.draft = { ...saved, apiKey: "" };
+        state.connectionStatus = saved.verificationStatus === "verified" ? "success" : "idle";
+        syncDraftInputs();
+        renderProviderGrid();
+        return;
+      }
       const providerChanged = state.draft.providerId !== provider.id;
       state.draft.providerId = provider.id;
       state.draft.providerName = provider.name;
@@ -2310,19 +2328,16 @@ async function testConnection() {
   renderHeader();
 
   try {
-    const result = await window.desktop.requestAI({
-      ...draft,
-      messages: [
-        { role: "system", content: "你是连接测试助手。" },
-        { role: "user", content: "请只回复：连接成功" }
-      ]
-    });
-    const response = extractResponse(result);
-    state.config = await window.desktop.saveAIConfig(draft);
-    state.draft = { ...state.config, apiKey: "" };
+    const profile = await window.desktop.testAIProvider(draft);
+    state.providerProfiles = [
+      profile,
+      ...state.providerProfiles.filter((item) => item.providerId !== profile.providerId)
+    ];
+    state.draft = { ...profile, apiKey: "" };
     state.connectionStatus = "success";
-    showTestResult("success", `连接成功：${response}`);
+    showTestResult("success", `${profile.providerName} 连接成功，配置已独立保存`);
     syncDraftInputs();
+    renderProviderGrid();
   } catch (error) {
     state.connectionStatus = "error";
     showTestResult("error", error.message || "连接失败，请检查配置");
@@ -2342,7 +2357,10 @@ async function saveConfig() {
     return;
   }
   try {
-    state.config = await window.desktop.saveAIConfig(draft);
+    const profile = await window.desktop.saveAIProvider(draft);
+    state.config = await window.desktop.activateAIProvider(profile.providerId);
+    state.providerProfiles = (await window.desktop.listAIProviders()).items;
+    state.draft = { ...state.config, apiKey: "" };
     if (state.connectionStatus !== "success") state.connectionStatus = "idle";
     renderHeader();
     closeSettings();
@@ -2699,19 +2717,26 @@ window.addEventListener("aether:font-scale-changed", (event) => {
 });
 
 async function refreshCoreHubData(options = {}) {
-  const [configResult, conversationsResult] = await Promise.allSettled([
+  const [configResult, providersResult, conversationsResult] = await Promise.allSettled([
     window.desktop.getAIConfig(),
+    window.desktop.listAIProviders(),
     window.desktop.listConversations()
   ]);
   if (configResult.status === "fulfilled") {
     state.config = configResult.value;
     state.draft = { ...state.config, apiKey: "" };
+    state.connectionStatus = state.config.verificationStatus === "verified" ? "success" : "idle";
     if (options.fromRouting === true && state.connectionStatus === "error") {
       state.connectionStatus = "idle";
     }
     renderHeader();
   } else {
     console.warn("Unable to refresh AI configuration:", configResult.reason?.message);
+  }
+  if (providersResult.status === "fulfilled") {
+    state.providerProfiles = providersResult.value.items;
+  } else {
+    console.warn("Unable to refresh AI provider profiles:", providersResult.reason?.message);
   }
   if (conversationsResult.status !== "fulfilled") {
     console.warn("Unable to refresh conversation history:", conversationsResult.reason?.message);
@@ -2849,7 +2874,7 @@ async function flushRemoteRefresh() {
   if (["prompt_settings", "prompt_setting_versions"].some((type) => entityTypes.has(type))) {
     jobs.push(refreshSystemPrompt());
   }
-  if (entityTypes.has("ai_configs")) {
+  if (entityTypes.has("ai_configs") || entityTypes.has("ai_provider_configs")) {
     jobs.push(refreshRemoteAiConfig());
   }
   if (entityTypes.has("module_settings")) {
@@ -2873,10 +2898,14 @@ async function flushRemoteRefresh() {
 }
 
 async function refreshRemoteAiConfig() {
-  const config = await window.desktop.getAIConfig();
+  const [config, providers] = await Promise.all([
+    window.desktop.getAIConfig(),
+    window.desktop.listAIProviders()
+  ]);
   state.config = config;
+  state.providerProfiles = providers.items;
   state.draft = { ...config, apiKey: "" };
-  state.connectionStatus = "idle";
+  state.connectionStatus = config.verificationStatus === "verified" ? "success" : "idle";
   renderHeader();
   if (!elements.settingsMask.classList.contains("hidden")) {
     renderProviderGrid();

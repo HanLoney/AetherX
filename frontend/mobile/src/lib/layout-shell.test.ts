@@ -165,7 +165,11 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain('class="ai-settings-entry"');
     expect(settingsSource).toContain('class="ai-settings-sheet"');
     expect(settingsSource).toContain("编辑 AI 接入");
-    expect(settingsSource).toContain("updateAiConfig");
+    expect(settingsSource).toContain("saveAiProviderProfile");
+    expect(settingsSource).toContain("testAiProviderProfile");
+    expect(settingsSource).toContain("activateAiProvider");
+    expect(settingsSource).toContain("当前使用：");
+    expect(settingsSource).toContain("连接已验证");
     expect(settingsSource).toContain("只有输入新值时才会替换原密钥");
     expect(dataSource).toContain('new CustomEvent("aether:ai-config-updated"');
     expect(settingsSource).toContain('window.addEventListener("aether:ai-config-updated"');

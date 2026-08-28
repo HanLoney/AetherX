@@ -955,6 +955,12 @@ function registerIpcHandlers() {
   ipcMain.handle("ai:config:save", (_event, input) =>
     api.saveAiConfig(input)
   );
+  ipcMain.handle("ai:providers:list", () => api.listAiProviders());
+  ipcMain.handle("ai:providers:save", (_event, input) => api.saveAiProvider(input));
+  ipcMain.handle("ai:providers:test", (_event, input) => api.testAiProvider(input));
+  ipcMain.handle("ai:providers:activate", (_event, providerId) =>
+    api.activateAiProvider(providerId)
+  );
   ipcMain.handle("ai:chat", (_event, payload) => api.requestAi(payload));
   ipcMain.handle("agent:chat", (_event, payload) => api.agentChat(payload));
   ipcMain.handle("agent:approve", (_event, id, approved) =>

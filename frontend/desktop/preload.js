@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("notification:show", notification),
   getAIConfig: () => ipcRenderer.invoke("ai:config:get"),
   saveAIConfig: (config) => ipcRenderer.invoke("ai:config:save", config),
+  listAIProviders: () => ipcRenderer.invoke("ai:providers:list"),
+  saveAIProvider: (config) => ipcRenderer.invoke("ai:providers:save", config),
+  testAIProvider: (config) => ipcRenderer.invoke("ai:providers:test", config),
+  activateAIProvider: (providerId) => ipcRenderer.invoke("ai:providers:activate", providerId),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),
   agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
   approveAgentRun: (id, approved) =>

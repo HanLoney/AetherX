@@ -36,7 +36,7 @@ import { useRouter } from "vue-router";
 import AppShell from "../components/AppShell.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
-import type { AiConfig } from "../lib/api";
+import type { AiConfig, AiConfigInput, AiProviderProfile } from "../lib/api";
 import { DEFAULT_FONT_SCALE, useInterfaceSettings } from "../lib/interface-settings";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
@@ -97,8 +97,10 @@ const crop = reactive({ baseScale: 1, offsetX: 0, offsetY: 0 });
 const aiState = ref<AiConfig | null>(null);
 const aiEditorOpen = ref(false);
 const aiSaving = ref(false);
+const aiTesting = ref(false);
 const aiError = ref("");
 const aiNotice = ref("");
+const aiProfiles = ref<AiProviderProfile[]>([]);
 const aiForm = reactive({ providerId: "custom", providerName: "自定义", baseUrl: "", model: "", apiKey: "" });
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
@@ -123,11 +125,19 @@ const displayName = computed(() => String(
 const cloudEdition = computed(() =>
   import.meta.env.VITE_AETHERX_EDITION === "cloud" || Boolean(session.user.value?.email)
 );
+const selectedAiProfile = computed(() =>
+  aiProfiles.value.find((item) => item.providerId === aiForm.providerId) || null
+);
 const aiKeyCanRemain = computed(() => Boolean(
-  aiState.value?.hasApiKey &&
-  aiState.value.providerId === aiForm.providerId &&
-  aiState.value.baseUrl.replace(/\/+$/, "") === aiForm.baseUrl.trim().replace(/\/+$/, "")
+  selectedAiProfile.value?.hasApiKey &&
+  selectedAiProfile.value.baseUrl.replace(/\/+$/, "") === aiForm.baseUrl.trim().replace(/\/+$/, "")
 ));
+const activeAiStatusLabel = computed(() => {
+  if (!aiState.value?.hasApiKey) return "未配置密钥";
+  if (aiState.value.verificationStatus === "verified") return "连接已验证";
+  if (aiState.value.verificationStatus === "failed") return "AI 连接异常";
+  return "尚未测试";
+});
 const preferredName = computed(() => String(data.profile.value.preferredName || ""));
 const occupation = computed(() => String(data.profile.value.occupation || ""));
 const bio = computed(() => String(data.profile.value.bio || ""));
@@ -253,15 +263,25 @@ function applyAiConfigToForm(current: AiConfig) {
 }
 
 async function refreshAiState(updateOpenEditor = false) {
-  const current = await session.requireApi().aiConfig();
+  if (!cloudEdition.value) {
+    const current = await session.requireApi().aiConfig();
+    aiState.value = current;
+    if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value && !aiTesting.value) applyAiConfigToForm(current);
+    return current;
+  }
+  const [current, profiles] = await Promise.all([
+    session.requireApi().aiConfig(),
+    session.requireApi().aiProviderProfiles()
+  ]);
   aiState.value = current;
-  if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value) applyAiConfigToForm(current);
+  aiProfiles.value = profiles.items;
+  if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value && !aiTesting.value) applyAiConfigToForm(current);
   return current;
 }
 
 function handleRemoteAiConfigUpdate() {
   void refreshAiState(true).then(() => {
-    if (aiEditorOpen.value && !aiSaving.value) {
+    if (aiEditorOpen.value && !aiSaving.value && !aiTesting.value) {
       aiError.value = "";
       aiNotice.value = "已同步另一台设备保存的最新 AI 配置。";
     }
@@ -605,56 +625,98 @@ async function openAiEditor() {
 }
 
 function selectAiProvider(provider: typeof aiProviders[number]) {
-  aiForm.providerId = provider.id;
-  aiForm.providerName = provider.name;
-  aiForm.baseUrl = provider.baseUrl;
-  aiForm.model = provider.model;
+  const saved = aiProfiles.value.find((item) => item.providerId === provider.id);
+  if (saved) applyAiConfigToForm(saved);
+  else {
+    aiForm.providerId = provider.id;
+    aiForm.providerName = provider.name;
+    aiForm.baseUrl = provider.baseUrl;
+    aiForm.model = provider.model;
+    aiForm.apiKey = "";
+  }
   aiError.value = "";
   aiNotice.value = "";
 }
 
 function closeAiEditor() {
-  if (aiSaving.value) return;
+  if (aiSaving.value || aiTesting.value) return;
   aiForm.apiKey = "";
   aiEditorOpen.value = false;
   aiError.value = "";
   aiNotice.value = "";
 }
 
-async function saveAiConfig() {
-  if (aiSaving.value) return;
+function collectAiConfigInput(): AiConfigInput | null {
   const provider = aiProviders.find((item) => item.id === aiForm.providerId);
   const providerName = (aiForm.providerId === "custom" ? aiForm.providerName : provider?.name)?.trim();
   const baseUrl = aiForm.baseUrl.trim().replace(/\/+$/, "");
   const model = aiForm.model.trim();
   if (!providerName || !baseUrl || !model) {
     aiError.value = "请把服务商、接口地址和模型名称填写完整。";
-    return;
+    return null;
   }
   if (!aiForm.apiKey.trim() && !aiKeyCanRemain.value) {
     aiError.value = "切换服务商或接口地址后，需要填写对应的 API Key。";
-    return;
+    return null;
   }
   try {
     const parsed = new URL(baseUrl);
     if (parsed.protocol !== "https:") throw new Error();
   } catch {
     aiError.value = "线上版接口地址必须是有效的 HTTPS 地址。";
-    return;
+    return null;
   }
+  return {
+    providerId: aiForm.providerId,
+    providerName,
+    baseUrl,
+    model,
+    ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {})
+  };
+}
+
+function replaceAiProfile(profile: AiProviderProfile) {
+  aiProfiles.value = [
+    profile,
+    ...aiProfiles.value.filter((item) => item.providerId !== profile.providerId)
+  ];
+}
+
+async function testAiConfig() {
+  if (aiSaving.value || aiTesting.value) return;
+  const input = collectAiConfigInput();
+  if (!input) return;
+  aiTesting.value = true;
+  aiError.value = "";
+  aiNotice.value = "正在向服务商发送连接测试……";
+  try {
+    const profile = await session.requireApi().testAiProviderProfile(input);
+    replaceAiProfile(profile);
+    aiForm.apiKey = "";
+    aiNotice.value = `${profile.providerName} 已连接并保存，可以切换使用。`;
+  } catch (reason) {
+    aiError.value = (reason as Error).message || "连接测试失败，请检查地址、模型和密钥。";
+    aiNotice.value = "";
+    await refreshAiState(false).catch(() => undefined);
+  } finally {
+    aiTesting.value = false;
+  }
+}
+
+async function saveAiConfig() {
+  if (aiSaving.value || aiTesting.value) return;
+  const input = collectAiConfigInput();
+  if (!input) return;
   aiSaving.value = true;
   aiError.value = "";
   aiNotice.value = "";
   try {
-    aiState.value = await session.requireApi().updateAiConfig({
-      providerId: aiForm.providerId,
-      providerName,
-      baseUrl,
-      model,
-      ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {})
-    });
+    const saved = await session.requireApi().saveAiProviderProfile(input);
+    replaceAiProfile(saved);
+    aiState.value = await session.requireApi().activateAiProvider(saved.providerId);
+    await refreshAiState(false);
     aiForm.apiKey = "";
-    aiNotice.value = "已保存到当前账号，手机和电脑会共用这套 AI 配置。";
+    aiNotice.value = `已切换到 ${aiState.value.providerName}，手机和电脑会共同使用。`;
   } catch (reason) {
     aiError.value = (reason as Error).message || "AI 配置暂时没有保存成功。";
   } finally {
@@ -1082,8 +1144,8 @@ async function toggleModule(id: string, enabled: boolean) {
     <section class="settings-list">
       <button v-if="cloudEdition" class="ai-settings-entry" type="button" @click="openAiEditor">
         <i><Sparkles :size="18"/></i>
-        <div><strong>AI 接入</strong><span>{{ aiState?.model || '为当前账号配置 AI 服务' }} · {{ aiState?.hasApiKey ? '已连接' : '未配置密钥' }}</span></div>
-        <b :class="{ warning: !aiState?.hasApiKey }">编辑</b>
+        <div><strong>AI 接入 · {{ aiState?.providerName || '未选择' }}</strong><span>{{ aiState?.model || '为当前账号配置 AI 服务' }} · {{ activeAiStatusLabel }}</span></div>
+        <b :class="{ warning: aiState?.verificationStatus !== 'verified' }">{{ aiState?.verificationStatus === 'verified' ? '已连接' : '管理' }}</b>
       </button>
       <article v-else>
         <i><Sparkles :size="18"/></i>
@@ -1253,12 +1315,13 @@ async function toggleModule(id: string, enabled: boolean) {
             <div class="sheet-handle" />
             <header>
               <div><span>AI PROVIDER</span><h2>编辑 AI 接入</h2></div>
-              <button type="button" aria-label="关闭 AI 设置" :disabled="aiSaving" @click="closeAiEditor"><X :size="18" /></button>
+              <button type="button" aria-label="关闭 AI 设置" :disabled="aiSaving || aiTesting" @click="closeAiEditor"><X :size="18" /></button>
             </header>
 
             <div class="ai-editor-intro">
               <i><Sparkles :size="21" /></i>
-              <div><strong>当前账号专用</strong><span>保存后，手机端和桌面端会共同使用这套模型配置。</span></div>
+              <div><strong>当前使用：{{ aiState?.providerName || '尚未选择' }}</strong><span>{{ aiState?.model || '还没有选择模型' }} · {{ activeAiStatusLabel }}</span></div>
+              <b :class="aiState?.verificationStatus || 'untested'">{{ aiState?.verificationStatus === 'verified' ? '已验证' : aiState?.verificationStatus === 'failed' ? '异常' : '未测试' }}</b>
             </div>
 
             <div class="ai-provider-grid" aria-label="选择 AI 服务商">
@@ -1267,10 +1330,17 @@ async function toggleModule(id: string, enabled: boolean) {
                 :key="provider.id"
                 type="button"
                 :class="{ active: aiForm.providerId === provider.id }"
-                :disabled="aiSaving"
+                :disabled="aiSaving || aiTesting"
                 @click="selectAiProvider(provider)"
               >
-                <i>{{ provider.shortName }}</i><span>{{ provider.name }}</span><Check v-if="aiForm.providerId === provider.id" :size="13" />
+                <i>{{ provider.shortName }}</i>
+                <span>{{ provider.name }}</span>
+                <small v-if="aiProfiles.find(item => item.providerId === provider.id)?.active" class="active">当前使用</small>
+                <small v-else-if="aiProfiles.find(item => item.providerId === provider.id)?.verificationStatus === 'verified'" class="verified">已连接</small>
+                <small v-else-if="aiProfiles.find(item => item.providerId === provider.id)?.verificationStatus === 'failed'" class="failed">连接异常</small>
+                <small v-else-if="aiProfiles.find(item => item.providerId === provider.id)?.hasApiKey">已保存</small>
+                <small v-else>未配置</small>
+                <Check v-if="aiForm.providerId === provider.id" :size="13" />
               </button>
             </div>
 
@@ -1296,9 +1366,14 @@ async function toggleModule(id: string, enabled: boolean) {
 
             <p v-if="aiNotice" class="ai-editor-notice"><Check :size="15" />{{ aiNotice }}</p>
             <p v-if="aiError" class="ai-editor-error">{{ aiError }}</p>
-            <button class="save-ai-config" type="submit" :disabled="aiSaving || !aiForm.baseUrl.trim() || !aiForm.model.trim()">
-              <Check :size="17" />{{ aiSaving ? '正在安全保存…' : '保存 AI 配置' }}
-            </button>
+            <div class="ai-editor-actions">
+              <button class="test-ai-config" type="button" :disabled="aiSaving || aiTesting || !aiForm.baseUrl.trim() || !aiForm.model.trim()" @click="testAiConfig">
+                <RefreshCw :size="17" :class="{ spin: aiTesting }" />{{ aiTesting ? '正在测试…' : '测试并保存' }}
+              </button>
+              <button class="save-ai-config" type="submit" :disabled="aiSaving || aiTesting || !aiForm.baseUrl.trim() || !aiForm.model.trim()">
+                <Check :size="17" />{{ aiSaving ? '正在切换…' : selectedAiProfile?.active ? '保存当前配置' : '保存并切换使用' }}
+              </button>
+            </div>
           </form>
         </div>
       </Transition>
@@ -1458,8 +1533,8 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-settings-entry:active{background:rgba(var(--pink-rgb),.045)!important}
 .ai-settings-sheet{width:100%;max-height:92dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));border-radius:29px 29px 0 0;background:radial-gradient(circle at 94% 4%,rgba(var(--blue-rgb),.16),transparent 32%),radial-gradient(circle at 2% 88%,rgba(var(--pink-rgb),.13),transparent 36%),rgba(251,250,253,.985);box-shadow:0 -22px 70px rgba(67,62,91,.22)}
 .ai-settings-sheet header{display:flex;align-items:center;justify-content:space-between}.ai-settings-sheet header span{color:#a07a9e;font-size:calc(7px * var(--font-scale,1));font-weight:800;letter-spacing:.16em}.ai-settings-sheet h2{margin:3px 0 0;color:#4d4859;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.ai-settings-sheet header button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}
-.ai-editor-intro{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(255,255,255,.82);border-radius:20px 20px 20px 8px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.095),rgba(var(--blue-rgb),.11));box-shadow:0 12px 32px rgba(75,70,103,.07)}.ai-editor-intro>i{width:43px;height:43px;display:grid;place-items:center;border-radius:15px;color:#9179a2;background:rgba(255,255,255,.66)}.ai-editor-intro>div{display:grid;gap:4px}.ai-editor-intro strong{color:#5c5565;font-size:calc(10px * var(--font-scale,1))}.ai-editor-intro span{color:#958e9d;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
-.ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;height:62px;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:7px;padding:0 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{width:29px;height:29px;display:grid;place-items:center;border-radius:10px;color:#8d7595;background:linear-gradient(140deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.15));font-size:calc(7px * var(--font-scale,1));font-style:normal;font-weight:900}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
+.ai-editor-intro{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(255,255,255,.82);border-radius:20px 20px 20px 8px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.095),rgba(var(--blue-rgb),.11));box-shadow:0 12px 32px rgba(75,70,103,.07)}.ai-editor-intro>i{width:43px;height:43px;display:grid;place-items:center;border-radius:15px;color:#9179a2;background:rgba(255,255,255,.66)}.ai-editor-intro>div{display:grid;gap:4px}.ai-editor-intro strong{color:#5c5565;font-size:calc(10px * var(--font-scale,1))}.ai-editor-intro span{color:#958e9d;font-size:calc(7px * var(--font-scale,1));line-height:1.5}.ai-editor-intro>b{padding:5px 8px;border-radius:999px;color:#8b7f91;background:rgba(116,108,137,.08);font-size:calc(7px * var(--font-scale,1));white-space:nowrap}.ai-editor-intro>b.verified{color:#5d8b76;background:rgba(89,173,133,.12)}.ai-editor-intro>b.failed{color:#aa6175;background:rgba(202,103,132,.11)}
+.ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:29px;height:29px;display:grid;place-items:center;border-radius:10px;color:#8d7595;background:linear-gradient(140deg,rgba(var(--pink-rgb),.14),rgba(var(--blue-rgb),.15));font-size:calc(7px * var(--font-scale,1));font-style:normal;font-weight:900}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
 .ai-editor-fields{display:grid;gap:11px;margin-top:15px}.ai-editor-fields label{display:grid;gap:6px}.ai-editor-fields label>span{color:#70697d;font-size:calc(9px * var(--font-scale,1));font-weight:700}.ai-editor-fields input{width:100%;height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale,1))}.ai-editor-fields input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.ai-editor-fields input:disabled{opacity:.6}.ai-editor-fields small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
-.ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.save-ai-config{width:100%;height:47px;display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;border:0;border-radius:15px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(10px * var(--font-scale,1));font-weight:800}.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
+.ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
 </style>

@@ -237,7 +237,16 @@ export interface AiConfig {
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
+  verificationStatus?: "verified" | "failed" | "untested";
+  verifiedAt?: number | null;
+  verificationMessage?: string;
   updatedAt?: number | null;
+}
+
+export interface AiProviderProfile extends AiConfig {
+  id: string;
+  active: boolean;
+  updatedAt: number;
 }
 
 export interface AiConfigInput {
@@ -563,6 +572,30 @@ export class AetherApi {
   aiConfig() { return this.request<AiConfig>("GET", "/api/v1/ai/config"); }
   updateAiConfig(input: AiConfigInput) {
     return this.request<AiConfig>("PUT", "/api/v1/ai/config", input);
+  }
+  aiProviderProfiles() {
+    return this.request<{ activeProviderId: string; items: AiProviderProfile[] }>("GET", "/api/v1/ai/providers");
+  }
+  saveAiProviderProfile(input: AiConfigInput) {
+    return this.request<AiProviderProfile>(
+      "PUT",
+      `/api/v1/ai/providers/${encodeURIComponent(input.providerId)}`,
+      input
+    );
+  }
+  testAiProviderProfile(input: AiConfigInput) {
+    return this.request<AiProviderProfile>(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(input.providerId)}/test`,
+      input
+    );
+  }
+  activateAiProvider(providerId: string) {
+    return this.request<AiConfig>(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(providerId)}/activate`,
+      {}
+    );
   }
   agentChat(input: { conversationId?: string; content: string; responseMode?: "full" | "delta"; runtime?: Record<string, unknown> }) {
     return this.request<AgentChatResult>("POST", "/api/v1/agent/chat", input);
