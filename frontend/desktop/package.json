@@ -47,6 +47,7 @@
       "desktop-control.js",
       "hub-runtime.js",
       "sync-runtime.js",
+      "analytics-installation.js",
       "api-client.js",
       "auth-store.js",
       "preload.js",

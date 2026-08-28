@@ -34,6 +34,8 @@ const {
   verifyMobileHubEndpoint
 } = require("./mobile-hub-lan-discovery");
 const { inspectWindowsNetworkProfiles } = require("./windows-network-profile");
+const { loadAnalyticsInstallationId } = require("./analytics-installation");
+const { randomUUID } = require("node:crypto");
 const packageMetadata = require("./package.json");
 const {
   CLOUD_PRODUCT,
@@ -60,6 +62,10 @@ const defaultServerUrl = resolveDesktopServerUrl({
   env: process.env,
   localServerUrl: localHubServerUrl
 });
+const analyticsInstallationId = loadAnalyticsInstallationId(
+  path.join(app.getPath("userData"), "analytics-installation-id")
+);
+const analyticsClientSessionId = `desktop-session-${randomUUID()}`;
 let authStore;
 let mainWindow;
 let currentUser = null;
@@ -77,6 +83,8 @@ let authenticationIdentityMode = isCloudEdition ? "email" : "username";
 let latestClusterStatus = null;
 let clusterRecoveryPromise = null;
 let tailscaleManager = null;
+let desktopSyncConnected = false;
+let desktopSyncTelemetryState = "";
 const mobileHubLanDiscovery = new MobileHubLanDiscovery();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -118,6 +126,16 @@ function currentHubEndpoints() {
 const desktopSync = new DesktopSyncCoordinator({
   api,
   realtime: true,
+  onStatus: (status) => {
+    desktopSyncConnected = status.connected === true;
+    const next = desktopSyncConnected ? "connected" : "disconnected";
+    if (desktopSyncTelemetryState === next || !currentUser?.email || !api.token) return;
+    desktopSyncTelemetryState = next;
+    void recordDesktopAnalyticsEvent(desktopSyncConnected ? "sync_connected" : "sync_disconnected", {
+      syncStatus: next,
+      syncCursor: status.cursor
+    });
+  },
   onChanges: async (changes) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.webContents.send("sync:received", changes);
@@ -141,6 +159,17 @@ function startAuthenticatedControl() {
     token: authenticationToken,
     clientId: `desktop:${currentUser.id || currentUser.username}`
   });
+}
+
+function recordDesktopAnalyticsEvent(eventName, properties = {}) {
+  return api.analyticsEvents([{
+    id: randomUUID(),
+    installationId: analyticsInstallationId,
+    clientSessionId: analyticsClientSessionId,
+    eventName,
+    properties,
+    occurredAt: Date.now()
+  }]).catch(() => undefined);
 }
 
 async function startAuthenticatedSync() {
@@ -867,6 +896,24 @@ function registerIpcHandlers() {
     }
     return true;
   });
+  ipcMain.handle("analytics:presence", (_event, input = {}) =>
+    api.analyticsPresence({
+      ...input,
+      installationId: analyticsInstallationId,
+      clientType: "desktop",
+      platform: process.platform,
+      appVersion: packageMetadata.version,
+      syncConnected: desktopSyncConnected
+    })
+  );
+  ipcMain.handle("analytics:events", (_event, events = []) =>
+    api.analyticsEvents((Array.isArray(events) ? events : [events]).map((event) => ({
+      ...event,
+      id: event?.id || randomUUID(),
+      installationId: analyticsInstallationId,
+      clientSessionId: analyticsClientSessionId
+    })))
+  );
   ipcMain.handle("devices:pairing:create", (_event, input) =>
     api.createPairingSession(input)
   );

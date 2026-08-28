@@ -293,6 +293,14 @@ class XuanApiClient {
     return this.request("POST", "/api/v1/auth/logout");
   }
 
+  analyticsPresence(input) {
+    return this.request("POST", "/api/v1/analytics/presence", input);
+  }
+
+  analyticsEvents(events) {
+    return this.request("POST", "/api/v1/analytics/events", { events });
+  }
+
   createPairingSession(input = {}) {
     return this.request("POST", "/api/v1/pairing/sessions", input);
   }

@@ -241,3 +241,16 @@ test("routing to another Hub refreshes profile avatars without stale responses w
     /refreshRoutedHubData[\s\S]*refreshCoreHubData\(\{ fromRouting: true \}\)/
   );
 });
+
+test("cloud desktop reports privacy-safe presence and chat lifecycle events", () => {
+  assert.match(preload, /analyticsPresence/);
+  assert.match(preload, /analyticsEvents/);
+  assert.match(main, /analytics-installation/);
+  assert.match(main, /clientType:\s*"desktop"/);
+  assert.match(javascript, /function sendAnalyticsPresence/);
+  assert.match(javascript, /"message_send"/);
+  assert.match(javascript, /"reply_completed"/);
+  assert.match(javascript, /"reply_failed"/);
+  const packageMetadata = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  assert.ok(packageMetadata.build.files.includes("analytics-installation.js"));
+});

@@ -41,6 +41,71 @@ let dreamWriter = null;
 let xuanMood = null;
 let moodHeartbeat = null;
 let moduleRuntimeSync = Promise.resolve();
+let analyticsCurrentModule = "chat";
+let analyticsLastInteractionAt = Date.now();
+let analyticsTimer = null;
+
+function analyticsEnabled() {
+  return Boolean(state.auth?.cloudEdition && typeof window.desktop?.analyticsPresence === "function");
+}
+
+function markAnalyticsInteraction() {
+  analyticsLastInteractionAt = Date.now();
+}
+
+function setAnalyticsModule(moduleId) {
+  analyticsCurrentModule = String(moduleId || "chat").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 48) || "chat";
+  markAnalyticsInteraction();
+  void recordAnalyticsEvent("module_view", { module: analyticsCurrentModule });
+  void sendAnalyticsPresence();
+}
+
+function sendAnalyticsPresence() {
+  if (!analyticsEnabled()) return Promise.resolve();
+  return window.desktop.analyticsPresence({
+    currentModule: analyticsCurrentModule,
+    foreground: document.visibilityState !== "hidden",
+    lastInteractionAt: analyticsLastInteractionAt,
+    syncStatus: state.connectionStatus === "error" ? "error" : "online"
+  }).catch(() => undefined);
+}
+
+function recordAnalyticsEvent(eventName, properties = {}, traceId = "") {
+  if (!analyticsEnabled() || typeof window.desktop?.analyticsEvents !== "function") return Promise.resolve();
+  return window.desktop.analyticsEvents([{
+    eventName,
+    traceId,
+    properties,
+    occurredAt: Date.now()
+  }]).catch(() => undefined);
+}
+
+function startAnalytics() {
+  if (!analyticsEnabled() || analyticsTimer !== null) return;
+  document.addEventListener("pointerdown", markAnalyticsInteraction, { passive: true });
+  document.addEventListener("keydown", markAnalyticsInteraction, { passive: true });
+  document.addEventListener("visibilitychange", handleAnalyticsVisibility);
+  window.addEventListener("error", handleAnalyticsError);
+  window.addEventListener("unhandledrejection", handleAnalyticsRejection);
+  void recordAnalyticsEvent("app_open", { module: analyticsCurrentModule });
+  void sendAnalyticsPresence();
+  analyticsTimer = window.setInterval(() => void sendAnalyticsPresence(), 30000);
+}
+
+function handleAnalyticsVisibility() {
+  const eventName = document.visibilityState === "hidden" ? "app_background" : "app_foreground";
+  if (eventName === "app_foreground") markAnalyticsInteraction();
+  void recordAnalyticsEvent(eventName, { module: analyticsCurrentModule });
+  void sendAnalyticsPresence();
+}
+
+function handleAnalyticsError(event) {
+  void recordAnalyticsEvent("client_error", { module: analyticsCurrentModule, errorCode: event.error?.name || "window_error" });
+}
+
+function handleAnalyticsRejection(event) {
+  void recordAnalyticsEvent("client_error", { module: analyticsCurrentModule, errorCode: event.reason?.name || "unhandled_rejection" });
+}
 
 async function traceModuleActivity(sourceModuleId, targetModuleId, operation, callback) {
   if (typeof window.desktop?.recordModuleActivity !== "function") return callback();
@@ -299,6 +364,7 @@ function resetViewAnimationClasses() {
 }
 
 async function showChatWorkspace() {
+  setAnalyticsModule("chat");
   if (!chatWorkspace.classList.contains("hidden")) {
     setActiveNavigation(aiNavBtn);
     return;
@@ -351,6 +417,7 @@ async function loadModuleFrame(moduleId, source, activeButton, transitionId) {
 }
 
 async function showModuleWorkspace(moduleId, source, activeButton) {
+  setAnalyticsModule(moduleId);
   if (
     activeModuleId === moduleId &&
     !moduleViewHost.classList.contains("hidden")
@@ -1953,6 +2020,7 @@ async function loadConversation(id, options = {}) {
     cachedMessages = persisted?.messages || null;
     if (cachedMessages) conversationCache.set(id, cachedMessages);
   }
+  void recordAnalyticsEvent(cachedMessages ? "cache_hit" : "cache_miss", { module: "chat", cacheHit: Boolean(cachedMessages) });
   state.conversationId = id;
   state.conversationLoading = true;
   state.conversationError = "";
@@ -2445,6 +2513,9 @@ async function sendMessage() {
   elements.sendBtn.disabled = true;
   state.sending = true;
   const optimisticMessage = createMessage("user", content);
+  const traceId = `chat-${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+  const startedAt = performance.now();
+  void recordAnalyticsEvent("message_send", { module: "chat" }, traceId);
   state.messages.push(optimisticMessage);
   renderMessages();
 
@@ -2471,6 +2542,7 @@ async function sendMessage() {
       moduleFrame.contentWindow?.postMessage({ type: "xuan:refresh-memory" }, "*");
     }
     await refreshConversationHistory();
+    void recordAnalyticsEvent("reply_completed", { module: "chat", durationMs: performance.now() - startedAt }, traceId);
   } catch (error) {
     state.pendingApprovals.clear();
     state.messages.push(
@@ -2481,6 +2553,7 @@ async function sendMessage() {
       )
     );
     state.connectionStatus = "error";
+    void recordAnalyticsEvent("reply_failed", { module: "chat", durationMs: performance.now() - startedAt, errorCode: error?.name || "unknown" }, traceId);
   } finally {
     state.sending = false;
     renderHeader();
@@ -2784,6 +2857,7 @@ async function initialize() {
   }
   state.imageDraft = { ...(state.imageConfig || {}), apiKey: "" };
   await syncModuleState();
+  startAnalytics();
 }
 
 function renderAccount() {
@@ -2962,6 +3036,13 @@ window.addEventListener("beforeunload", () => {
   stopHubRecoveryPolling();
   clearTimeout(remoteSyncTimer);
   window.clearInterval(hubStatusTimer);
+  if (analyticsTimer !== null) window.clearInterval(analyticsTimer);
+  analyticsTimer = null;
+  document.removeEventListener("pointerdown", markAnalyticsInteraction);
+  document.removeEventListener("keydown", markAnalyticsInteraction);
+  document.removeEventListener("visibilitychange", handleAnalyticsVisibility);
+  window.removeEventListener("error", handleAnalyticsError);
+  window.removeEventListener("unhandledrejection", handleAnalyticsRejection);
   titlebarClock.stop();
   reminderEngine?.stop();
   journalWriter?.stop();

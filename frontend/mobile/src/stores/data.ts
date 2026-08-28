@@ -18,6 +18,7 @@ import { useLocalHub, type LocalHubStatus } from "../lib/local-hub";
 import { loadInstallationId, saveSyncCursor } from "../lib/storage";
 import { useSessionStore } from "./session";
 import { useModuleStore } from "./modules";
+import { recordClientEvent } from "../lib/client-activity";
 
 const todos = ref<Todo[]>([]);
 const memories = ref<Memory[]>([]);
@@ -57,6 +58,7 @@ let activeCacheScope = "";
 let archiveResetPromise: Promise<void> | null = null;
 let lastArchiveResetCursor = 0;
 let localHubSyncError = "";
+let reportedSyncState = "";
 let localHubOperation = {
   stage: "idle",
   progress: 0,
@@ -401,6 +403,7 @@ async function startSync() {
     syncCursor = status.cursor;
     sseConnected = status.connected;
     if (status.state === "online") syncState.value = "online";
+    reportSyncTelemetry(api, status.connected, status.state);
     void reportMobileHealth();
   }, installationId, (command) => handleHubCommand(command));
   sync = coordinator;
@@ -433,6 +436,14 @@ async function startSync() {
   } catch {
     if (generation === syncGeneration && sync === coordinator) syncState.value = "error";
   }
+}
+
+function reportSyncTelemetry(api: AetherApi, connected: boolean, state: string) {
+  const next = connected ? "connected" : state === "retrying" ? "failed" : "disconnected";
+  if (reportedSyncState === next) return;
+  reportedSyncState = next;
+  const eventName = next === "connected" ? "sync_connected" : next === "failed" ? "sync_failed" : "sync_disconnected";
+  void recordClientEvent(api, eventName, { syncStatus: state, syncCursor }).catch(() => undefined);
 }
 
 async function startControlSync(

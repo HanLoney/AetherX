@@ -140,6 +140,8 @@ export interface DeviceHeartbeatInput {
   syncCursor: number;
   sseConnected: boolean;
   foreground: boolean;
+  currentModule?: string;
+  lastInteractionAt?: number;
   latencyMs: number | null;
   lastError?: string;
   localHubNodeId?: string;
@@ -484,6 +486,12 @@ export class AetherApi {
   session(signal?: AbortSignal) { return this.request<{ user: AuthUser }>("GET", "/api/v1/auth/session", undefined, signal); }
   clusterStatus(signal?: AbortSignal) { return this.request<ClusterStatus>("GET", "/api/v1/cluster/status", undefined, signal); }
   logout() { return this.request<null>("POST", "/api/v1/auth/logout"); }
+  analyticsPresence(input: DeviceHeartbeatInput) {
+    return this.request<{ accepted: boolean; serverTime: number }>("POST", "/api/v1/analytics/presence", input);
+  }
+  analyticsEvents(events: Array<Record<string, unknown>>) {
+    return this.request<{ accepted: number; serverTime: number }>("POST", "/api/v1/analytics/events", { events });
+  }
   claimPairingSession(id: string, input: { secret: string; deviceName: string; publicKey?: string }) {
     return this.request<{ status: "pending" }>("POST", `/api/v1/pairing/sessions/${encodeURIComponent(id)}/claim`, input);
   }

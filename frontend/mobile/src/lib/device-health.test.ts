@@ -54,7 +54,7 @@ describe("MobileHealthReporter", () => {
     });
     const reporter = new MobileHealthReporter(
       {
-        deviceHeartbeat: vi.fn(async (input: Record<string, unknown>) => {
+        analyticsPresence: vi.fn(async (input: Record<string, unknown>) => {
           heartbeats.push(input);
         })
       } as never,
@@ -85,16 +85,16 @@ describe("MobileHealthReporter", () => {
   });
 
   it("keeps reporting liveness when the native Hub snapshot stalls", async () => {
-    const deviceHeartbeat = vi.fn(async () => undefined);
+    const analyticsPresence = vi.fn(async () => undefined);
     const reporter = new MobileHealthReporter(
-      { deviceHeartbeat } as never,
+      { analyticsPresence } as never,
       () => new Promise(() => undefined)
     );
 
     reporter.start();
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(deviceHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+    expect(analyticsPresence).toHaveBeenCalledWith(expect.objectContaining({
       syncStatus: "idle",
       syncCursor: 0,
       sseConnected: false

@@ -24,6 +24,7 @@ import type { ChatMessage, Conversation } from "../lib/api";
 import { useDataStore } from "../stores/data";
 import { useSessionStore } from "../stores/session";
 import "emoji-picker-element";
+import { recordClientEvent } from "../lib/client-activity";
 
 const data = useDataStore();
 const session = useSessionStore();
@@ -328,6 +329,7 @@ async function openConversation(conversation: Conversation) {
   const generation = ++conversationLoadGeneration;
   const scope = conversationCacheScope();
   let cached = peekConversationCache(scope, conversation.id);
+  void recordClientEvent(session.requireApi(), cached ? "cache_hit" : "cache_miss", { module: "chat", cacheHit: Boolean(cached) }).catch(() => undefined);
   if (cached) {
     current.value = cached.conversation || conversation;
     replaceDisplayMessages(normalizeStoredDisplayMessages(cached.messages));
@@ -404,6 +406,9 @@ async function send() {
   error.value = "";
   draft.value = "";
   const optimistic: ChatMessage = { id: crypto.randomUUID(), role: "user", content, createdAt: Date.now() };
+  const traceId = `chat-${crypto.randomUUID()}`;
+  const startedAt = performance.now();
+  void recordClientEvent(session.requireApi(), "message_send", { module: "chat" }, traceId).catch(() => undefined);
   displayMessages.value.push(optimistic);
   renderEnd.value = displayMessages.value.length;
   await scrollToBottom();
@@ -423,12 +428,14 @@ async function send() {
     sending.value = false;
     void data.refreshConversationPage(true).catch(() => undefined);
     await scrollToBottom();
+    void recordClientEvent(session.requireApi(), "reply_completed", { module: "chat", durationMs: performance.now() - startedAt }, traceId).catch(() => undefined);
   } catch (cause) {
     resolveAllApprovals(false);
     displayMessages.value = displayMessages.value.filter((message) => message !== optimistic);
     showLatestMessageWindow();
     draft.value = content;
     error.value = cause instanceof Error ? cause.message : "消息没有发出去。";
+    void recordClientEvent(session.requireApi(), "reply_failed", { module: "chat", durationMs: performance.now() - startedAt, errorCode: cause instanceof Error ? cause.name : "unknown" }, traceId).catch(() => undefined);
   } finally {
     sending.value = false;
     if (conversationRefreshPending && current.value) {

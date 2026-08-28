@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("hub:cluster-changed", listener);
   },
   logout: () => ipcRenderer.invoke("auth:logout"),
+  analyticsPresence: (input) => ipcRenderer.invoke("analytics:presence", input),
+  analyticsEvents: (events) => ipcRenderer.invoke("analytics:events", events),
   createPairingSession: (input) =>
     ipcRenderer.invoke("devices:pairing:create", input),
   getPairingSession: (id) =>

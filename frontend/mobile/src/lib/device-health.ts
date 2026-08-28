@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { Device } from "@capacitor/device";
 import type { AetherApi, DeviceHeartbeatInput } from "./api";
 import { loadInstallationId } from "./storage";
+import { clientActivitySnapshot } from "./client-activity";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const SNAPSHOT_TIMEOUT_MS = 5_000;
@@ -74,9 +75,10 @@ export class MobileHealthReporter {
     const identity = await this.getIdentity();
     const state = await this.readSnapshot();
     const startedAt = performance.now();
-    await this.api.deviceHeartbeat({
+    await this.api.analyticsPresence({
       ...identity,
       ...state,
+      ...clientActivitySnapshot(),
       protocolVersion: 1,
       foreground: document.visibilityState !== "hidden",
       latencyMs: this.latencyMs
