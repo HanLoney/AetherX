@@ -244,13 +244,40 @@ async function openBatteryOptimizationSettings() {
   }
 }
 
+function applyAiConfigToForm(current: AiConfig) {
+  aiForm.providerId = current.providerId || "custom";
+  aiForm.providerName = current.providerName || "自定义";
+  aiForm.baseUrl = current.baseUrl || "";
+  aiForm.model = current.model || "";
+  aiForm.apiKey = "";
+}
+
+async function refreshAiState(updateOpenEditor = false) {
+  const current = await session.requireApi().aiConfig();
+  aiState.value = current;
+  if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value) applyAiConfigToForm(current);
+  return current;
+}
+
+function handleRemoteAiConfigUpdate() {
+  void refreshAiState(true).then(() => {
+    if (aiEditorOpen.value && !aiSaving.value) {
+      aiError.value = "";
+      aiNotice.value = "已同步另一台设备保存的最新 AI 配置。";
+    }
+  }).catch(() => undefined);
+}
+
 onMounted(() => {
+  window.addEventListener("aether:ai-config-updated", handleRemoteAiConfigUpdate);
+  void refreshAiState().catch(() => undefined);
   if (cloudEdition.value) return;
   void pollHubStatus();
   hubStatusTimer = window.setInterval(() => { void pollHubStatus(); }, 1_200);
 });
 
 onUnmounted(() => {
+  window.removeEventListener("aether:ai-config-updated", handleRemoteAiConfigUpdate);
   if (hubStatusTimer !== null) window.clearInterval(hubStatusTimer);
   hubStatusTimer = null;
 });
@@ -556,7 +583,7 @@ async function refresh() {
   try {
     await Promise.all([
       data.refreshAll(),
-      session.requireApi().aiConfig().then((value) => { aiState.value = value; })
+      refreshAiState()
     ]);
   } finally {
     refreshing.value = false;
@@ -568,13 +595,8 @@ async function openAiEditor() {
   aiError.value = "";
   aiNotice.value = "";
   try {
-    const current = aiState.value || await session.requireApi().aiConfig();
-    aiState.value = current;
-    aiForm.providerId = current.providerId || "custom";
-    aiForm.providerName = current.providerName || "自定义";
-    aiForm.baseUrl = current.baseUrl || "";
-    aiForm.model = current.model || "";
-    aiForm.apiKey = "";
+    const current = await refreshAiState();
+    applyAiConfigToForm(current);
     aiEditorOpen.value = true;
   } catch (reason) {
     aiError.value = (reason as Error).message || "AI 配置暂时没有读取成功。";
@@ -933,7 +955,6 @@ async function toggleModule(id: string, enabled: boolean) {
   }
 }
 
-void session.requireApi().aiConfig().then((value) => { aiState.value = value; }).catch(() => undefined);
 </script>
 
 <template>

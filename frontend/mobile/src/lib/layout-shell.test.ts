@@ -167,6 +167,10 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("编辑 AI 接入");
     expect(settingsSource).toContain("updateAiConfig");
     expect(settingsSource).toContain("只有输入新值时才会替换原密钥");
+    expect(dataSource).toContain('new CustomEvent("aether:ai-config-updated"');
+    expect(settingsSource).toContain('window.addEventListener("aether:ai-config-updated"');
+    expect(settingsSource).toContain("await refreshAiState()");
+    expect(settingsSource).toContain("已同步另一台设备保存的最新 AI 配置");
     expect(settingsSource).toContain("导入存档");
     expect(settingsSource).not.toContain("合并导入");
     expect(settingsSource).toContain("api.createArchiveExport");

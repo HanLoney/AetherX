@@ -130,6 +130,14 @@ test("desktop header shows the current active Hub separately from AI connectivit
   assert.match(css, /\.hub-pill\s*\{/);
 });
 
+test("desktop refreshes account AI configuration after a remote device changes it", () => {
+  assert.match(javascript, /entityTypes\.has\("ai_configs"\)/);
+  assert.match(javascript, /jobs\.push\(refreshRemoteAiConfig\(\)\)/);
+  assert.match(javascript, /async function refreshRemoteAiConfig\(\)/);
+  assert.match(javascript, /state\.config = config/);
+  assert.match(javascript, /已同步另一台设备保存的最新 AI 配置/);
+});
+
 test("desktop integrates the Hub connection matrix instead of relying on the launcher", () => {
   assert.match(html, /id="connectionCenterMask"/);
   assert.match(html, /id="computerHubNode"[\s\S]*id="hubPeerBridge"[\s\S]*id="mobileHubNode"/);

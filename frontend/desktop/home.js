@@ -2849,6 +2849,9 @@ async function flushRemoteRefresh() {
   if (["prompt_settings", "prompt_setting_versions"].some((type) => entityTypes.has(type))) {
     jobs.push(refreshSystemPrompt());
   }
+  if (entityTypes.has("ai_configs")) {
+    jobs.push(refreshRemoteAiConfig());
+  }
   if (entityTypes.has("module_settings")) {
     jobs.push(
       window.XuanModules.hydrate(window.desktop).then(() => syncModuleState())
@@ -2867,6 +2870,19 @@ async function flushRemoteRefresh() {
   }
 
   await Promise.allSettled(jobs);
+}
+
+async function refreshRemoteAiConfig() {
+  const config = await window.desktop.getAIConfig();
+  state.config = config;
+  state.draft = { ...config, apiKey: "" };
+  state.connectionStatus = "idle";
+  renderHeader();
+  if (!elements.settingsMask.classList.contains("hidden")) {
+    renderProviderGrid();
+    syncDraftInputs();
+    showTestResult("success", "已同步另一台设备保存的最新 AI 配置");
+  }
 }
 
 const disposeRemoteSync = window.desktop.onSyncChanges(queueRemoteRefresh);

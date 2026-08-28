@@ -387,6 +387,9 @@ async function startSync() {
       await resetAfterArchiveRestore(archiveReset.seq);
       return;
     }
+    if (changes.some((change) => ["ai_configs", "ai_image_configs"].includes(change.entityType))) {
+      window.dispatchEvent(new CustomEvent("aether:ai-config-updated", { detail: { changes } }));
+    }
     if (changes.some((change) => change.entityType === "module_settings")) {
       await useModuleStore().hydrate(true);
       await refreshAll();
