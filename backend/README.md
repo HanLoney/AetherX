@@ -1,0 +1,137 @@
+# AetherX Backend
+
+AetherX Hub 的 Node.js 服务端。它是账号、业务数据、AI Provider 凭证、多端同步状态和 Agent 对话运行的唯一权威来源，提供 `/api/v1` REST API 与 SSE 变化通知。
+
+## 环境要求
+
+- Node.js 22.13+
+- npm 10+
+
+后端使用 Node.js 内置的 `node:sqlite`，不需要单独安装数据库服务。
+
+## 本地运行
+
+```powershell
+cd backend
+npm install
+npm run dev
+```
+
+生产方式启动：
+
+```powershell
+npm start
+```
+
+默认监听 `http://127.0.0.1:4318`，健康检查：
+
+```powershell
+curl.exe http://127.0.0.1:4318/health
+```
+
+开发数据库默认位于 `backend/.data/xuanai.db`。
+
+在本地执行 `npm start` 或 `npm run dev` 时，启动脚本会检测已授权的 Android 设备，并自动执行与 `AETHERX_PORT` 一致的 `adb reverse`。未安装 Android SDK、没有连接手机或设备尚未授权都不会阻止后端启动。可设置 `AETHERX_ADB_REVERSE=0` 关闭该行为，也可使用 `ADB_PATH` 指定 adb 路径。systemd 等直接运行 `node src/server.js` 的生产部署不会执行此开发辅助逻辑。
+
+## 配置
+
+复制示例文件并按运行环境加载其中变量：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+后端不会自动读取 `.env` 文件；开发时需要由 Shell、进程管理器或 IDE 注入，生产环境建议使用 systemd `EnvironmentFile` 或秘密管理服务。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AETHERX_HOST` | `127.0.0.1` | 监听地址 |
+| `AETHERX_PORT` | `4318` | 监听端口 |
+| `AETHERX_DATA_DIR` | 当前工作目录下 `.data` | SQLite 与本地加密材料目录 |
+| `AETHERX_MASTER_KEY` | 本地模式自动生成 | AI 凭证加密主密钥；生产环境必须固定设置 |
+| `AETHERX_REGISTRATION_MODE` | `open` | 注册策略：`open`、`invite` 或 `closed` |
+| `AETHERX_REGISTRATION_SECRET` | 空 | 新账号注册口令 |
+| `AETHERX_SESSION_TTL_DAYS` | `30` | 登录会话有效天数，最小为 1 |
+| `AETHERX_CORS_ORIGIN` | `*` | 允许的浏览器 Origin |
+| `AETHERX_REPLICATION_SCHEDULER_ENABLED` | `true` | 是否启动备用 Hub 常驻增量复制循环 |
+| `AETHERX_REPLICATION_POLL_INTERVAL_MS` | `5000` | 健康状态下的 Operation 拉取间隔，最小 250 ms |
+| `AETHERX_REPLICATION_MAX_BACKOFF_MS` | `300000` | 连接失败后的最大指数退避时间 |
+
+旧版 `XUANAI_HOST`、`XUANAI_PORT`、`XUANAI_DATA_DIR`、`XUANAI_MASTER_KEY` 和 `XUANAI_CORS_ORIGIN` 仍兼容，但新部署应使用 `AETHERX_*`。
+
+> [!WARNING]
+> 更换 `AETHERX_MASTER_KEY` 后，数据库中已经保存的 AI API Key 将无法解密。数据库迁移或恢复时必须同时恢复原主密钥。
+
+## 账号与旧数据迁移
+
+- 默认使用 `open`，允许用户直接创建彼此隔离的新账号；
+- `invite` 模式要求配置并填写 `AETHERX_REGISTRATION_SECRET`；
+- `closed` 模式会在首个账号创建完成后关闭新账号注册；
+- 空数据库始终允许创建第一个账号，便于完成服务器初始化；
+- 第一个账号会在同一事务中认领旧版 `local-user` 数据；
+- 任一表迁移失败时，账号创建和数据认领一起回滚；
+- 账号名长度为 2～32，只允许文字、数字、点、横线和下划线；
+- 密码长度为 10～128。
+
+除健康检查、注册、登录和配对流程中的明确公开端点外，API 默认要求：
+
+```http
+Authorization: Bearer <token>
+```
+
+业务身份只从服务端认证上下文取得，不接受客户端指定用户 ID。
+
+## AI 凭证
+
+AI Provider 和图像 Provider 的 API Key 由 Hub 使用本机主密钥加密保存。客户端读取配置时不会获得明文 Key。双 Hub 复制配置时，Key 只会进入由 Space Key 保护的 AES-256-GCM 复制信封；目标 Hub 解封后会使用自己的本机主密钥重新加密，复制日志不会保存明文或源 Hub 的本机密文。手机端作为普通客户端时只调用 Hub 的 AI API，不保存 Provider Key。
+
+生产环境应：
+
+- 设置稳定、高熵的 `AETHERX_MASTER_KEY`；
+- 限制环境文件和数据目录权限；
+- 只通过 HTTPS 反向代理或可信私人网络访问；
+- 不把 4318 直接暴露到公网。
+
+## Agent Hub
+
+桌面端和 Android 客户端都通过 `/api/v1/agent/chat` 对话。Hub 统一负责记忆
+召回、人格与时间上下文、模型工具循环、写操作授权、DSML 兼容、会话保存和后续
+记忆提取。客户端只发送消息并展示 Hub 返回的消息流，不保存第二套 Agent 逻辑。
+
+写入与删除工具会暂停，并由 `/api/v1/agent/runs/{id}/approve` 继续。待确认运行
+保存在内存中且会过期；后端重启后需要重新发送原消息。同一用户的同一会话实行
+单写保护，避免桌面与手机同时发送造成历史覆盖。
+
+## 配对与同步
+
+Hub 支持：
+
+- 短时一次性配对会话；
+- 桌面端人工批准；
+- 独立、可撤销的设备令牌；
+- `sync_changes.seq` 增量游标；
+- SSE 在线变化通知；
+- 断线后的增量补拉。
+
+双 Hub 模式另外使用彼此独立的节点身份与 Peer HMAC，不复用普通手机客户端令牌。完成首次 Bootstrap 后，备用 Hub 会常驻拉取连续 Operation，并按内容 SHA-256 断点续传缺失原图；媒体只有通过整文件校验后才会进入正式目录。当前已复制待办、用户资料、偏好、钱包账户与流水、会话展示流和模型上下文流、长期记忆、记忆证据、记忆配置、AI 人格画像、人格成长事件、共同记忆、手记、心情事件、生命状态与展示内容、纪念册和梦境及其来源关系、提示词与版本、模块开关、全局工具授权，以及普通/图像 Provider 配置。`POST /api/v1/cluster/switch/preflight` 可以只读检查双方数据库、凭证、Operation、结构化数据和原图；`switch/prepare` 会锁住双方业务写入并完成最后同步，随后由 `switch/commit` 提升 epoch、切换活动 Hub，或在提交前由 `switch/abort` 安全恢复。Hub 重启后会通过持久化恢复服务继续 `committing_switch`，或在更早阶段安全中止；对端不可达时继续保持只读。客户端命中备用 Hub 时可调用 `cluster/session-handoff` 获取活动 Hub 的本地会话，不需要跨节点复制登录会话。Android Local Hub 已使用原生 SQLite、Keystore 与 Capacitor Bridge 承载结构化副本、连续 Operation、完整性证明、媒体 Blob 和 Provider 凭证，并实现本地 Agent、模块化工具、授权续跑、图片生成、记忆与心情后处理，以及手机主动计划切换。手机生成的媒体可通过 Peer 上传端点反向分块传回备用电脑 Hub。强制接管、分叉恢复、媒体删除墓碑和 Android 离线完整存档仍未开放。详细边界见[双 Hub 复制实现文档](../docs/architecture/dual-hub-replication.md)。
+
+同步只记录实体变化，不复制活跃数据库文件，也不会在 SSE 中传输完整私人内容。详见[家庭节点与多端同步架构](../docs/architecture/home-hub-sync.md)。
+
+## API
+
+- [API 使用说明](../docs/api.md)
+- [OpenAPI 3.1 契约](openapi.yaml)
+
+主要接口组包括认证、设备、同步、待办、画像、记忆、AI、对话、手记、相册、成长记录和梦境。
+
+## 测试
+
+```powershell
+npm test
+```
+
+测试会使用临时数据库，不应依赖或修改 `backend/.data` 中的个人数据。
+
+## 生产部署
+
+推荐使用专用系统用户、systemd、固定数据目录和 Caddy HTTPS 反向代理。完整步骤见[自托管部署指南](../docs/deployment/self-hosted.md)。备份与恢复见[数据、备份与恢复](../docs/data-and-backup.md)。

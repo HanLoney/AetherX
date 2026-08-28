@@ -1,0 +1,1733 @@
+openapi: 3.1.0
+info:
+  title: AetherX API
+  version: 1.0.0
+  description: AetherX Hub 的 REST API 与 SSE 同步契约。除明确标记为公开的接口外，所有请求都需要 Bearer 认证。
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: AetherX Project
+    url: https://github.com/HanLoney/AetherX
+externalDocs:
+  description: AetherX 文档中心
+  url: https://github.com/HanLoney/AetherX/blob/main/docs/README.md
+servers:
+  - url: http://127.0.0.1:4318/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/config:
+    get:
+      security: []
+      summary: 查询注册入口状态
+      responses:
+        "200": { description: 注册入口配置 }
+  /auth/register:
+    post:
+      security: []
+      summary: 创建账号并登录
+      responses:
+        "200": { description: 新账号、会话令牌与旧数据迁移结果 }
+  /auth/login:
+    post:
+      security: []
+      summary: 使用账号密码登录
+      responses:
+        "200": { description: 当前账号与会话令牌 }
+  /auth/desktop-login/challenges:
+    post:
+      security: []
+      summary: 创建桌面扫码登录挑战
+      description: 仅允许桌面端从本机回环地址创建短期挑战，返回一次性秘密与过期时间。
+      responses:
+        "201": { description: 待手机 Hub 扫描的一次性登录挑战 }
+        "403": { description: 请求不是来自本机桌面端 }
+  /auth/desktop-login/challenges/{id}:
+    get:
+      security: []
+      summary: 查询桌面扫码登录挑战状态
+      description: 桌面端使用挑战 ID 与一次性秘密轮询；授权完成后返回本地登录会话和活动 Hub 路由。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: secret
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 挑战等待中、凭据恢复中或已授权的结果 }
+        "403": { description: 请求不是来自本机桌面端 }
+        "404": { description: 挑战不存在、秘密错误或已经过期 }
+  /auth/desktop-login/authorize:
+    post:
+      security: []
+      summary: 活动手机 Hub 使用数据空间证明恢复扫码登录
+      description: Android Local Hub 使用 Space Key HMAC 证明当前节点身份；电脑 Hub 轮换 Peer 凭据并返回加密信封，尚不会直接完成桌面登录。
+      responses:
+        "200": { description: 已签发加密 Peer 凭据，等待手机保存并完成认证握手 }
+        "401": { description: 数据空间证明无效 }
+        "403": { description: 请求节点不是当前活动且未撤销的 Android Hub }
+        "409": { description: 挑战已使用或恢复节点不一致 }
+  /auth/session:
+    get:
+      summary: 验证当前会话
+      responses:
+        "200": { description: 当前登录账号 }
+  /auth/logout:
+    post:
+      summary: 注销当前会话
+      responses:
+        "204": { description: 已退出登录 }
+  /modules:
+    get:
+      summary: 查询当前账号的已安装模块与有效启用状态
+      responses:
+        "200": { description: 模块清单、依赖关系和启用状态 }
+  /modules/activity:
+    get:
+      summary: 按游标读取模块调用活动
+      responses:
+        "200": { description: 模块调用方向、状态、耗时和增量游标 }
+    post:
+      summary: 记录一次模块调用活动
+      responses:
+        "200": { description: 已保存的模块调用活动 }
+  /modules/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      summary: 热启用或停用一个模块
+      description: 依赖级联产生的每一条 module_settings 变化与本地设置在同一复制事务中提交。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: 更新后的完整模块清单 }
+        "409": { description: 核心模块不可停用，或依赖模块尚未启用 }
+  /pairing/sessions:
+    post:
+      summary: 创建短时手机配对会话
+      responses:
+        "200": { description: 配对会话、一次性秘密与过期时间 }
+  /pairing/sessions/{id}:
+    get:
+      summary: 查询属于当前账号的配对状态
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 当前配对状态和待确认设备 }
+  /pairing/sessions/{id}/claim:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      security: []
+      summary: 手机使用一次性秘密申请配对
+      responses:
+        "200": { description: 已进入待确认状态 }
+  /pairing/sessions/{id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      summary: 当前账号确认手机配对请求
+      responses:
+        "200": { description: 已允许手机兑换设备令牌 }
+  /pairing/sessions/{id}/redeem:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      security: []
+      summary: 已确认的手机兑换设备令牌
+      responses:
+        "200": { description: 只返回一次的设备令牌与设备信息 }
+  /hub-pairing/sessions:
+    post:
+      summary: 当前活动 Hub 创建一次性节点配对会话
+      responses:
+        "201": { description: Hub 配对会话与二维码载荷 }
+  /hub-pairing/import:
+    post:
+      summary: 目标 Hub 原子导入已兑换的加密 Space 密钥包
+      description: 仅允许替换没有业务数据的本地临时 Space；导入后节点仍处于 Bootstrap 阶段。
+      responses:
+        "200": { description: 已导入 Space、节点、集群状态和对端凭据 }
+        "409": { description: 本地身份、Schema、集群状态或已有数据发生冲突 }
+  /hub-pairing/bootstrap/{id}/restore:
+    post:
+      summary: 将已验证 staging 原子恢复为目标 Hub 的正式结构化副本
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 已恢复业务数据、Operation、Applied 状态和实体版本 }
+        "409": { description: staging 未就绪、仍缺 Blob 或目标 Hub 已有本地数据 }
+  /hub-pairing/bootstrap/{id}/status:
+    get:
+      summary: 查询目标 Hub 的 Bootstrap 和原图续传进度
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: staging 状态、总字节、已确认字节及逐原图断点 }
+        "404": { description: staging 不存在或不属于当前账号的 Space }
+  /hub-pairing/bootstrap/run:
+    post:
+      summary: 目标 Hub 自动完成首次全量 Bootstrap
+      description: 自动选择已登记端点并执行握手、快照、原图续传、原子恢复、Operation 追平、Watermark 确认和双端 standby 收口。
+      responses:
+        "200": { description: 首次全量复制完成，目标节点和源端 Snapshot 均已就绪 }
+        "409": { description: 本机不是待初始化备用 Hub、已有任务运行或最终摘要不一致 }
+        "503": { description: 所有局域网和 Anywhere 端点均不可达 }
+  /hub-pairing/bootstrap/{id}/proof:
+    post:
+      summary: 目标 Hub 生成最终根摘要和连续 Operation 位置证明
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: records root、blobs root 与各来源 Operation 头 }
+        "409": { description: Bootstrap 尚未恢复或校验期间数据持续变化 }
+  /hub-pairing/bootstrap/{id}/finalize:
+    post:
+      summary: 目标 Hub 验证活动 Hub 回执并进入 standby
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 本地节点已标记为 standby }
+        "409": { description: 回执无效或最终完整性再次发生变化 }
+  /hub-pairing/sessions/{id}:
+    get:
+      summary: 查询当前账号的 Hub 配对状态
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Hub 配对状态和待确认节点指纹 }
+  /hub-pairing/sessions/{id}/resolve:
+    post:
+      security: []
+      summary: 使用二维码中的一次性凭据解析 Hub 配对公开资料
+      description: 返回临时公钥、节点标识和候选入口，不返回长期 Peer 凭据、Space Key 或服务端临时私钥。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 当前未过期会话的 Hub 配对公开资料 }
+        "404": { description: 会话不存在或一次性凭据无效 }
+        "410": { description: 配对会话已过期 }
+  /hub-pairing/sessions/{id}/claim:
+    post:
+      security: []
+      summary: 新 Hub 使用一次性秘密和临时公钥认领配对会话
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 已进入待确认状态 }
+        "409": { description: 协议、Schema、节点身份或状态不兼容 }
+        "410": { description: 配对会话已过期 }
+  /hub-pairing/sessions/{id}/reuse:
+    post:
+      security: []
+      summary: 已登记的手机 Hub 使用一次性秘密复用本次一体化配对
+      description: 仅在节点仍属于同一 Space 且未撤销时标记 Hub 子任务完成，不签发新 Peer 凭据。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 已复用现有手机 Hub，等待客户端配对完成 }
+        "409": { description: 节点不存在、已撤销、Space 不匹配或会话状态冲突 }
+        "410": { description: 配对会话已过期 }
+  /hub-pairing/sessions/{id}/approve:
+    post:
+      summary: 当前账号确认高权限 Hub 节点配对
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 已允许新 Hub 兑换加密节点凭据 }
+  /hub-pairing/sessions/{id}/redeem:
+    post:
+      security: []
+      summary: 已批准的新 Hub 一次性兑换加密密钥包
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: X25519 协商密钥加密的节点凭据和 Space 同步密钥 }
+        "409": { description: 会话未批准或已经兑换 }
+        "410": { description: 配对会话已过期 }
+  /peer/hello:
+    post:
+      security:
+        - peerHmac: []
+      summary: 两个 Hub 协商复制协议、Schema、epoch 与活动节点
+      description: 使用完整 Peer HMAC 请求头认证，普通 Bearer Token 无权调用。
+      responses:
+        "200": { description: 本 Hub 的复制能力与连续 Watermark }
+        "409": { description: Space、协议、Schema、epoch 或活动节点不一致 }
+  /peer/desktop-login:
+    post:
+      security:
+        - peerHmac: []
+      summary: 手机 Hub 在认证握手后确认桌面扫码登录
+      description: 仅接受刚刚完成凭据保存并通过 Peer HMAC 认证的 Android Hub；成功后把对应桌面挑战标记为已授权。
+      responses:
+        "200": { description: 桌面登录挑战已授权，可由桌面端领取会话 }
+        "401": { description: Peer HMAC 无效、过期或重放 }
+        "403": { description: Peer 不是已配对且未撤销的 Android Hub }
+        "409": { description: 挑战已经授权或与恢复节点不一致 }
+  /peer/status:
+    get:
+      security:
+        - peerHmac: []
+      summary: 查询对端 Hub 的集群和切换状态
+      description: 供切换恢复流程确认对端实际阶段；切换事务进行中也允许读取。
+      responses:
+        "200": { description: 当前节点角色、活动节点、epoch、集群状态和切换事务 }
+  /peer/client-sessions/mint:
+    post:
+      security:
+        - peerHmac: []
+      summary: 为切换到本 Hub 的客户端签发本地会话
+      description: 仅允许已登记的对端 Hub 代当前账号请求，不复制 auth_sessions。
+      responses:
+        "200": { description: 目标 Hub 的本地 Bearer Token 与账号映射 }
+        "401": { description: Peer HMAC 无效、过期或重放 }
+  /peer/switch/preflight:
+    post:
+      security:
+        - peerHmac: []
+      summary: 由活动 Hub 请求备用 Hub 生成实时切换完整性证明
+      description: 在用户级锁内检查 Agent 空闲、数据库 quick_check、Provider 凭证可读性、结构化数据、原图和 Operation 头；响应不包含凭证明文或业务正文，并使用 Space Key HMAC 签名。
+      responses:
+        "200": { description: 备用 Hub 的实时切换预检证明 }
+        "403": { description: 请求节点不是当前活动 Hub，或本机不是完成同步的备用 Hub }
+        "409": { description: 集群不稳定、数据库异常、凭证不可读或 Agent 正忙 }
+  /peer/synchronize:
+    post:
+      security:
+        - peerHmac: []
+      summary: Synchronize the receiving standby Hub before a planned switch
+      description: Runs replication through the authenticated native Peer channel without depending on a foreground client or WebView.
+      responses:
+        "200": { description: Replication status and synchronized operation/media progress }
+        "409": { description: The Hub role or cluster state does not allow synchronization }
+        "503": { description: The active peer Hub is unreachable }
+  /peer/switch/control:
+    post:
+      security:
+        - peerHmac: []
+      summary: 应用经过 Space Key 认证的计划切换控制消息
+      description: 仅接受当前活动 Hub 发出的 30 秒内控制消息；按顺序推进 preparing_switch、draining、final_sync、integrity_check、committing_switch，或应用 commit/abort。响应 ACK 会绑定控制消息哈希和应用后的 Cluster State 哈希。
+      responses:
+        "200": { description: 已幂等应用阶段、提交或中止，并返回认证 ACK }
+        "403": { description: 控制消息发送节点角色无效 }
+        "409": { description: 控制消息认证失败、过期、代次错误或状态转换冲突 }
+  /peer/switch/final-sync:
+    post:
+      security:
+        - peerHmac: []
+      summary: 让目标备用 Hub 在 final_sync 阶段执行最后一次增量追平
+      description: 仅允许当前切换事务的目标备用 Hub 调用其本地复制调度器，从活动 Hub 拉取连续 Operation 和缺失原图。
+      responses:
+        "200": { description: 最终同步健康状态、Operation 位置和媒体传输结果 }
+        "409": { description: 节点角色、切换事务或阶段不匹配，或已有同步正在运行 }
+        "503": { description: 当前活动 Hub 不可达 }
+  /peer/mobile-switch/start:
+    post:
+      security:
+        - peerHmac: []
+      summary: 手机 Hub 提交预检证明并启动计划切换
+      responses:
+        "200": { description: 已签名的首个切换控制消息 }
+        "409": { description: 预检、角色或集群状态不允许切换 }
+  /peer/mobile-switch/advance:
+    post:
+      security:
+        - peerHmac: []
+      summary: 手机 Hub 提交 ACK 和阶段证明并推进计划切换
+      responses:
+        "200": { description: 下一阶段控制消息或切换完成状态 }
+        "409": { description: ACK、证明或阶段顺序无效 }
+  /peer/mobile-switch/request:
+    post:
+      security:
+        - peerHmac: []
+      summary: 请求当前活动 Hub 将角色安全交给发起请求的备用 Hub
+      description: 用于界面或 WebView 已挂起时仍通过原生 Peer 通道完成计划切换；内部执行预检、最终同步、完整性复核和 commit，不离线排队。
+      responses:
+        "200": { description: 切换已完成，返回新的活动节点、epoch 和稳定状态 }
+        "409": { description: 请求节点不是就绪备用 Hub，或集群不稳定、完整性校验失败 }
+        "503": { description: Peer 端点不可达 }
+  /peer/media/manifest:
+    get:
+      security:
+        - peerHmac: []
+      summary: 分页读取活动 Hub 的原始媒体清单
+      description: 按 createdAt 与媒体 ID 稳定排序；返回原图元数据和内容 SHA-256，不传输缩略图，也不传播删除。
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string, description: 不透明 Base64URL 游标 }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+      responses:
+        "200": { description: 媒体清单页、下一游标和是否还有后续页 }
+        "409": { description: 当前 Hub 不是稳定状态下的活动节点，或本地媒体文件异常 }
+  /peer/media/{id}/blob:
+    get:
+      security:
+        - peerHmac: []
+      summary: 读取活动 Hub 的增量原图分块
+      description: 单块最多 1 MiB；响应头携带整文件摘要、分块摘要、偏移和总字节数。目标 Hub 完成整文件 SHA-256 后才会原子写入正式媒体目录和 media_assets。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: offset
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: length
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1048576, default: 1048576 }
+      responses:
+        "200": { description: 原图二进制分块及 X-AetherX-Blob/Chunk 校验响应头 }
+        "404": { description: 媒体记录或原文件不存在 }
+        "409": { description: 当前 Hub 不是活动节点，或记录与原文件不一致 }
+        "416": { description: 请求偏移超出原图范围 }
+  /peer/media/status:
+    post:
+      security:
+        - peerHmac: []
+      summary: 查询接收 Hub 已拥有或待续传的增量媒体状态
+      responses:
+        "200": { description: 每个媒体项的完成状态和已接收字节数 }
+  /peer/media/chunks:
+    post:
+      security:
+        - peerHmac: []
+      summary: 向接收 Hub 续传一个增量媒体分块
+      responses:
+        "200": { description: 当前已确认偏移和整文件校验状态 }
+        "409": { description: 媒体元数据、续传偏移或摘要不一致 }
+  /peer/snapshots:
+    post:
+      security:
+        - peerHmac: []
+      summary: 在稳定边界上生成 Bootstrap 完整性清单
+      description: 验证媒体文件后，为每张业务表和媒体清单生成稳定 Merkle Root；生成期间数据变化会自动重试或明确失败。
+      responses:
+        "201": { description: 快照边界、逐表摘要、records root、blobs root 与 manifest hash }
+        "409": { description: 当前 Hub 非活动节点、AI 正忙或数据持续变化 }
+        "413": { description: 结构化数据超过单包限制，需要分块 Bootstrap }
+  /peer/snapshots/{id}/payload:
+    get:
+      security:
+        - peerHmac: []
+      summary: 获取使用 Space Key 加密的结构化 Bootstrap 数据包
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: AES-256-GCM 密文、认证标签、AAD 与载荷摘要 }
+        "404": { description: 快照不存在或不是为当前 Peer 生成 }
+  /peer/snapshots/{id}/payload/chunks:
+    get:
+      security:
+        - peerHmac: []
+      summary: 分块读取加密的结构化 Bootstrap 数据包
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: length
+          schema: { type: integer, minimum: 1, maximum: 1048576, default: 524288 }
+      responses:
+        "200": { description: Base64 数据块、分块摘要、总大小和下一偏移 }
+        "416": { description: 请求偏移超出结构化数据包范围 }
+  /peer/snapshots/{id}/blobs/{mediaId}:
+    get:
+      security:
+        - peerHmac: []
+      summary: 从活动 Hub 读取快照原图分块
+      description: 单块最多 1 MiB；响应头携带整文件摘要、分块摘要、偏移和总字节数，缩略图不跨 Hub 传输。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/MediaId"
+        - in: query
+          name: offset
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: length
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1048576, default: 1048576 }
+      responses:
+        "200": { description: 原图二进制分块及 X-AetherX-Blob/Chunk 校验响应头 }
+        "404": { description: 快照或原图不属于当前 Peer }
+        "409": { description: 源 Hub 非活动节点，或快照生成后原图已经变化 }
+        "416": { description: 请求偏移超出原图范围 }
+  /peer/snapshots/{id}/blobs/{mediaId}/chunks:
+    post:
+      security:
+        - peerHmac: []
+      summary: 目标 Hub 续传并校验一个原图分块
+      description: 只接受从已确认偏移开始的连续块；重复块会逐字节校验后幂等确认，最后一块会触发整文件 SHA-256 校验。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/MediaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offset, data, chunkHash]
+              properties:
+                offset: { type: integer, minimum: 0 }
+                data: { type: string, format: byte, description: 最多 1 MiB 原始数据的规范 Base64 }
+                chunkHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { description: 当前已确认偏移、Blob 状态及是否为重复块 }
+        "400": { description: Base64、块大小或分块摘要无效 }
+        "409": { description: 来源、staging 状态、续传偏移或整文件摘要不匹配 }
+        "416": { description: 分块超出声明的原图大小 }
+  /peer/snapshots/stage:
+    post:
+      security:
+        - peerHmac: []
+      summary: 目标 Hub 解密、复核并暂存 Bootstrap 数据包
+      description: 重新验证存档连续摘要、逐表 Merkle Root、Operation 哈希链、HMAC 和实体版本；不会直接修改正式业务数据。
+      responses:
+        "200": { description: staging 验证状态；存在媒体时等待 Blob，纯结构化数据时为 verified }
+        "400": { description: 密文、Manifest、Operation 或实体版本校验失败 }
+        "409": { description: 同一 Snapshot ID 对应了不同数据包 }
+  /peer/bootstrap/complete:
+    post:
+      security:
+        - peerHmac: []
+      summary: 活动 Hub 对比目标证明并签发 standby_pending 回执
+      responses:
+        "200": { description: 使用 Space Key 认证的最终一致性回执 }
+        "409": { description: 记录根、媒体根或连续 Operation 位置不一致 }
+  /peer/bootstrap/finalize:
+    post:
+      security:
+        - peerHmac: []
+      summary: 目标 Hub 完成本地 standby 后通知活动 Hub正式完成 Bootstrap
+      responses:
+        "200": { description: 两端节点状态均已完成为 standby，Snapshot 标记 completed }
+        "409": { description: 回执、节点状态或 Snapshot 状态不匹配 }
+  /peer/operations:
+    get:
+      security:
+        - peerHmac: []
+      summary: 连续拉取当前 Hub 产生的 Operation
+      parameters:
+        - in: query
+          name: origin
+          required: true
+          schema: { type: string }
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+      responses:
+        "200": { description: Operation 批次、下一游标和头部序号 }
+  /peer/operations/apply:
+    post:
+      security:
+        - peerHmac: []
+      summary: 原子校验并应用活动 Hub 发来的 Operation 批次
+      responses:
+        "200": { description: 应用、幂等跳过数量与可回传确认位置 }
+        "409": { description: 序列、哈希链、epoch、来源或实体版本冲突 }
+  /peer/acknowledgements:
+    post:
+      security:
+        - peerHmac: []
+      summary: 对端确认已连续持久化的 Operation 位置
+      responses:
+        "200": { description: 已保存的连续 Watermark }
+        "409": { description: 确认哈希不匹配或 Watermark 倒退 }
+  /peer/sync-complete:
+    post:
+      security:
+        - peerHmac: []
+      summary: 对端提交已完成同步的 Operation 链头证明
+      responses:
+        "200": { description: 链头序号和哈希一致，已更新逐 Peer 复制健康状态 }
+        "400": { description: 证明指向的来源节点无效 }
+        "409": { description: 链头序号或 Operation 哈希与本 Hub 不一致 }
+  /peer/divergence-recoveries/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      security:
+        - peerHmac: []
+      summary: 查询分叉恢复会话的对端状态
+      description: 返回恢复阶段、权威节点、目标 epoch、快照摘要和等待确认状态，不包含业务正文。
+      responses:
+        "200": { description: 当前恢复会话状态 }
+        "404": { description: 恢复会话不存在或不属于认证 Peer }
+  /peer/divergence-recoveries/{id}/snapshot/chunks:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 向恢复目标连续上传加密快照分块
+      description: 分块必须按偏移连续上传，并同时通过 Peer HMAC、分块 SHA-256 和总大小限制校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offset, data, chunkHash]
+              properties:
+                offset: { type: integer, minimum: 0 }
+                data: { type: string, contentEncoding: base64 }
+                chunkHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { description: 已确认的连续字节位置，重复分块按幂等请求处理 }
+        "409": { description: 分块哈希错误、偏移不连续或会话阶段不允许上传 }
+    get:
+      security:
+        - peerHmac: []
+      summary: 从权威 Hub 范围读取加密快照分块
+      parameters:
+        - in: query
+          name: offset
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: length
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: Base64 快照分块、分块摘要、总摘要和完整快照摘要 }
+        "416": { description: 请求偏移超出快照范围 }
+  /peer/divergence-recoveries/{id}/snapshot/complete:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 完成加密快照上传并应用权威分支
+      description: 校验连续分块、总字节数、载荷摘要、Space Key 加密信封、媒体清单和 Operation 哈希链后才应用恢复控制。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [byteSize, payloadHash]
+              properties:
+                byteSize: { type: integer, minimum: 1 }
+                payloadHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { description: 已应用恢复快照并返回 Space Key 签名控制 }
+        "409": { description: 快照不完整、摘要不一致、媒体或 Operation 校验失败 }
+  /peer/divergence-recoveries/{id}/media/{mediaId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/MediaId"
+    get:
+      security:
+        - peerHmac: []
+      summary: 范围下载权威分支的恢复媒体
+      description: 响应头返回整文件摘要、分块摘要、偏移和总大小，接收端必须在落盘前后分别校验。
+      parameters:
+        - in: query
+          name: offset
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: length
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: 恢复媒体二进制分块
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { description: 媒体不在恢复清单中 }
+        "409": { description: 权威分支媒体缺失或大小不匹配 }
+        "416": { description: 请求偏移超出媒体范围 }
+  /peer/divergence-recoveries/{id}/ack:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      security:
+        - peerHmac: []
+      summary: 提交恢复应用完成的签名确认
+      description: ACK 必须绑定恢复 ID、Space、Peer 节点、权威节点、目标 epoch 和快照摘要，并使用 Space Key HMAC 认证。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ack, authenticationTag]
+              properties:
+                ack: { type: object }
+                authenticationTag: { type: string }
+      responses:
+        "200": { description: 双端确认完成，集群进入统一的新 epoch }
+        "409": { description: ACK 字段、签名或恢复阶段无效 }
+  /devices:
+    get:
+      summary: 查询当前账号的配对设备
+      responses:
+        "200": { description: 设备列表 }
+  /devices/heartbeat:
+    post:
+      summary: 上报移动端连接与同步健康心跳
+      responses:
+        "200": { description: Hub 接收时间与当前移动端健康状态 }
+  /devices/health:
+    get:
+      summary: 查询当前账号的移动端健康状态
+      responses:
+        "200": { description: 移动端在线、同步、SSE、版本与延迟状态 }
+  /devices/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      summary: 撤销设备及其访问令牌
+      responses:
+        "204": { description: 已撤销 }
+        "409": { description: 设备关联的 Hub 仍处于活动状态，必须先切换 Hub }
+  /devices/{id}/record:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      summary: 删除已撤销的设备记录
+      responses:
+        "204": { description: 已删除 }
+        "409": { description: 设备仍处于活动状态，必须先撤销访问 }
+  /sync/changes:
+    get:
+      summary: 按游标补拉当前账号的增量变化
+      parameters:
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200": { description: 增量变化、下一游标和是否还有更多 }
+  /sync/commands:
+    get:
+      summary: 轮询当前移动安装待处理的 Hub 控制命令
+      description: 当反向代理不能稳定转发 SSE 流时，移动端使用此接口作为控制通道兜底。命令按安装标识消费一次。
+      parameters:
+        - in: query
+          name: client_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 最多十条待处理 Hub 控制命令 }
+  /sync/events:
+    get:
+      summary: 订阅当前账号的 SSE 实时变化通知
+      parameters:
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: client_id
+          schema: { type: string }
+          description: 移动端安装标识，用于由 Hub 直接确认 SSE 通道状态。
+        - in: query
+          name: control_only
+          schema: { type: integer, enum: [0, 1] }
+          description: 设为 1 时只接收 Hub 控制命令，不推送业务变化。
+      responses:
+        "200":
+          description: text/event-stream，先发送 ready，随后发送 change
+          content:
+            text/event-stream: {}
+  /cluster/mobile-hubs:
+    get:
+      summary: 查询当前账号已经登记的手机 Hub
+      responses:
+        "200": { description: 手机 Hub 角色、快照、复制健康和控制通道状态 }
+  /cluster/mobile-hubs/{id}/synchronize:
+    post:
+      summary: 请求目标手机立即同步 Local Hub
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 指令已送达或已定向排队 }
+        "404": { description: 手机 Hub 不存在或已撤销 }
+  /cluster/mobile-hubs/{id}/discover-endpoint:
+    post:
+      summary: 验证并登记自动发现的手机 Hub 端点
+      description: 桌面端提交局域网发现候选，电脑 Hub 通过已登记 Peer 凭据完成认证 hello 后才保存该端点。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 端点已通过 Peer 身份验证并更新优先级 }
+        "400": { description: 地址不是允许的私网或 Tailscale Hub 端点 }
+        "404": { description: 手机 Hub 不存在或已撤销 }
+        "503": { description: 候选端点不可达或 Peer 身份验证失败 }
+  /cluster/mobile-hubs/{id}/switch:
+    post:
+      summary: 请求目标手机安全切换活动 Hub
+      description: 电脑 Hub 活动时直接执行 Peer 状态机切到手机；手机 Hub 活动时通过签名 Peer 请求让手机原生 Hub 安全交还电脑，不依赖手机客户端 SSE 或界面前台状态。
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: 切换已完成，返回目标 Hub 和状态机提交结果 }
+        "409": { description: 手机副本未就绪、集群不稳定或完整性校验失败 }
+        "503": { description: 当前活动 Hub 的 Peer 端点不可达 }
+  /cluster/divergence:
+    get:
+      summary: 查询双 Hub 分叉及恢复状态
+      parameters:
+        - in: query
+          name: recoveryId
+          schema: { type: string }
+      responses:
+        "200": { description: 分叉证据摘要、隔离写入、权威候选和当前恢复进度 }
+  /cluster/divergence/evidence:
+    get:
+      summary: 导出当前分叉的签名证据
+      description: 返回双方完整性摘要、Operation 链头和隔离写入清单，并附带 Space Key HMAC 证据标签。
+      responses:
+        "200": { description: 可审计的分叉证据及其 SHA-256 摘要和认证标签 }
+        "409": { description: 当前集群没有可导出的分叉状态 }
+  /cluster/divergence/recover:
+    post:
+      summary: 选择唯一权威 Hub 并发起完整分支恢复
+      description: 冻结双方写入，把所选权威分支以 AES-256-GCM 加密快照、媒体校验和签名控制复制到另一 Hub；被舍弃分支保留在签名证据中。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authority]
+              properties:
+                authority:
+                  type: string
+                  enum: [desktop, mobile]
+      responses:
+        "202": { description: 恢复会话已创建或已有会话已重新投递 }
+        "400": { description: 未明确选择手机 Hub 或电脑 Hub }
+        "409": { description: 集群不处于可恢复的分叉状态 }
+  /cluster/status:
+    get:
+      summary: 查询当前账号的数据空间与本地 Hub 角色
+      description: 首次调用会为现有单 Hub 账号建立稳定的 Space、Node 和 epoch 1 控制状态；不会自动开启双 Hub 复制。
+      responses:
+        "200":
+          description: 当前 Space、活动节点、epoch、复制配置和已登记节点列表
+  /cluster/session-handoff:
+    post:
+      summary: 从备用 Hub 交接到当前活动 Hub
+      description: 备用 Hub 使用 Peer HMAC 请求活动 Hub 签发本地会话，并返回活动节点地址；客户端随后以同一 request_id 重试原写请求。
+      responses:
+        "200": { description: 无需切换，或返回活动 Hub 地址、令牌、节点与 epoch }
+        "409": { description: 活动节点或端点不可用 }
+        "503": { description: 当前活动 Hub 无法连接 }
+  /cluster/switch/preflight:
+    post:
+      summary: 在不改变集群状态的情况下检查计划切换条件
+      description: 当前活动 Hub 获取双方实时证明并比较协议、Schema、epoch、Operation 头、结构化数据根、原图根、Provider 凭证可读性、数据库健康、Agent 状态和未完成同步任务。本接口只读，不会开始切换。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetNodeId: { type: string }
+      responses:
+        "200": { description: ready、逐项门禁结果及双方摘要 }
+        "400": { description: 存在多个备用节点但未指定目标，或目标不可信 }
+        "409": { description: 本机不是活动 Hub、目标不是 standby 或集群不稳定 }
+        "503": { description: 目标 Hub 不可达 }
+  /cluster/switch/recovery:
+    get:
+      summary: 查询未完成计划切换的自动恢复状态
+      responses:
+        "200": { description: 当前恢复任务、重试次数、下一次尝试和最近错误 }
+  /cluster/switch/recover:
+    post:
+      summary: 立即恢复一次未完成的计划切换
+      description: committing_switch 会继续提交；更早阶段会向双方认证中止。目标不可达时保持只读，避免单边解锁。
+      responses:
+        "200": { description: 已提交、已中止、无需恢复或等待下次重试 }
+        "409": { description: 本机不是负责恢复的活动源 Hub }
+        "503": { description: 对端不可达，切换锁保持 }
+  /cluster/switch/prepare:
+    post:
+      summary: 开始一次可中止的计划切换并推进到提交门前
+      description: 先执行稳定态预检，然后依次进入 preparing_switch、draining、final_sync 和 integrity_check。进入切换后双方普通业务写入返回 423；最终同步和完整性复核通过后返回 transitionId，但不会自动修改 activeNodeId 或 epoch。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetNodeId: { type: string }
+      responses:
+        "200": { description: 已到达 integrity_check，可使用 transitionId 提交或中止 }
+        "400": { description: 目标 Hub 不唯一或不可信 }
+        "409": { description: 预检失败、节点角色不符或切换状态冲突 }
+        "503": { description: 目标 Hub 在阶段同步或确认时不可达 }
+  /cluster/switch/commit:
+    post:
+      summary: 提交已经通过完整性校验的计划切换
+      description: 先让目标 Hub 应用 epoch + 1 和新活动节点，再由源 Hub 应用相同控制状态；源 Hub 在收到目标认证 ACK 前保持 committing_switch 只读。目标已提交但响应丢失时可以使用同一 transitionId 重试。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transitionId]
+              properties:
+                transitionId: { type: string }
+      responses:
+        "200": { description: 双方已稳定在新 epoch，目标 Hub 成为 active }
+        "409": { description: transitionId、完整性、角色或状态不匹配 }
+        "503": { description: 目标 Hub 不可达；源 Hub 保持只读并可重试提交 }
+  /cluster/switch/abort:
+    post:
+      summary: 中止尚未进入 committing_switch 的计划切换
+      description: 向目标 Hub 发送认证 abort 并等待 ACK，随后双方恢复原 epoch、原活动节点和 stable。committing_switch 不能中止，只能继续提交；目标不可达时源 Hub 保持切换锁，避免双方状态分叉。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transitionId]
+              properties:
+                transitionId: { type: string }
+      responses:
+        "200": { description: 双方已恢复 stable，原活动 Hub 重新可写 }
+        "409": { description: transitionId 或当前阶段不允许中止 }
+        "503": { description: 目标 Hub 不可达，未解除本地切换写锁 }
+  /replication/status:
+    get:
+      summary: 查询本机 Hub 的常驻复制健康状态
+      description: 备用 Hub 返回最近尝试、最近成功、连续失败、下次重试、本地/远端 Operation 位置和延迟，并独立返回媒体暂存数量、剩余字节与已接收字节；活动 Hub 返回 serving 状态。
+      responses:
+        "200": { description: 当前复制角色、健康状态、退避、Operation 延迟和媒体续传积压 }
+  /replication/sync:
+    post:
+      summary: 立即执行一次备用 Hub 增量同步
+      description: 忽略后台退避等待，立即握手、连续拉取活动 Hub Operation、确认 Watermark，并按媒体清单续传缺失原图；不会替代首次 Bootstrap。
+      responses:
+        "200": { description: 同步完成并返回最新健康状态 }
+        "409": { description: 本机是活动 Hub、Bootstrap 未完成、集群正在切换或已有同步运行 }
+        "503": { description: 当前没有可达的活动 Hub 端点 }
+  /wallet:
+    get:
+      summary: 查询钱包账户、按币种汇总和整数分余额
+      responses:
+        "200": { description: 当前账号的钱包汇总和多项存款 }
+  /wallet/accounts:
+    post:
+      summary: 新建一项存款及其期初流水
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已原子创建存款、期初流水和对应复制 Operation }
+  /wallet/accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 查询一项存款
+      responses:
+        "200": { description: 存款资料和整数分余额 }
+        "404": { description: 存款不存在 }
+    patch:
+      summary: 修改存款资料或设置当前余额
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更新存款、生成流水并写入复制 Operation }
+    delete:
+      summary: 删除存款及全部流水
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已生成逐流水墓碑和账户墓碑并删除 }
+  /wallet/accounts/{id}/adjust:
+    post:
+      summary: 记录一笔收入或支出
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已原子更新整数分余额、流水和复制 Operation }
+        "400": { description: 金额格式无效、为零、超范围或会使余额为负 }
+  /wallet/accounts/{id}/transactions:
+    get:
+      summary: 查询一项存款的完整流水
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200": { description: 按时间倒序返回钱包流水 }
+  /wallet/accounts/{id}/transactions/{transactionId}:
+    patch:
+      summary: 更正一笔历史流水并重算后续余额链
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - in: path
+          name: transactionId
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更正流水、重算余额链并写入所有变化实体的 Operation }
+        "400": { description: 更正会造成负余额、金额无效或超出范围 }
+  /todos:
+    get:
+      summary: 查询待办
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+        - in: query
+          name: status
+          schema: { type: string, enum: [all, active, completed] }
+      responses:
+        "200": { description: 待办列表 }
+    post:
+      summary: 创建待办
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已创建 }
+  /todos/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      summary: 获取待办
+      responses:
+        "200": { description: 待办详情 }
+    patch:
+      summary: 更新待办
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更新 }
+    delete:
+      summary: 删除待办
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已删除 }
+  /todos/completed:
+    delete:
+      summary: 清除当前账号的已完成待办
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已删除数量 }
+  /ai/config:
+    get:
+      summary: 获取公开 AI 配置
+      responses:
+        "200": { description: AI 配置 }
+    put:
+      summary: 保存 AI 配置
+      description: Provider 凭证用 Space Key 封装进复制 Operation；备用 Hub 解封后再使用自己的本机密钥加密入库。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存 }
+  /ai/image-config:
+    get:
+      summary: 获取公开图像生成 AI 配置
+      responses:
+        "200": { description: 图像生成 AI 配置 }
+    put:
+      summary: 保存图像生成 AI 配置
+      description: 图像 Provider 凭证不会以明文或本机密文进入复制日志。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存 }
+  /ai/image-generations:
+    post:
+      summary: 调用配置的图像生成模型
+      responses:
+        "200": { description: 图像生成 Provider 响应 }
+  /ai/chat:
+    post:
+      summary: 调用配置的 AI Provider
+      responses:
+        "200": { description: Provider 响应 }
+  /profile:
+    get:
+      summary: 获取用户画像
+      responses:
+        "200": { description: 用户画像 }
+    put:
+      summary: 保存用户画像
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存 }
+    patch:
+      summary: 局部更新用户画像
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更新 }
+  /preferences:
+    get:
+      summary: 查询用户偏好
+      responses:
+        "200": { description: 偏好列表 }
+    put:
+      summary: 新增或更新偏好
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存 }
+    post:
+      summary: 新增偏好
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已创建 }
+  /preferences/{id}:
+    delete:
+      summary: 删除偏好
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: 已删除 }
+  /memories:
+    get:
+      summary: 查询或全文搜索记忆
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: [candidate, active, archived] }
+      responses:
+        "200": { description: 记忆列表 }
+    post:
+      summary: 创建记忆或候选记忆
+      responses:
+        "201": { description: 已创建 }
+  /memories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取单条记忆
+      responses:
+        "200": { description: 记忆详情 }
+    patch:
+      summary: 修改记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已原子更新记忆并写入复制 Operation }
+    delete:
+      summary: 永久删除记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已删除记忆及证据，并写入复制墓碑 }
+  /memories/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 确认候选记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已确认并写入复制 Operation }
+  /memories/recall:
+    post:
+      summary: 根据当前对话场景召回画像、偏好和已确认记忆
+      responses:
+        "200": { description: 可注入的上下文及可解释引用列表 }
+  /memories/extract:
+    post:
+      summary: 从一轮对话中自动提取候选记忆
+      responses:
+        "200": { description: 去重后的候选记忆列表 }
+  /memories/consolidate:
+    post:
+      summary: 合并当前账号的重复记忆
+      responses:
+        "200": { description: 合并结果 }
+  /memories/settings:
+    get:
+      summary: 获取记忆自动确认设置
+      responses:
+        "200": { description: 当前用户的记忆设置 }
+    put:
+      summary: 开启或关闭自动确认
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存设置并写入复制 Operation }
+  /xuan-mood/home:
+    get:
+      summary: 获取小玄心情模块的首页展示缓存
+      responses:
+        "200": { description: 当前心情状态、展示内容和近期事件 }
+  /xuan-mood/events:
+    post:
+      summary: 投递聊天、手记或共同经历对小玄心情的影响事件
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已原子记录事件、生命状态、展示内容及复制 Operation }
+  /xuan-mood/refresh:
+    post:
+      summary: 基于近期事件刷新小玄心情展示
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已刷新心情快照并写入真实变化的复制 Operation }
+  /archives/export:
+    post:
+      summary: 生成当前账号的加密完整存档
+      description: 创建一次性下载票据。存档包含当前账号的记录、设置、模型凭据与媒体文件，仅支持完整恢复。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 256
+                  description: 用于加密存档的密码，不会由 Hub 保存。
+      responses:
+        "200": { description: 一次性下载路径、文件名、过期时间与存档内容汇总 }
+        "400": { description: 存档密码不符合要求 }
+        "409": { description: Agent 正在运行、媒体损坏或当前账号已有存档任务 }
+  /archives/download/{ticket}:
+    parameters:
+      - in: path
+        name: ticket
+        required: true
+        schema: { type: string }
+        description: 导出接口签发的短时一次性下载票据。
+    get:
+      security: []
+      summary: 使用一次性票据下载完整存档
+      description: 票据使用后立即失效；默认在签发五分钟后过期。
+      responses:
+        "200":
+          description: 加密的 AetherX 完整存档
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+            Content-Length:
+              schema: { type: integer }
+          content:
+            application/vnd.aetherx.archive:
+              schema: { type: string, format: binary }
+        "404": { description: 下载票据不存在、已使用或已经过期 }
+  /archives/restore:
+    post:
+      summary: 使用加密存档完整恢复当前账号
+      description: 校验存档完整性后替换当前账号全部数据，并在恢复前自动生成备份。恢复完成后客户端必须清空缓存并重新同步。
+      parameters:
+        - in: header
+          name: X-AetherX-Archive-Password
+          required: true
+          schema: { type: string, format: byte }
+          description: 存档密码的 UTF-8 Base64 编码，最长 512 个字符。
+      requestBody:
+        required: true
+        content:
+          application/vnd.aetherx.archive:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: 一致性摘要、重置游标、恢复内容汇总与恢复前备份文件名 }
+        "400": { description: 密码错误、存档格式无效、文件过大或一致性校验失败 }
+        "409": { description: Agent 正在运行、数据或媒体文件冲突，或当前账号已有存档任务 }
+  /conversations:
+    get:
+      summary: 获取全部历史会话
+      responses:
+        "200": { description: 按最近更新时间排序的会话列表 }
+    post:
+      summary: 创建新会话
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已创建并原子写入会话复制 Operation }
+  /conversations/page:
+    get:
+      summary: 分页获取历史会话
+      description: 按最近更新时间倒序返回会话，适合客户端先显示最新会话，再在空闲时逐页加载历史记录。
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 12 }
+      responses:
+        "200": { description: 会话 items、总数 total、当前 offset 和 limit，以及是否还有更多 hasMore }
+  /conversations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 恢复完整会话及模型上下文
+      responses:
+        "200": { description: 界面消息流与模型消息流 }
+    delete:
+      summary: 永久删除会话
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已生成逐消息墓碑和会话墓碑并删除 }
+  /conversations/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      summary: 增量写入或更新会话消息
+      description: 展示流和模型流分别保存；每条真实变化的消息都有独立实体版本和 Operation，会话更新时间与消息在同一事务中提交。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存数量；相同请求 ID 重试不会重复产生消息或 Operation }
+  /agent/permissions:
+    get:
+      summary: 获取全局写工具授权设置
+      responses:
+        "200": { description: 当前授权状态 }
+    put:
+      summary: 更新全局写工具授权设置
+      description: 保留设置使用 module_settings 的内部逻辑 ID，并像普通模块开关一样复制。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存并写入复制 Operation }
+  /agent/chat:
+    post:
+      summary: 由 Agent Hub 处理一轮聊天、工具调用与会话保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                conversationId: { type: string }
+                content: { type: string, minLength: 1, maxLength: 30000 }
+                runtime:
+                  type: object
+                  properties:
+                    timeZone: { type: string }
+                    locale: { type: string }
+      responses:
+        "200": { description: 已完成，或暂停等待工具授权的服务端消息流 }
+        "409": { description: 同一会话已有活跃 Agent 运行 }
+  /agent/runs/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 允许或拒绝当前 Agent 运行中的写工具
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+      responses:
+        "200": { description: 运行已继续、完成或等待下一次授权 }
+        "404": { description: 运行不存在、已过期或不属于当前账号 }
+  /prompt-settings:
+    get:
+      summary: 获取当前账号的提示词设置
+      responses:
+        "200": { description: 提示词设置 }
+    put:
+      summary: 保存提示词设置并记录版本
+      description: 当前设置和新增历史版本在同一复制事务中写入两条 Operation。
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存 }
+  /prompt-settings/versions:
+    get:
+      summary: 获取提示词历史版本
+      responses:
+        "200": { description: 版本列表 }
+  /prompt-settings/versions/{version}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Version"
+    post:
+      summary: 恢复指定提示词版本
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已恢复 }
+  /time-awareness/context:
+    post:
+      summary: 获取适合注入对话的时间上下文
+      responses:
+        "200": { description: 时间与日程上下文 }
+  /assistant/profile:
+    get:
+      summary: 获取 AI 伙伴画像与成长状态
+      responses:
+        "200": { description: AI 伙伴画像 }
+    patch:
+      summary: 局部更新 AI 伙伴画像
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已原子更新画像并写入复制 Operation }
+  /assistant/personality-events:
+    get:
+      summary: 查询人格成长事件
+      responses:
+        "200": { description: 事件列表 }
+    post:
+      summary: 创建人格成长事件
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已创建事件，并在需要时同步更新人格画像 }
+  /assistant/personality-events/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 确认人格成长事件
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已确认事件，并在需要时同步更新人格画像 }
+  /assistant/personality-events/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除人格成长事件
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已删除并写入复制墓碑 }
+  /shared-memories:
+    get:
+      summary: 查询共同记忆
+      responses:
+        "200": { description: 共同记忆列表 }
+    post:
+      summary: 创建共同记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已创建并写入复制 Operation }
+  /shared-memories/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 确认共同记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已确认并写入复制 Operation }
+  /shared-memories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除共同记忆
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已删除并写入复制墓碑 }
+  /assistant/journals:
+    get:
+      summary: 查询 AI 伙伴手记
+      responses:
+        "200": { description: 手记列表 }
+    put:
+      summary: 创建或更新手记
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已保存并写入复制 Operation }
+  /assistant/journals/material:
+    get:
+      summary: 查询生成手记所需的时间范围材料
+      responses:
+        "200": { description: 手记材料 }
+  /assistant/journals/{type}/{periodKey}:
+    parameters:
+      - $ref: "#/components/parameters/JournalType"
+      - $ref: "#/components/parameters/PeriodKey"
+    get:
+      summary: 按类型和周期获取手记
+      responses:
+        "200": { description: 手记详情 }
+  /assistant/journals/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: 删除手记
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已删除并写入复制墓碑 }
+  /assistant/gallery/summary:
+    get:
+      summary: 获取 AI 伙伴画廊汇总
+      responses:
+        "200": { description: 画廊汇总 }
+  /assistant/gallery/page:
+    get:
+      summary: 获取 AI 伙伴画廊分页
+      responses:
+        "200": { description: 画廊分页 }
+  /assistant/gallery:
+    get:
+      summary: 查询 AI 伙伴画廊
+      responses:
+        "200": { description: 画面列表 }
+  /media/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 读取当前账号的图片资源
+      description: 返回原图或预览图。供原生图片组件直接加载时，可使用查询参数传递短期访问令牌。
+      security:
+        - bearerAuth: []
+        - mediaAccessToken: []
+      parameters:
+        - in: query
+          name: variant
+          schema: { type: string, enum: [original, preview], default: original }
+          description: 选择原图或经过压缩的预览图。
+        - in: query
+          name: access_token
+          schema: { type: string }
+          description: 无法设置 Authorization 请求头的图片组件可使用此令牌。
+      responses:
+        "200":
+          description: 图片二进制内容
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        "304": { description: 客户端缓存仍然有效 }
+  /album/moments:
+    get:
+      summary: 查询纪念册时刻
+      responses:
+        "200": { description: 时刻列表 }
+    post:
+      summary: 创建纪念册时刻
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已原子创建时刻、来源及复制 Operation }
+  /album/moments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取纪念册时刻详情
+      responses:
+        "200": { description: 时刻详情 }
+    patch:
+      summary: 更新纪念册时刻
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更新并写入复制 Operation }
+    delete:
+      summary: 删除纪念册时刻
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已先删除来源并写入时刻墓碑 }
+  /album/moments/{id}/hide:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 隐藏纪念册时刻
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已隐藏并写入复制 Operation }
+  /album/moments/{id}/sources:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 为纪念册时刻添加来源
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已添加或替换来源，并写入对应墓碑与 Operation }
+  /album/source-candidates:
+    get:
+      summary: 查询可加入纪念册的来源候选
+      responses:
+        "200": { description: 来源候选列表 }
+  /dreams:
+    get:
+      summary: 查询梦境
+      responses:
+        "200": { description: 梦境列表 }
+    post:
+      summary: 创建梦境
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "201": { description: 已原子创建梦境、来源及复制 Operation }
+  /dreams/material:
+    get:
+      summary: 查询生成梦境所需材料
+      responses:
+        "200": { description: 梦境材料 }
+  /dreams/by-date/{dreamDate}:
+    parameters:
+      - $ref: "#/components/parameters/DreamDate"
+    get:
+      summary: 按日期获取梦境
+      responses:
+        "200": { description: 梦境详情 }
+  /dreams/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: 获取梦境详情
+      responses:
+        "200": { description: 梦境详情 }
+    patch:
+      summary: 更新梦境
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已更新并写入复制 Operation }
+    delete:
+      summary: 删除梦境
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "204": { description: 已先删除来源并写入梦境墓碑 }
+  /dreams/{id}/sources:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: 为梦境添加来源
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200": { description: 已添加或替换来源，并写入对应墓碑与 Operation }
+components:
+  parameters:
+    RequestId:
+      in: header
+      name: X-Request-Id
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 200 }
+      description: 写入幂等键。省略时由 Hub 生成；网络重试时必须复用原值。
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+    MediaId:
+      in: path
+      name: mediaId
+      required: true
+      schema: { type: string }
+    Version:
+      in: path
+      name: version
+      required: true
+      schema: { type: integer, minimum: 1 }
+    JournalType:
+      in: path
+      name: type
+      required: true
+      schema: { type: string }
+    PeriodKey:
+      in: path
+      name: periodKey
+      required: true
+      schema: { type: string }
+    DreamDate:
+      in: path
+      name: dreamDate
+      required: true
+      schema: { type: string, format: date }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+    peerHmac:
+      type: apiKey
+      in: header
+      name: X-AetherX-Peer-Signature
+      description: 与 Space、Node、Key、Timestamp、Nonce 请求头共同构成的 Peer HMAC 认证。
+    mediaAccessToken:
+      type: apiKey
+      in: query
+      name: access_token
