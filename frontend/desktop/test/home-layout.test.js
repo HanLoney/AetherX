@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "home.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "..", "home.css"), "utf8");
+const indexCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const javascript = fs.readFileSync(path.join(__dirname, "..", "home.js"), "utf8");
 const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
@@ -106,6 +107,16 @@ test("desktop exposes a polished global font size setting", () => {
   assert.match(javascript, /aether:font-scale/);
   assert.match(css, /\.interface-settings-panel\s*\{/);
   assert.match(css, /--font-scale/);
+});
+
+test("desktop modal scrollbars stay hidden while their content remains scrollable", () => {
+  assert.match(css, /\.modal-mask,\s*\.modal-mask \*\s*\{[^}]*scrollbar-width:\s*none;[^}]*-ms-overflow-style:\s*none;/s);
+  assert.match(css, /\.modal-mask::\-webkit-scrollbar,\s*\.modal-mask \*::\-webkit-scrollbar\s*\{[^}]*display:\s*none;[^}]*width:\s*0;[^}]*height:\s*0;/s);
+  assert.match(css, /\.settings-panel\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.connection-center-panel\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.device-manager-panel\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(indexCss, /\.todo-dialog,\s*\.todo-dialog \*,\s*\.appearance-dialog,\s*\.appearance-dialog \*\s*\{[^}]*scrollbar-width:\s*none;/s);
+  assert.match(indexCss, /\.appearance-dialog\s*\{[^}]*overflow:\s*auto;/s);
 });
 
 test("desktop settings expose encrypted export and archive import", () => {

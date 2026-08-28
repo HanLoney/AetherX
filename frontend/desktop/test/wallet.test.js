@@ -63,6 +63,8 @@ test("钱包页面提供多项存款概览和完整编辑入口", () => {
   assert.match(css, /\.transaction-edit/);
   assert.match(css, /\.transaction-kind/);
   assert.match(css, /\.account-dialog\[data-mode="edit"\] \.amount-fields/);
+  assert.match(css, /\.wallet-dialog,\.wallet-dialog \* \{ scrollbar-width:none; -ms-overflow-style:none; \}/);
+  assert.match(css, /\.wallet-dialog::\-webkit-scrollbar,\.wallet-dialog \*::\-webkit-scrollbar \{ display:none; width:0; height:0; \}/);
   assert.match(css, /body\.embedded/);
 });
 

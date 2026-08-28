@@ -38,6 +38,12 @@ test("persona editing is isolated inside the settings dialog", () => {
   assert.doesNotMatch(html.slice(0, modalStart), /id="assistantProfileForm"/);
 });
 
+test("profile dialogs hide native scrollbars without disabling scrolling", () => {
+  assert.match(css, /\.profile-settings-modal,\s*\.profile-settings-modal \*,\s*\.crop-modal,\s*\.crop-modal \*\s*\{[^}]*scrollbar-width:\s*none;/s);
+  assert.match(css, /\.profile-settings-modal::\-webkit-scrollbar,[^}]*display:\s*none;/s);
+  assert.match(css, /\.profile-settings-body\s*\{[^}]*overflow-y:\s*auto;/s);
+});
+
 test("growth view keeps traits and events in one continuous experience", () => {
   const growthStart = html.indexOf('id="growthSection"');
   const modalStart = html.indexOf('id="assistantSettingsModal"');

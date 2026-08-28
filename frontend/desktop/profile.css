@@ -434,6 +434,24 @@ button { color: inherit; cursor: pointer; }
   background: rgba(43, 39, 55, .38);
   backdrop-filter: blur(9px);
 }
+
+.profile-settings-modal,
+.profile-settings-modal *,
+.crop-modal,
+.crop-modal * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.profile-settings-modal::-webkit-scrollbar,
+.profile-settings-modal *::-webkit-scrollbar,
+.crop-modal::-webkit-scrollbar,
+.crop-modal *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .profile-settings-dialog {
   width: min(760px, 100%);
   max-height: min(780px, calc(100vh - 48px));
