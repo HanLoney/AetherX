@@ -231,6 +231,23 @@ export interface AuthSessionResult {
   expiresAt: number;
 }
 
+export interface AiConfig {
+  providerId: string;
+  providerName: string;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  updatedAt?: number | null;
+}
+
+export interface AiConfigInput {
+  providerId: string;
+  providerName: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}
+
 export class AetherApi {
   private baseUrl = "";
   private token = "";
@@ -543,7 +560,10 @@ export class AetherApi {
       `/api/v1/assistant/journals/by-id/${encodeURIComponent(id)}`
     );
   }
-  aiConfig() { return this.request<{ hasApiKey: boolean; model?: string }>("GET", "/api/v1/ai/config"); }
+  aiConfig() { return this.request<AiConfig>("GET", "/api/v1/ai/config"); }
+  updateAiConfig(input: AiConfigInput) {
+    return this.request<AiConfig>("PUT", "/api/v1/ai/config", input);
+  }
   agentChat(input: { conversationId?: string; content: string; responseMode?: "full" | "delta"; runtime?: Record<string, unknown> }) {
     return this.request<AgentChatResult>("POST", "/api/v1/agent/chat", input);
   }

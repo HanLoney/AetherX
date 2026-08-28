@@ -58,6 +58,36 @@ describe("mobile health api", () => {
   });
 });
 
+describe("mobile AI configuration api", () => {
+  it("updates the signed-in account provider configuration", async () => {
+    vi.stubGlobal("window", { setTimeout, clearTimeout });
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      return new Response(JSON.stringify({ data: {
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        baseUrl: "https://api.deepseek.com",
+        model: "deepseek-chat",
+        hasApiKey: true
+      } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new AetherApi({ baseUrl: "https://api.aetherx.tech", token: "session-token" });
+
+    await expect(api.updateAiConfig({
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-chat",
+      apiKey: "replacement-key"
+    })).resolves.toMatchObject({ model: "deepseek-chat", hasApiKey: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.aetherx.tech/api/v1/ai/config",
+      expect.objectContaining({ method: "PUT", body: expect.stringContaining('"replacement-key"') })
+    );
+  });
+});
+
 describe("cloud session refresh", () => {
   it("rotates an expired session and retries with the new access token", async () => {
     vi.stubGlobal("window", { setTimeout, clearTimeout });

@@ -162,6 +162,11 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("data.reconnectHub()");
     expect(settingsSource).toContain('class="archive-settings-entry"');
     expect(settingsSource).toContain('class="archive-settings-sheet"');
+    expect(settingsSource).toContain('class="ai-settings-entry"');
+    expect(settingsSource).toContain('class="ai-settings-sheet"');
+    expect(settingsSource).toContain("编辑 AI 接入");
+    expect(settingsSource).toContain("updateAiConfig");
+    expect(settingsSource).toContain("只有输入新值时才会替换原密钥");
     expect(settingsSource).toContain("导入存档");
     expect(settingsSource).not.toContain("合并导入");
     expect(settingsSource).toContain("api.createArchiveExport");
