@@ -7,6 +7,11 @@ import {
   saveMobileDataCache,
   warmGalleryPreviews
 } from "../lib/mobile-cache";
+import {
+  clearJournalCache,
+  loadJournalCache,
+  saveJournalCache
+} from "../lib/journal-cache";
 import { MobileHealthReporter } from "../lib/device-health";
 import { SyncCoordinator } from "../lib/sync";
 import { useLocalHub, type LocalHubStatus } from "../lib/local-hub";
@@ -28,6 +33,7 @@ const galleryAlbumImages = ref<GalleryImage[]>([]);
 const galleryAlbumTotal = ref(0);
 const galleryAlbumLoading = ref(false);
 const journals = ref<Journal[]>([]);
+const journalsLoading = ref(false);
 const loading = ref(false);
 const lastUpdatedAt = ref<number | null>(null);
 const conversationRevision = ref(0);
@@ -46,6 +52,7 @@ let controlSyncGeneration = 0;
 let restorePromise: Promise<boolean> | null = null;
 let galleryPromise: Promise<void> | null = null;
 let conversationPagePromise: Promise<ConversationPage> | null = null;
+let journalRefreshPromise: Promise<void> | null = null;
 let activeCacheScope = "";
 let archiveResetPromise: Promise<void> | null = null;
 let lastArchiveResetCursor = 0;
@@ -87,6 +94,13 @@ async function persistCache() {
   await saveMobileDataCache(scope, snapshot());
 }
 
+async function persistJournalCache() {
+  const scope = activeCacheScope || currentCacheScope();
+  if (!scope) return;
+  activeCacheScope = scope;
+  await saveJournalCache(scope, journals.value);
+}
+
 async function restoreCache() {
   if (lastUpdatedAt.value) return true;
   if (restorePromise) return restorePromise;
@@ -95,27 +109,37 @@ async function restoreCache() {
     const scope = currentCacheScope();
     if (!scope) return false;
     activeCacheScope = scope;
-    const cached = await loadMobileDataCache(scope, session.requireApi());
-    if (!cached) return false;
-    todos.value = cached.todos || [];
-    memories.value = cached.memories || [];
-    conversations.value = cached.conversations || [];
+    const api = session.requireApi();
+    const [cached, cachedJournals] = await Promise.all([
+      loadMobileDataCache(scope, api),
+      loadJournalCache(scope, api)
+    ]);
+    if (!cached && !cachedJournals) return false;
+    todos.value = cached?.todos || [];
+    memories.value = cached?.memories || [];
+    conversations.value = cached?.conversations || [];
     conversationTotal.value = conversations.value.length;
     conversationHasMore.value = conversations.value.length > 0;
-    profile.value = cached.profile || {};
-    assistant.value = cached.assistant || {};
-    galleryImages.value = cached.galleryImages || [];
-    galleryTotal.value = cached.galleryTotal || 0;
-    galleryAlbumImages.value = cached.galleryAlbumImages || [];
-    galleryAlbumTotal.value = cached.galleryAlbumTotal || galleryAlbumImages.value.length;
-    journals.value = cached.journals || [];
+    profile.value = cached?.profile || {};
+    assistant.value = cached?.assistant || {};
+    galleryImages.value = cached?.galleryImages || [];
+    galleryTotal.value = cached?.galleryTotal || 0;
+    galleryAlbumImages.value = cached?.galleryAlbumImages || [];
+    galleryAlbumTotal.value = cached?.galleryAlbumTotal || galleryAlbumImages.value.length;
+    journals.value = cachedJournals?.journals?.length
+      ? cachedJournals.journals
+      : cached?.journals || [];
     const moduleStore = useModuleStore();
     if (!moduleStore.isEnabled("todo")) todos.value = [];
     if (!moduleStore.isEnabled("memory")) memories.value = [];
     if (!moduleStore.isEnabled("autonomous-journal")) journals.value = [];
-    lastUpdatedAt.value = cached.savedAt;
+    lastUpdatedAt.value = Math.max(cached?.savedAt || 0, cachedJournals?.savedAt || 0);
     conversationRevision.value += 1;
     if (galleryAlbumImages.value.length) void warmGalleryPreviews(galleryAlbumImages.value);
+    if (!cachedJournals?.journals?.length && journals.value.length) {
+      void persistJournalCache().catch(() => undefined);
+      void persistCache().catch(() => undefined);
+    }
     return true;
   })().finally(() => { restorePromise = null; });
   return restorePromise;
@@ -128,16 +152,13 @@ async function refreshAll() {
   loading.value = true;
   syncState.value = "syncing";
   try {
-    const [todoResult, memoryResult, conversationResult, profileResult, assistantResult, galleryResult, journalResult] = await Promise.all([
+    const [todoResult, memoryResult, conversationResult, profileResult, assistantResult, galleryResult] = await Promise.all([
       moduleStore.isEnabled("todo") ? api.listTodos() : Promise.resolve([]),
       moduleStore.isEnabled("memory") ? api.listMemories() : Promise.resolve([]),
       api.conversationPage(0, CONVERSATION_PAGE_SIZE),
       api.profile(),
       api.assistantProfile(),
-      api.gallerySummary(3).catch(() => ({ total: 0, items: [] })),
-      moduleStore.isEnabled("autonomous-journal")
-        ? api.listJournals(50).catch(() => [])
-        : Promise.resolve([])
+      api.gallerySummary(3).catch(() => ({ total: 0, items: [] }))
     ]);
     todos.value = todoResult;
     memories.value = memoryResult;
@@ -146,16 +167,72 @@ async function refreshAll() {
     assistant.value = assistantResult;
     galleryImages.value = galleryResult.items;
     galleryTotal.value = galleryResult.total;
-    journals.value = journalResult;
     lastUpdatedAt.value = Date.now();
     syncState.value = "online";
     await persistCache();
+    if (moduleStore.isEnabled("autonomous-journal")) {
+      void refreshJournals().catch(() => undefined);
+    } else {
+      journals.value = [];
+    }
   } catch (error) {
     syncState.value = "error";
     throw error;
   } finally {
     loading.value = false;
   }
+}
+
+async function refreshJournals() {
+  if (journalRefreshPromise) return journalRefreshPromise;
+  const api = useSessionStore().requireApi();
+  const compatibleApi = api as AetherApi & {
+    listJournalSummaries?: (limit?: number) => Promise<Array<Omit<Journal, "content"> & { content?: string }>>;
+    journalById?: (id: string) => Promise<Journal>;
+  };
+  journalRefreshPromise = (async () => {
+    journalsLoading.value = true;
+    const summaries = typeof compatibleApi.listJournalSummaries === "function"
+      ? await compatibleApi.listJournalSummaries(100)
+      : await api.listJournals(100);
+    const previousById = new Map(journals.value.map((journal) => [journal.id, journal]));
+    journals.value = summaries.map((summary) => ({
+      ...summary,
+      content: summary.content || previousById.get(summary.id)?.content || ""
+    } as Journal));
+    await Promise.allSettled([persistCache(), persistJournalCache()]);
+
+    const pending = summaries.filter((summary) => {
+      if (summary.content) return false;
+      const previous = previousById.get(summary.id);
+      return !previous?.content || Number(previous.updatedAt) !== Number(summary.updatedAt);
+    });
+    if (!pending.length || typeof compatibleApi.journalById !== "function") return;
+
+    const loaded = new Map<string, Journal>();
+    const queue = [...pending];
+    const worker = async () => {
+      while (queue.length) {
+        const summary = queue.shift();
+        if (!summary) return;
+        try {
+          const journal = await compatibleApi.journalById!(summary.id);
+          if (journal?.id) loaded.set(journal.id, journal);
+        } catch {
+          // Keep the cached body and continue loading the remaining journals.
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+    if (loaded.size) {
+      journals.value = journals.value.map((journal) => loaded.get(journal.id) || journal);
+      await Promise.allSettled([persistJournalCache(), persistCache()]);
+    }
+  })().finally(() => {
+    journalsLoading.value = false;
+    journalRefreshPromise = null;
+  });
+  return journalRefreshPromise;
 }
 
 async function refreshGroups(groups: Set<string>) {
@@ -173,9 +250,7 @@ async function refreshGroups(groups: Set<string>) {
     galleryImages.value = value.items;
     galleryTotal.value = value.total;
   }));
-  if (groups.has("journals") && moduleStore.isEnabled("autonomous-journal")) jobs.push(api.listJournals(50).then((value) => {
-    journals.value = value;
-  }));
+  if (groups.has("journals") && moduleStore.isEnabled("autonomous-journal")) jobs.push(refreshJournals());
   await Promise.all(jobs);
   if (groups.has("gallery")) await preloadGallery().catch(() => undefined);
   lastUpdatedAt.value = Date.now();
@@ -700,6 +775,7 @@ async function resetAfterArchiveRestore(resetCursor: number) {
     if (scope) {
       await Promise.all([
         clearMobileDataCache(scope),
+        clearJournalCache(scope),
         saveSyncCursor(scope, resetCursor)
       ]);
     }
@@ -759,6 +835,7 @@ function resetData(clearCache: boolean) {
   galleryAlbumTotal.value = 0;
   galleryAlbumLoading.value = false;
   journals.value = [];
+  journalsLoading.value = false;
   lastUpdatedAt.value = null;
   conversationRevision.value += 1;
   syncState.value = "idle";
@@ -767,7 +844,10 @@ function resetData(clearCache: boolean) {
   restorePromise = null;
   galleryPromise = null;
   conversationPagePromise = null;
-  if (clearCache && scope) void clearMobileDataCache(scope);
+  journalRefreshPromise = null;
+  if (clearCache && scope) {
+    void Promise.all([clearMobileDataCache(scope), clearJournalCache(scope)]);
+  }
 }
 
 async function reconnectHub(preserveControlTransport = false) {
@@ -856,6 +936,7 @@ export function useDataStore() {
     galleryAlbumTotal: readonly(galleryAlbumTotal),
     galleryAlbumLoading: readonly(galleryAlbumLoading),
     journals: readonly(journals),
+    journalsLoading: readonly(journalsLoading),
     loading: readonly(loading),
     lastUpdatedAt: readonly(lastUpdatedAt),
     conversationRevision: readonly(conversationRevision),
@@ -863,6 +944,7 @@ export function useDataStore() {
     activeTodos: computed(() => todos.value.filter((todo) => !todo.completed)),
     pendingMemories: computed(() => memories.value.filter((memory) => memory.status === "candidate")),
     refreshAll,
+    refreshJournals,
     refreshConversationPage,
     loadRemainingConversations,
     restoreCache,

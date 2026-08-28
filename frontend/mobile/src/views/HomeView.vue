@@ -98,12 +98,12 @@ async function saveAssistantAvatar(avatarDataUrl: string) {
         <header>
           <div>
             <small>最近手记</small>
-            <h2>{{ recentJournal?.title || "她还没有写下第一篇手记" }}</h2>
+            <h2>{{ recentJournal?.title || (data.journalsLoading.value ? "正在翻开手记缓存…" : "她还没有写下第一篇手记") }}</h2>
           </div>
           <span>{{ recentJournal ? (recentJournal.type === "daily" ? "日记" : "周记") : "翻开" }}</span>
         </header>
         <p v-if="recentJournal">{{ recentJournalExcerpt || "这一页留下了一些不适合匆匆读完的话。" }}</p>
-        <p v-else class="journal-empty">等故事积攒得再多一点，这张纸会自然写满。</p>
+        <p v-else class="journal-empty">{{ data.journalsLoading.value ? "正在从本地与云端核对手记目录。" : "等故事积攒得再多一点，这张纸会自然写满。" }}</p>
         <footer>
           <span>{{ recentJournal?.periodKey || "手记本" }}</span>
           <i>{{ recentJournal?.mood || "去翻阅全部" }} <ArrowRight :size="13" /></i>

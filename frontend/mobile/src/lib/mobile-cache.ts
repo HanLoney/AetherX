@@ -70,7 +70,17 @@ export function createMobileDataSnapshot(input: Omit<MobileDataSnapshot, "versio
   return {
     version: CACHE_VERSION,
     savedAt: Date.now(),
-    ...input
+    ...input,
+    journals: input.journals.map(compactJournal)
+  };
+}
+
+export function compactJournal(journal: Journal): Journal {
+  return {
+    ...journal,
+    content: String(journal.content || "")
+      .replace(/!\[[^\]]*]\(data:image\/[^)]+\)/g, "")
+      .slice(0, 2_000)
   };
 }
 

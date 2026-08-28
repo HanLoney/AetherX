@@ -113,6 +113,8 @@ export interface Journal {
   updatedAt: number;
 }
 
+export type JournalSummary = Omit<Journal, "content"> & { content?: string };
+
 export interface ModuleState {
   id: string;
   name: string;
@@ -527,6 +529,18 @@ export class AetherApi {
     return this.request<Journal[]>(
       "GET",
       `/api/v1/assistant/journals?limit=${encodeURIComponent(limit)}`
+    );
+  }
+  listJournalSummaries(limit = 100) {
+    return this.request<JournalSummary[]>(
+      "GET",
+      `/api/v1/assistant/journals?limit=${encodeURIComponent(limit)}&includeContent=false`
+    );
+  }
+  journalById(id: string) {
+    return this.request<Journal>(
+      "GET",
+      `/api/v1/assistant/journals/by-id/${encodeURIComponent(id)}`
     );
   }
   aiConfig() { return this.request<{ hasApiKey: boolean; model?: string }>("GET", "/api/v1/ai/config"); }

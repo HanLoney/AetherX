@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
           <BookOpen :size="16" />
           <div>
             <strong>{{ assistantName }}手记</strong>
-            <span>{{ data.journals.value.length }} 篇</span>
+            <span>{{ data.journalsLoading.value && !data.journals.value.length ? "正在载入" : `${data.journals.value.length} 篇` }}</span>
           </div>
         </div>
 
@@ -282,8 +282,8 @@ onBeforeUnmount(() => {
 
         <div v-else class="journal-page journal-empty">
           <BookOpen :size="28" />
-          <strong>这一册还是空白的</strong>
-          <p>{{ filter === "all" ? "她写下第一篇手记后，会从这里慢慢翻开。" : "这个分类里还没有手记。" }}</p>
+          <strong>{{ data.journalsLoading.value ? "正在翻开手记缓存" : "这一册还是空白的" }}</strong>
+          <p>{{ data.journalsLoading.value ? "本地内容会先出现，云端变更随后补齐。" : filter === "all" ? "她写下第一篇手记后，会从这里慢慢翻开。" : "这个分类里还没有手记。" }}</p>
         </div>
       </div>
 
