@@ -28,6 +28,9 @@ aetherx-backend-deploy*.tar.gz
 .idea/
 .vscode/
 
+# Private AetherX-B administration console
+frontend/admin/
+
 *.log
 .DS_Store
 Thumbs.db
