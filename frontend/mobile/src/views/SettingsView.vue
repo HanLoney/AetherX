@@ -1786,6 +1786,7 @@ async function toggleModule(id: string, enabled: boolean) {
               <input v-model="aiModelSearch" type="search" autocomplete="off" placeholder="搜索模型名称或 ID" autofocus />
               <button v-if="aiModelSearch" type="button" aria-label="清除搜索" @click="aiModelSearch = ''"><X :size="14" /></button>
             </label>
+            <div class="ai-model-picker-content">
             <nav class="ai-model-kind-tabs" aria-label="模型类型筛选">
               <button
                 v-for="filter in aiModelKindFilters"
@@ -1826,6 +1827,7 @@ async function toggleModule(id: string, enabled: boolean) {
               </div>
             </div>
             <p v-if="filteredAiModels.length < aiModels.length" class="ai-model-list-note">当前显示 {{ filteredAiModels.length }} / {{ aiModels.length }} 个模型</p>
+            </div>
           </section>
         </div>
       </Transition>
@@ -2002,4 +2004,6 @@ async function toggleModule(id: string, enabled: boolean) {
 .billing-payment-guide{margin:11px 3px 0;color:#948d9b;font-size:calc(7px * var(--font-scale,1));line-height:1.55}.billing-payment-sheet>.connection-notice,.billing-payment-sheet>.connection-error{margin:9px 2px 0}.billing-payment-sheet footer{display:grid;grid-template-columns:.8fr 1.35fr;gap:8px;margin-top:13px}.billing-payment-sheet footer button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(112,104,137,.1);border-radius:14px;color:#7c7584;background:rgba(255,255,255,.7);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-payment-sheet footer button:last-child{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.billing-payment-sheet footer button:disabled{opacity:.5}
 .ai-model-picker-sheet>.sheet-handle{flex:0 0 auto}.ai-model-picker-sheet .ai-model-kind-tabs{height:42px!important;min-height:42px!important;max-height:42px!important;flex:0 0 42px!important;position:relative;z-index:4;overflow-x:auto!important;overflow-y:hidden!important;align-items:center!important;background:rgba(249,249,252,.94)}.ai-model-picker-sheet .ai-model-kind-tabs button{height:34px!important;min-height:34px!important;flex:0 0 auto!important}.ai-model-picker-sheet .ai-model-list{flex:1 1 auto!important;min-height:0!important}
 .ai-model-picker-sheet .ai-model-kind-tabs{height:56px!important;min-height:56px!important;max-height:56px!important;flex-basis:56px!important;display:flex!important;align-items:center!important;overflow-x:auto!important;overflow-y:hidden!important;position:relative!important;z-index:20!important;isolation:isolate;background:rgba(249,249,252,.99)!important;padding:8px 2px 10px!important;margin:0 1px 8px!important}.ai-model-picker-sheet .ai-model-kind-tabs button{position:relative!important;z-index:21!important;display:inline-flex!important;visibility:visible!important;opacity:1!important;height:36px!important;min-height:36px!important;transform:none!important}.ai-model-picker-sheet .ai-model-list{position:relative;z-index:1;flex:1 1 0!important}
+.ai-model-picker-sheet{display:grid!important;grid-template-rows:auto auto 47px 56px auto minmax(0,1fr) auto!important;align-content:stretch!important}.ai-model-picker-sheet .ai-model-search{margin-top:14px!important;margin-bottom:11px!important}.ai-model-picker-sheet .ai-model-kind-tabs{margin-top:0!important;margin-bottom:8px!important}.ai-model-picker-sheet .ai-model-list{display:grid!important;min-height:0!important;overflow-y:auto!important}
+.ai-model-picker-content{display:contents!important}
 </style>
