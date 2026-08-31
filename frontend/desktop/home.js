@@ -7,6 +7,9 @@ const state = {
   draft: null,
   providerProfiles: [],
   providerIntegrations: [],
+  billingModules: [],
+  billingBalance: null,
+  billingSession: null,
   imageConfig: null,
   imageDraft: null,
   messages: [],
@@ -220,6 +223,14 @@ const elements = {
   settingsMask: document.querySelector("#settingsMask"),
   providerGrid: document.querySelector("#providerGrid"),
   authorizeTokenDanceBtn: document.querySelector("#authorizeTokenDanceBtn"),
+  billingSection: document.querySelector("#billingSection"),
+  refreshBillingBtn: document.querySelector("#refreshBillingBtn"),
+  billingPayBtn: document.querySelector("#billingPayBtn"),
+  billingAmountInput: document.querySelector("#billingAmountInput"),
+  billingBalanceLabel: document.querySelector("#billingBalanceLabel"),
+  billingBalanceDetail: document.querySelector("#billingBalanceDetail"),
+  billingResult: document.querySelector("#billingResult"),
+  billingResultText: document.querySelector("#billingResult span"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   modelInput: document.querySelector("#modelInput"),
@@ -724,6 +735,51 @@ function syncTokenDancePreset(integrations = state.providerIntegrations) {
     "hidden",
     !enabled || state.draft.providerId !== "tokendance"
   );
+  syncBillingSection();
+}
+
+function showBillingResult(type, message) {
+  if (!elements.billingResult) return;
+  elements.billingResult.className = `test-result ${type}`;
+  elements.billingResultText.textContent = message;
+}
+
+function formatBillingMicros(value) {
+  const amount = Number(value || 0) / 1_000_000;
+  return `¥${amount.toFixed(2)}`;
+}
+
+function syncBillingSection() {
+  const enabled = state.billingModules.some((item) => item.id === "tokendance");
+  const active = state.config?.providerId === "tokendance";
+  elements.billingSection?.classList.toggle("hidden", !(enabled && active));
+  if (enabled && active && !state.billingBalance) void refreshBillingBalance();
+}
+
+async function refreshBillingBalance() {
+  if (!state.billingModules.some((item) => item.id === "tokendance")) return;
+  elements.refreshBillingBtn && (elements.refreshBillingBtn.disabled = true);
+  try {
+    state.billingBalance = await window.desktop.getBillingBalance("tokendance");
+    elements.billingBalanceLabel.textContent = formatBillingMicros(state.billingBalance.balanceMicros);
+    elements.billingBalanceDetail.textContent = `总额度 ${formatBillingMicros(state.billingBalance.creditsMicros)} · 已使用 ${formatBillingMicros(state.billingBalance.usedMicros)}`;
+    showBillingResult("success", "余额已更新");
+  } catch (error) {
+    elements.billingBalanceLabel.textContent = "--";
+    elements.billingBalanceDetail.textContent = error.message || "余额暂时无法读取";
+    showBillingResult("error", error.message || "余额暂时无法读取");
+  } finally { if (elements.refreshBillingBtn) elements.refreshBillingBtn.disabled = false; }
+}
+
+async function createBillingPayment() {
+  const amount = Number(elements.billingAmountInput?.value);
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100000) { showBillingResult("error", "充值金额需为 1 到 100000 元整数"); return; }
+  elements.billingPayBtn.disabled = true;
+  try {
+    state.billingSession = await window.desktop.createBillingPaymentSession("tokendance", amount);
+    showBillingResult("idle", `已打开 ¥${amount} 充值页，支付完成后点击刷新余额`);
+  } catch (error) { showBillingResult("error", error.message || "充值链接创建失败"); }
+  finally { elements.billingPayBtn.disabled = false; }
 }
 
 function renderImageProviderGrid() {
@@ -2452,6 +2508,7 @@ async function saveConfig() {
     state.config = await window.desktop.activateAIProvider(profile.providerId);
     state.providerProfiles = (await window.desktop.listAIProviders()).items;
     state.draft = { ...state.config, apiKey: "" };
+    syncBillingSection();
     if (state.connectionStatus !== "success") state.connectionStatus = "idle";
     renderHeader();
     closeSettings();
@@ -2729,6 +2786,8 @@ document.addEventListener("click", (event) => {
 document.querySelector("#setupBanner").addEventListener("click", openSettings);
 document.querySelector("#closeSettingsBtn").addEventListener("click", closeSettings);
 document.querySelector("#cancelSettingsBtn").addEventListener("click", closeSettings);
+elements.refreshBillingBtn?.addEventListener("click", () => refreshBillingBalance());
+elements.billingPayBtn?.addEventListener("click", () => createBillingPayment());
 document.querySelector("#testConnectionBtn").addEventListener("click", testConnection);
 document.querySelector("#saveConfigBtn").addEventListener("click", saveConfig);
 elements.authorizeTokenDanceBtn?.addEventListener("click", async () => {
@@ -2844,10 +2903,11 @@ window.addEventListener("aether:font-scale-changed", (event) => {
 });
 
 async function refreshCoreHubData(options = {}) {
-  const [configResult, providersResult, conversationsResult] = await Promise.allSettled([
+  const [configResult, providersResult, conversationsResult, billingResult] = await Promise.allSettled([
     window.desktop.getAIConfig(),
     window.desktop.listAIProviders(),
-    window.desktop.listConversations()
+    window.desktop.listConversations(),
+    window.desktop.listBillingModules()
   ]);
   if (configResult.status === "fulfilled") {
     state.config = configResult.value;
@@ -2866,6 +2926,8 @@ async function refreshCoreHubData(options = {}) {
   } else {
     console.warn("Unable to refresh AI provider profiles:", providersResult.reason?.message);
   }
+  if (billingResult.status === "fulfilled") state.billingModules = billingResult.value.items || [];
+  syncBillingSection();
   if (conversationsResult.status !== "fulfilled") {
     console.warn("Unable to refresh conversation history:", conversationsResult.reason?.message);
     return;

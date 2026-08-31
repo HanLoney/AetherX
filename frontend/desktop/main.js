@@ -1018,6 +1018,16 @@ function registerIpcHandlers() {
   ipcMain.handle("ai:integration:oauth:status", (_event, integrationId, flowId) =>
     api.providerOAuthStatus(integrationId, flowId)
   );
+  ipcMain.handle("billing:modules:list", () => api.listBillingModules());
+  ipcMain.handle("billing:balance:get", (_event, moduleId) => api.getBillingBalance(moduleId));
+  ipcMain.handle("billing:payment:create", async (_event, moduleId, amount) => {
+    const session = await api.createBillingPaymentSession(moduleId, amount);
+    await shell.openExternal(session.paymentUrl);
+    return session;
+  });
+  ipcMain.handle("billing:payment:status", (_event, moduleId, sessionId) =>
+    api.getBillingPaymentStatus(moduleId, sessionId)
+  );
   ipcMain.handle("ai:chat", (_event, payload) => api.requestAi(payload));
   ipcMain.handle("agent:chat", (_event, payload) => api.agentChat(payload));
   ipcMain.handle("agent:approve", (_event, id, approved) =>

@@ -458,6 +458,22 @@ class XuanApiClient {
     );
   }
 
+  listBillingModules() {
+    return this.request("GET", "/api/v1/billing/modules");
+  }
+
+  getBillingBalance(moduleId) {
+    return this.request("GET", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/balance`);
+  }
+
+  createBillingPaymentSession(moduleId, amount) {
+    return this.request("POST", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/payment-sessions`, { amount });
+  }
+
+  getBillingPaymentStatus(moduleId, sessionId) {
+    return this.request("GET", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/payment-sessions/${encodeURIComponent(sessionId)}`);
+  }
+
   requestAi(payload) {
     return this.request("POST", "/api/v1/ai/chat", payload);
   }

@@ -260,6 +260,35 @@ export interface AiConfigInput {
   apiKey?: string;
 }
 
+export interface BillingModuleDescriptor {
+  id: string;
+  providerId: string;
+  name: string;
+  capabilities: { balance: boolean; paymentSessions: boolean };
+  limits: { minimumAmount: number; maximumAmount: number; integerOnly: boolean };
+}
+
+export interface BillingBalance {
+  moduleId: string;
+  currency: "CNY";
+  unit: "micro-yuan";
+  creditsMicros: number;
+  usedMicros: number;
+  balanceMicros: number;
+}
+
+export interface BillingPaymentSession {
+  id: string;
+  moduleId: string;
+  amount: number;
+  status: "pending" | "paid" | "failed" | "closed" | "refunded";
+  paymentUrl?: string;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt?: number;
+  paidAt?: number | null;
+}
+
 export class AetherApi {
   private baseUrl = "";
   private token = "";
@@ -594,6 +623,18 @@ export class AetherApi {
   }
   providerOAuthStatus(integrationId: string, flowId: string) {
     return this.request<{ status: string; errorMessage?: string }>("GET", `/api/v1/ai/provider-integrations/${encodeURIComponent(integrationId)}/oauth/status/${encodeURIComponent(flowId)}`);
+  }
+  listBillingModules() {
+    return this.request<{ items: BillingModuleDescriptor[] }>("GET", "/api/v1/billing/modules");
+  }
+  billingBalance(moduleId: string) {
+    return this.request<BillingBalance>("GET", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/balance`);
+  }
+  createBillingPaymentSession(moduleId: string, amount: number) {
+    return this.request<BillingPaymentSession>("POST", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/payment-sessions`, { amount });
+  }
+  billingPaymentStatus(moduleId: string, sessionId: string) {
+    return this.request<BillingPaymentSession>("GET", `/api/v1/billing/modules/${encodeURIComponent(moduleId)}/payment-sessions/${encodeURIComponent(sessionId)}`);
   }
   saveAiProviderProfile(input: AiConfigInput) {
     return this.request<AiProviderProfile>(

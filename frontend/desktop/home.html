@@ -537,6 +537,15 @@
           <div id="providerGrid" class="provider-grid"></div>
         </section>
 
+        <section id="billingSection" class="settings-section billing-section hidden">
+          <div class="service-section-head"><div><h3>TokenDance 账户与充值</h3><p>查询当前授权账户余额，充值时会打开 TokenDance 安全支付页。</p></div><button id="refreshBillingBtn" type="button" class="test-button">刷新余额</button></div>
+          <div class="billing-panel">
+            <div><small>可用余额</small><strong id="billingBalanceLabel">--</strong><span id="billingBalanceDetail">授权后可查询</span></div>
+            <div class="billing-actions"><label><span>充值金额（元）</span><input id="billingAmountInput" type="number" min="1" max="100000" step="1" value="10"></label><button id="billingPayBtn" type="button" class="save-button">打开充值链接</button></div>
+          </div>
+          <div id="billingResult" class="test-result hidden" aria-live="polite"><i></i><span></span></div>
+        </section>
+
         <section class="settings-section form-grid">
           <label class="field endpoint-field">
             <span>API 端点</span>

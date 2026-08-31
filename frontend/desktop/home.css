@@ -2836,6 +2836,17 @@ button { color: inherit; cursor: pointer; }
   border-top: 1px solid rgba(119, 113, 144, .13);
 }
 
+.billing-panel { display: grid; gap: 16px; padding: 14px; border: 1px solid rgba(112, 160, 216, .18); border-radius: 13px; background: rgba(237, 246, 253, .58); }
+.billing-panel > div:first-child { display: grid; gap: 4px; }
+.billing-panel small, .billing-actions label > span { color: #8a8294; font-size: calc(8px * var(--font-scale, 1)); }
+.billing-panel strong { color: #4f6f91; font-size: calc(24px * var(--font-scale, 1)); }
+.billing-panel > div:first-child span { color: #9a93a3; font-size: calc(8px * var(--font-scale, 1)); }
+.billing-actions { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
+.billing-actions label { display: grid; gap: 6px; }
+.billing-actions input { width: 100%; height: 40px; padding: 0 10px; border: 1px solid rgba(132,126,153,.18); border-radius: 10px; color: #4e495c; background: rgba(255,255,255,.78); font-size: calc(11px * var(--font-scale,1)); }
+.billing-actions .save-button { height: 40px; padding: 0 14px; }
+.billing-section .test-result { margin-top: 11px; }
+
 .service-section-head {
   display: flex;
   align-items: flex-start;

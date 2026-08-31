@@ -87,6 +87,12 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("ai:integration:oauth:start", integrationId),
   providerOAuthStatus: (integrationId, flowId) =>
     ipcRenderer.invoke("ai:integration:oauth:status", integrationId, flowId),
+  listBillingModules: () => ipcRenderer.invoke("billing:modules:list"),
+  getBillingBalance: (moduleId) => ipcRenderer.invoke("billing:balance:get", moduleId),
+  createBillingPaymentSession: (moduleId, amount) =>
+    ipcRenderer.invoke("billing:payment:create", moduleId, amount),
+  getBillingPaymentStatus: (moduleId, sessionId) =>
+    ipcRenderer.invoke("billing:payment:status", moduleId, sessionId),
   requestAI: (payload) => ipcRenderer.invoke("ai:chat", payload),
   agentChat: (payload) => ipcRenderer.invoke("agent:chat", payload),
   approveAgentRun: (id, approved) =>

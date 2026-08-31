@@ -36,7 +36,7 @@ import { useRouter } from "vue-router";
 import AppShell from "../components/AppShell.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
-import type { AiConfig, AiConfigInput, AiProviderProfile } from "../lib/api";
+import type { AiConfig, AiConfigInput, AiProviderProfile, BillingBalance, BillingModuleDescriptor, BillingPaymentSession } from "../lib/api";
 import openAiIcon from "../assets/provider-icons/openai.svg";
 import deepSeekIcon from "../assets/provider-icons/deepseek.svg";
 import qwenIcon from "../assets/provider-icons/qwen.svg";
@@ -107,6 +107,13 @@ const aiError = ref("");
 const aiNotice = ref("");
 const aiProfiles = ref<AiProviderProfile[]>([]);
 const tokenDanceEnabled = ref(false);
+const billingModules = ref<BillingModuleDescriptor[]>([]);
+const billingBalance = ref<BillingBalance | null>(null);
+const billingAmount = ref(10);
+const billingSession = ref<BillingPaymentSession | null>(null);
+const billingBusy = ref(false);
+const billingNotice = ref("");
+const billingError = ref("");
 const aiForm = reactive({ providerId: "custom", providerName: "自定义", baseUrl: "", model: "", apiKey: "" });
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
@@ -141,6 +148,8 @@ const activeAiProvider = computed(() =>
 const visibleAiProviders = computed(() =>
   aiProviders.filter((provider) => provider.id !== "tokendance" || tokenDanceEnabled.value)
 );
+const billingVisible = computed(() => cloudEdition.value && aiState.value?.providerId === "tokendance" && billingModules.value.some((item) => item.id === "tokendance"));
+const billingBalanceLabel = computed(() => billingBalance.value ? `¥${(billingBalance.value.balanceMicros / 1_000_000).toFixed(2)}` : "--");
 const aiKeyCanRemain = computed(() => Boolean(
   selectedAiProfile.value?.hasApiKey &&
   selectedAiProfile.value.baseUrl.replace(/\/+$/, "") === aiForm.baseUrl.trim().replace(/\/+$/, "")
@@ -289,8 +298,35 @@ async function refreshAiState(updateOpenEditor = false) {
   aiState.value = current;
   aiProfiles.value = profiles.items;
   tokenDanceEnabled.value = Boolean(profiles.integrations?.some((item) => item.id === "tokendance"));
+  await refreshBilling();
   if (updateOpenEditor && aiEditorOpen.value && !aiSaving.value && !aiTesting.value) applyAiConfigToForm(current);
   return current;
+}
+
+async function refreshBilling() {
+  if (!cloudEdition.value) return;
+  try {
+    const result = await session.requireApi().listBillingModules();
+    billingModules.value = result.items || [];
+    if (billingModules.value.some((item) => item.id === "tokendance") && aiState.value?.providerId === "tokendance") {
+      billingBalance.value = await session.requireApi().billingBalance("tokendance");
+    } else billingBalance.value = null;
+    billingError.value = "";
+  } catch (reason) { billingModules.value = []; billingBalance.value = null; billingError.value = (reason as Error).message || "充值能力暂时不可用。"; }
+}
+
+async function createBillingPayment() {
+  if (billingBusy.value || !billingModules.value.some((item) => item.id === "tokendance")) return;
+  const amount = Number(billingAmount.value);
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100000) { billingError.value = "充值金额需为 1 到 100000 元整数。"; return; }
+  billingBusy.value = true; billingError.value = ""; billingNotice.value = "";
+  try {
+    billingSession.value = await session.requireApi().createBillingPaymentSession("tokendance", amount);
+    if (!billingSession.value.paymentUrl) throw new Error("TokenDance 没有返回有效的充值链接。");
+    await Browser.open({ url: billingSession.value.paymentUrl });
+    billingNotice.value = `已打开 ¥${amount} 充值页，支付完成后刷新余额。`;
+  } catch (reason) { billingError.value = (reason as Error).message || "充值链接创建失败。"; }
+  finally { billingBusy.value = false; }
 }
 
 function handleRemoteAiConfigUpdate() {
@@ -1190,6 +1226,14 @@ async function toggleModule(id: string, enabled: boolean) {
       </article>
     </section>
 
+    <section v-if="billingVisible" class="billing-card">
+      <div class="billing-card-head"><div><small>TokenDance 可用余额</small><strong>{{ billingBalanceLabel }}</strong></div><button type="button" :disabled="billingBusy" @click="refreshBilling"><RefreshCw :size="15" />刷新</button></div>
+      <p class="billing-detail" v-if="billingBalance">总额度 ¥{{ (billingBalance.creditsMicros / 1000000).toFixed(2) }} · 已使用 ¥{{ (billingBalance.usedMicros / 1000000).toFixed(2) }}</p>
+      <div class="billing-form"><label><span>充值金额（元）</span><input v-model.number="billingAmount" type="number" min="1" max="100000" step="1" /></label><button type="button" :disabled="billingBusy" @click="createBillingPayment"><Link2 :size="16" />{{ billingBusy ? '处理中…' : '打开充值链接' }}</button></div>
+      <p v-if="billingNotice" class="connection-notice"><Check :size="13" />{{ billingNotice }}</p>
+      <p v-if="billingError" class="connection-error">{{ billingError }}</p>
+    </section>
+
     <button class="interface-settings-entry" type="button" @click="interfaceOpen = true">
       <i><Settings2 :size="18" /></i>
       <span><strong>应用设置</strong><small>字体大小与界面显示</small></span>
@@ -1577,4 +1621,5 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:32px;height:32px;display:grid;place-items:center;border:1px solid rgba(115,107,136,.08);border-radius:10px;color:#8d7595;background:rgba(255,255,255,.8);font-style:normal}.ai-provider-grid button>i img{width:22px;height:22px;object-fit:contain}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button>i>svg{position:static;color:#8d7595}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
 .ai-editor-fields{display:grid;gap:11px;margin-top:15px}.ai-editor-fields label{display:grid;gap:6px}.ai-editor-fields label>span{color:#70697d;font-size:calc(9px * var(--font-scale,1));font-weight:700}.ai-editor-fields input{width:100%;height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale,1))}.ai-editor-fields input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.ai-editor-fields input:disabled{opacity:.6}.ai-editor-fields small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
 .ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
+.billing-card{margin-top:14px;padding:15px;border:1px solid rgba(var(--blue-rgb),.15);border-radius:20px 20px 8px 20px;background:rgba(240,248,253,.72);box-shadow:0 12px 30px rgba(75,70,103,.07)}.billing-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.billing-card-head>div{display:grid;gap:4px}.billing-card-head small{color:#8d8797;font-size:calc(7px * var(--font-scale,1))}.billing-card-head strong{color:#527395;font-size:calc(22px * var(--font-scale,1))}.billing-card-head button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:0;border-radius:9px;color:#7187a5;background:rgba(255,255,255,.68);font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-card-head button:disabled{opacity:.5}.billing-detail{margin:8px 0 0;color:#96909f;font-size:calc(7px * var(--font-scale,1))}.billing-form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:9px;margin-top:12px}.billing-form label{display:grid;gap:6px}.billing-form label span{color:#81798d;font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-form input{width:100%;height:41px;padding:0 10px;border:1px solid rgba(112,104,137,.13);border-radius:11px;background:rgba(255,255,255,.8);font-size:calc(10px * var(--font-scale,1))}.billing-form>button{height:41px;display:flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:11px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-form>button:disabled{opacity:.5}
 </style>
