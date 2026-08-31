@@ -1006,6 +1006,7 @@ function registerIpcHandlers() {
   ipcMain.handle("ai:providers:list", () => api.listAiProviders());
   ipcMain.handle("ai:providers:save", (_event, input) => api.saveAiProvider(input));
   ipcMain.handle("ai:providers:test", (_event, input) => api.testAiProvider(input));
+  ipcMain.handle("ai:providers:models", (_event, input) => api.listAiProviderModels(input));
   ipcMain.handle("ai:providers:activate", (_event, providerId) =>
     api.activateAiProvider(providerId)
   );

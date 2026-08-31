@@ -36,7 +36,7 @@ import { useRouter } from "vue-router";
 import AppShell from "../components/AppShell.vue";
 import ConnectionPill from "../components/ConnectionPill.vue";
 import ProfileAvatar from "../components/ProfileAvatar.vue";
-import type { AiConfig, AiConfigInput, AiProviderProfile, BillingBalance, BillingModuleDescriptor, BillingPaymentSession } from "../lib/api";
+import type { AiConfig, AiConfigInput, AiModelOption, AiProviderProfile, BillingBalance, BillingModuleDescriptor, BillingPaymentSession } from "../lib/api";
 import openAiIcon from "../assets/provider-icons/openai.svg";
 import deepSeekIcon from "../assets/provider-icons/deepseek.svg";
 import qwenIcon from "../assets/provider-icons/qwen.svg";
@@ -103,6 +103,8 @@ const aiState = ref<AiConfig | null>(null);
 const aiEditorOpen = ref(false);
 const aiSaving = ref(false);
 const aiTesting = ref(false);
+const aiModelsLoading = ref(false);
+const aiModels = ref<AiModelOption[]>([]);
 const aiError = ref("");
 const aiNotice = ref("");
 const aiProfiles = ref<AiProviderProfile[]>([]);
@@ -686,14 +688,58 @@ function selectAiProvider(provider: typeof aiProviders[number]) {
   }
   aiError.value = "";
   aiNotice.value = "";
+  aiModels.value = [];
 }
 
 function closeAiEditor() {
-  if (aiSaving.value || aiTesting.value) return;
+  if (aiSaving.value || aiTesting.value || aiModelsLoading.value) return;
   aiForm.apiKey = "";
   aiEditorOpen.value = false;
   aiError.value = "";
   aiNotice.value = "";
+}
+
+async function fetchAiModels() {
+  if (aiSaving.value || aiTesting.value || aiModelsLoading.value) return;
+  const provider = aiProviders.find((item) => item.id === aiForm.providerId);
+  const providerName = (aiForm.providerId === "custom" ? aiForm.providerName : provider?.name)?.trim();
+  const baseUrl = aiForm.baseUrl.trim().replace(/\/+$/, "");
+  if (!providerName || !baseUrl) {
+    aiError.value = "请先填写服务商和 API 接口地址。";
+    return;
+  }
+  if (!aiForm.apiKey.trim() && !aiKeyCanRemain.value) {
+    aiError.value = "请先填写这个接口的 API Key。";
+    return;
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "https:") throw new Error();
+  } catch {
+    aiError.value = "线上版接口地址必须是有效的 HTTPS 地址。";
+    return;
+  }
+  aiModelsLoading.value = true;
+  aiError.value = "";
+  aiNotice.value = "正在读取服务商模型列表……";
+  try {
+    const result = await session.requireApi().listAiProviderModels({
+      providerId: aiForm.providerId,
+      providerName,
+      baseUrl,
+      model: aiForm.model.trim(),
+      ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {})
+    });
+    aiModels.value = result.items || [];
+    if (!aiForm.model.trim() && aiModels.value[0]) aiForm.model = aiModels.value[0].id;
+    aiNotice.value = `已获取 ${aiModels.value.length} 个模型，请选择后保存。`;
+  } catch (reason) {
+    aiModels.value = [];
+    aiError.value = (reason as Error).message || "模型列表获取失败，请检查地址和密钥。";
+    aiNotice.value = "";
+  } finally {
+    aiModelsLoading.value = false;
+  }
 }
 
 function collectAiConfigInput(): AiConfigInput | null {
@@ -1410,7 +1456,7 @@ async function toggleModule(id: string, enabled: boolean) {
                 :key="provider.id"
                 type="button"
                 :class="{ active: aiForm.providerId === provider.id }"
-                :disabled="aiSaving || aiTesting"
+                :disabled="aiSaving || aiTesting || aiModelsLoading"
                 @click="selectAiProvider(provider)"
               >
                 <i><img v-if="provider.icon" :src="provider.icon" alt="" aria-hidden="true"><Link2 v-else :size="17" /></i>
@@ -1427,34 +1473,43 @@ async function toggleModule(id: string, enabled: boolean) {
             <div class="ai-editor-fields">
               <label v-if="aiForm.providerId === 'custom'">
                 <span>服务商名称</span>
-                <input v-model="aiForm.providerName" maxlength="80" placeholder="例如：我的兼容服务" :disabled="aiSaving" />
+                <input v-model="aiForm.providerName" maxlength="80" placeholder="例如：我的兼容服务" :disabled="aiSaving || aiModelsLoading" />
               </label>
               <label>
                 <span>API 接口地址</span>
-                <input v-model="aiForm.baseUrl" type="url" inputmode="url" maxlength="500" autocomplete="url" placeholder="https://api.example.com/v1" :disabled="aiSaving" required />
+                <input v-model="aiForm.baseUrl" type="url" inputmode="url" maxlength="500" autocomplete="url" placeholder="https://api.example.com/v1" :disabled="aiSaving || aiModelsLoading" @input="aiModels = []" required />
               </label>
               <label>
                 <span>模型名称</span>
-                <input v-model="aiForm.model" maxlength="200" autocomplete="off" placeholder="填写服务商提供的模型 ID" :disabled="aiSaving" required />
+                <div class="ai-model-input-row">
+                  <input v-model="aiForm.model" maxlength="200" autocomplete="off" placeholder="填写或获取服务商模型 ID" :disabled="aiSaving || aiModelsLoading" required />
+                  <button type="button" :disabled="aiSaving || aiTesting || aiModelsLoading || !aiForm.baseUrl.trim()" @click="fetchAiModels">
+                    <RefreshCw :size="15" :class="{ spin: aiModelsLoading }" />{{ aiModelsLoading ? '获取中' : '获取模型' }}
+                  </button>
+                </div>
+                <select v-if="aiModels.length" v-model="aiForm.model" :disabled="aiSaving || aiModelsLoading">
+                  <option v-for="model in aiModels" :key="model.id" :value="model.id">{{ model.name === model.id ? model.id : `${model.name} · ${model.id}` }}</option>
+                </select>
+                <small>{{ aiModels.length ? `已读取 ${aiModels.length} 个模型，可直接选择` : '填写地址与密钥后，可自动获取该接口的模型列表' }}</small>
               </label>
               <label>
                 <span>API Key</span>
-                <input v-model="aiForm.apiKey" type="password" maxlength="1000" autocomplete="new-password" autocapitalize="off" spellcheck="false" :placeholder="aiKeyCanRemain ? '已安全保存；留空则保持不变' : '请输入这个接口的 API Key'" :disabled="aiSaving" />
+                <input v-model="aiForm.apiKey" type="password" maxlength="1000" autocomplete="new-password" autocapitalize="off" spellcheck="false" :placeholder="aiKeyCanRemain ? '已安全保存；留空则保持不变' : '请输入这个接口的 API Key'" :disabled="aiSaving || aiModelsLoading" />
                 <small>{{ aiKeyCanRemain ? '密钥不会回显。只有输入新值时才会替换原密钥。' : '更换服务商或接口后需要填写新密钥；密钥会加密保存在云端。' }}</small>
               </label>
             </div>
 
-            <button v-if="aiForm.providerId === 'tokendance'" class="test-ai-config" type="button" :disabled="aiSaving || aiTesting" @click="authorizeTokenDance">
+            <button v-if="aiForm.providerId === 'tokendance'" class="test-ai-config" type="button" :disabled="aiSaving || aiTesting || aiModelsLoading" @click="authorizeTokenDance">
               <Link2 :size="17" />一键授权 TokenDance
             </button>
 
             <p v-if="aiNotice" class="ai-editor-notice"><Check :size="15" />{{ aiNotice }}</p>
             <p v-if="aiError" class="ai-editor-error">{{ aiError }}</p>
             <div class="ai-editor-actions">
-              <button class="test-ai-config" type="button" :disabled="aiSaving || aiTesting || !aiForm.baseUrl.trim() || !aiForm.model.trim()" @click="testAiConfig">
+              <button class="test-ai-config" type="button" :disabled="aiSaving || aiTesting || aiModelsLoading || !aiForm.baseUrl.trim() || !aiForm.model.trim()" @click="testAiConfig">
                 <RefreshCw :size="17" :class="{ spin: aiTesting }" />{{ aiTesting ? '正在测试…' : '测试并保存' }}
               </button>
-              <button class="save-ai-config" type="submit" :disabled="aiSaving || aiTesting || !aiForm.baseUrl.trim() || !aiForm.model.trim()">
+              <button class="save-ai-config" type="submit" :disabled="aiSaving || aiTesting || aiModelsLoading || !aiForm.baseUrl.trim() || !aiForm.model.trim()">
                 <Check :size="17" />{{ aiSaving ? '正在切换…' : selectedAiProfile?.active ? '保存当前配置' : '保存并切换使用' }}
               </button>
             </div>
@@ -1620,6 +1675,7 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-editor-intro{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(255,255,255,.82);border-radius:20px 20px 20px 8px;background:linear-gradient(135deg,rgba(var(--pink-rgb),.095),rgba(var(--blue-rgb),.11));box-shadow:0 12px 32px rgba(75,70,103,.07)}.ai-editor-intro>i{width:43px;height:43px;display:grid;place-items:center;border:1px solid rgba(118,108,139,.08);border-radius:15px;color:#9179a2;background:rgba(255,255,255,.78)}.ai-editor-intro>i img{width:27px;height:27px;object-fit:contain}.ai-editor-intro>div{display:grid;gap:4px}.ai-editor-intro strong{color:#5c5565;font-size:calc(10px * var(--font-scale,1))}.ai-editor-intro span{color:#958e9d;font-size:calc(7px * var(--font-scale,1));line-height:1.5}.ai-editor-intro>b{padding:5px 8px;border-radius:999px;color:#8b7f91;background:rgba(116,108,137,.08);font-size:calc(7px * var(--font-scale,1));white-space:nowrap}.ai-editor-intro>b.verified{color:#5d8b76;background:rgba(89,173,133,.12)}.ai-editor-intro>b.failed{color:#aa6175;background:rgba(202,103,132,.11)}
 .ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:32px;height:32px;display:grid;place-items:center;border:1px solid rgba(115,107,136,.08);border-radius:10px;color:#8d7595;background:rgba(255,255,255,.8);font-style:normal}.ai-provider-grid button>i img{width:22px;height:22px;object-fit:contain}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button>i>svg{position:static;color:#8d7595}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
 .ai-editor-fields{display:grid;gap:11px;margin-top:15px}.ai-editor-fields label{display:grid;gap:6px}.ai-editor-fields label>span{color:#70697d;font-size:calc(9px * var(--font-scale,1));font-weight:700}.ai-editor-fields input{width:100%;height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale,1))}.ai-editor-fields input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.ai-editor-fields input:disabled{opacity:.6}.ai-editor-fields small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
+.ai-model-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.ai-model-input-row>button{height:45px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 11px;border:1px solid rgba(var(--blue-rgb),.16);border-radius:13px;color:#7188a4;background:rgba(255,255,255,.7);font-size:calc(8px * var(--font-scale,1));font-weight:800;white-space:nowrap}.ai-model-input-row>button:disabled{opacity:.5}.ai-editor-fields select{width:100%;height:43px;padding:0 11px;border:1px solid rgba(112,104,137,.13);border-radius:13px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(9px * var(--font-scale,1))}
 .ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
 .billing-card{margin-top:14px;padding:15px;border:1px solid rgba(var(--blue-rgb),.15);border-radius:20px 20px 8px 20px;background:rgba(240,248,253,.72);box-shadow:0 12px 30px rgba(75,70,103,.07)}.billing-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.billing-card-head>div{display:grid;gap:4px}.billing-card-head small{color:#8d8797;font-size:calc(7px * var(--font-scale,1))}.billing-card-head strong{color:#527395;font-size:calc(22px * var(--font-scale,1))}.billing-card-head button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:0;border-radius:9px;color:#7187a5;background:rgba(255,255,255,.68);font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-card-head button:disabled{opacity:.5}.billing-detail{margin:8px 0 0;color:#96909f;font-size:calc(7px * var(--font-scale,1))}.billing-form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:9px;margin-top:12px}.billing-form label{display:grid;gap:6px}.billing-form label span{color:#81798d;font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-form input{width:100%;height:41px;padding:0 10px;border:1px solid rgba(112,104,137,.13);border-radius:11px;background:rgba(255,255,255,.8);font-size:calc(10px * var(--font-scale,1))}.billing-form>button{height:41px;display:flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:11px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-form>button:disabled{opacity:.5}
 </style>

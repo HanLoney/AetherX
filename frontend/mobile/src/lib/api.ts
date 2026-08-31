@@ -260,6 +260,19 @@ export interface AiConfigInput {
   apiKey?: string;
 }
 
+export interface AiModelOption {
+  id: string;
+  name: string;
+  ownedBy: string;
+  created: number;
+  contextLength: number;
+}
+
+export interface AiModelsResult {
+  items: AiModelOption[];
+  fetchedAt: number;
+}
+
 export interface BillingModuleDescriptor {
   id: string;
   providerId: string;
@@ -647,6 +660,13 @@ export class AetherApi {
     return this.request<AiProviderProfile>(
       "POST",
       `/api/v1/ai/providers/${encodeURIComponent(input.providerId)}/test`,
+      input
+    );
+  }
+  listAiProviderModels(input: AiConfigInput) {
+    return this.request<AiModelsResult>(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(input.providerId)}/models`,
       input
     );
   }

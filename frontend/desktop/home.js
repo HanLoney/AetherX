@@ -7,6 +7,7 @@ const state = {
   draft: null,
   providerProfiles: [],
   providerIntegrations: [],
+  availableModels: [],
   billingModules: [],
   billingBalance: null,
   billingSession: null,
@@ -234,6 +235,9 @@ const elements = {
   baseUrlInput: document.querySelector("#baseUrlInput"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   modelInput: document.querySelector("#modelInput"),
+  modelOptions: document.querySelector("#modelOptions"),
+  modelHelp: document.querySelector("#modelHelp"),
+  fetchModelsBtn: document.querySelector("#fetchModelsBtn"),
   keyHelp: document.querySelector("#keyHelp"),
   imageProviderGrid: document.querySelector("#imageProviderGrid"),
   imageAISection: document.querySelector("#imageAISection"),
@@ -689,6 +693,7 @@ function renderProviderGrid() {
     button.append(logo, copy);
 
     button.addEventListener("click", () => {
+      state.availableModels = [];
       const saved = state.providerProfiles.find((item) => item.providerId === provider.id);
       if (saved) {
         state.draft = { ...saved, apiKey: "" };
@@ -831,6 +836,55 @@ function syncDraftInputs() {
   elements.keyHelp.textContent = state.draft.hasApiKey
     ? "已有密钥保存在系统安全存储中，输入新值可替换"
     : "密钥使用系统安全存储，不会写入代码仓库";
+  renderAvailableModels();
+}
+
+function renderAvailableModels() {
+  elements.modelOptions?.replaceChildren(...state.availableModels.map((model) => {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.label = model.name && model.name !== model.id ? model.name : model.ownedBy || "";
+    return option;
+  }));
+  if (elements.modelHelp) {
+    elements.modelHelp.textContent = state.availableModels.length
+      ? `已获取 ${state.availableModels.length} 个模型，可输入关键词或从建议中选择`
+      : "填写地址与密钥后，可自动读取该接口提供的模型";
+  }
+}
+
+async function fetchAvailableModels() {
+  if (elements.fetchModelsBtn?.disabled) return;
+  const draft = collectDraft();
+  if (!draft.baseUrl) {
+    showTestResult("error", "请先填写 API 端点");
+    return;
+  }
+  const savedEndpoint = String(state.draft.baseUrl || "").replace(/\/+$/, "");
+  const currentEndpoint = String(draft.baseUrl || "").replace(/\/+$/, "");
+  if (!draft.apiKey && !(state.draft.hasApiKey && savedEndpoint === currentEndpoint)) {
+    showTestResult("error", "请先填写 API Key，再获取模型列表");
+    return;
+  }
+  elements.fetchModelsBtn.disabled = true;
+  elements.fetchModelsBtn.textContent = "获取中…";
+  showTestResult("idle", "正在读取服务商模型列表…");
+  try {
+    const result = await window.desktop.listAIProviderModels(draft);
+    state.availableModels = Array.isArray(result.items) ? result.items : [];
+    renderAvailableModels();
+    if (!elements.modelInput.value.trim() && state.availableModels[0]) {
+      elements.modelInput.value = state.availableModels[0].id;
+    }
+    showTestResult("success", `已获取 ${state.availableModels.length} 个模型`);
+  } catch (error) {
+    state.availableModels = [];
+    renderAvailableModels();
+    showTestResult("error", error.message || "模型列表获取失败");
+  } finally {
+    elements.fetchModelsBtn.disabled = false;
+    elements.fetchModelsBtn.textContent = "获取模型";
+  }
 }
 
 function syncImageDraftInputs() {
@@ -899,6 +953,7 @@ function showImageConfigResult(type, message) {
 
 function openSettings() {
   state.draft = { ...state.config, apiKey: "" };
+  state.availableModels = [];
   state.imageDraft = { ...state.imageConfig, apiKey: "" };
   renderProviderGrid();
   renderImageProviderGrid();
@@ -2788,6 +2843,7 @@ document.querySelector("#closeSettingsBtn").addEventListener("click", closeSetti
 document.querySelector("#cancelSettingsBtn").addEventListener("click", closeSettings);
 elements.refreshBillingBtn?.addEventListener("click", () => refreshBillingBalance());
 elements.billingPayBtn?.addEventListener("click", () => createBillingPayment());
+elements.fetchModelsBtn?.addEventListener("click", () => fetchAvailableModels());
 document.querySelector("#testConnectionBtn").addEventListener("click", testConnection);
 document.querySelector("#saveConfigBtn").addEventListener("click", saveConfig);
 elements.authorizeTokenDanceBtn?.addEventListener("click", async () => {

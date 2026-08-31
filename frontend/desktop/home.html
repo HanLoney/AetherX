@@ -562,7 +562,12 @@
           </label>
           <label class="field">
             <span>模型名称</span>
-            <input id="modelInput" placeholder="例如：gpt-5.4-mini" />
+            <div class="model-picker">
+              <input id="modelInput" list="modelOptions" placeholder="例如：gpt-5.4-mini" />
+              <button id="fetchModelsBtn" type="button">获取模型</button>
+            </div>
+            <datalist id="modelOptions"></datalist>
+            <small id="modelHelp">填写地址与密钥后，可自动读取该接口提供的模型</small>
           </label>
         </section>
 

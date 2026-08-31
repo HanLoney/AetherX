@@ -431,6 +431,14 @@ class XuanApiClient {
     );
   }
 
+  listAiProviderModels(config) {
+    return this.request(
+      "POST",
+      `/api/v1/ai/providers/${encodeURIComponent(config.providerId)}/models`,
+      config
+    );
+  }
+
   activateAiProvider(providerId) {
     return this.request(
       "POST",

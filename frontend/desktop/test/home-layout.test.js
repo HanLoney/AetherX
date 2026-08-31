@@ -160,6 +160,15 @@ test("desktop keeps one saved connection profile per AI provider", () => {
   assert.match(javascript, /window\.desktop\.activateAIProvider\(profile\.providerId\)/);
 });
 
+test("desktop can fetch and select models from the configured endpoint", () => {
+  assert.match(html, /id="fetchModelsBtn"/);
+  assert.match(html, /id="modelInput" list="modelOptions"/);
+  assert.match(preload, /listAIProviderModels/);
+  assert.match(main, /ai:providers:models/);
+  assert.match(javascript, /async function fetchAvailableModels/);
+  assert.match(javascript, /window\.desktop\.listAIProviderModels\(draft\)/);
+});
+
 test("desktop AI provider selectors use bundled official brand icons", () => {
   ["openai.svg", "deepseek.svg", "qwen.svg", "zhipu.png", "siliconflow.ico", "volcengine.png"].forEach(
     (icon) => assert.match(providers, new RegExp(`provider-icons/${icon.replace(".", "\\.")}`))

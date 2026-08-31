@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("desktop", {
   listAIProviders: () => ipcRenderer.invoke("ai:providers:list"),
   saveAIProvider: (config) => ipcRenderer.invoke("ai:providers:save", config),
   testAIProvider: (config) => ipcRenderer.invoke("ai:providers:test", config),
+  listAIProviderModels: (config) => ipcRenderer.invoke("ai:providers:models", config),
   activateAIProvider: (providerId) => ipcRenderer.invoke("ai:providers:activate", providerId),
   listProviderIntegrations: () => ipcRenderer.invoke("ai:integrations:list"),
   startProviderOAuth: (integrationId) =>
