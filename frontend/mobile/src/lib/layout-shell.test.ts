@@ -181,6 +181,11 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("当前使用：");
     expect(settingsSource).toContain("连接已验证");
     expect(settingsSource).toContain("只有输入新值时才会替换原密钥");
+    expect(settingsSource).toContain('class="ai-model-picker-sheet"');
+    expect(settingsSource).toContain('class="ai-model-search"');
+    expect(settingsSource).toContain("filteredAiModels");
+    expect(settingsSource).toContain("selectAiModel(model)");
+    expect(settingsSource).not.toContain('<select v-if="aiModels.length"');
     expect(dataSource).toContain('new CustomEvent("aether:ai-config-updated"');
     expect(settingsSource).toContain('window.addEventListener("aether:ai-config-updated"');
     expect(settingsSource).toContain("await refreshAiState()");

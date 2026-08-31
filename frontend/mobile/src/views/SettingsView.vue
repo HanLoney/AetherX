@@ -12,6 +12,7 @@ import {
   LogOut,
   Pencil,
   RefreshCw,
+  Search,
   ScanLine,
   Server,
   Smartphone,
@@ -105,6 +106,8 @@ const aiSaving = ref(false);
 const aiTesting = ref(false);
 const aiModelsLoading = ref(false);
 const aiModels = ref<AiModelOption[]>([]);
+const aiModelPickerOpen = ref(false);
+const aiModelSearch = ref("");
 const aiError = ref("");
 const aiNotice = ref("");
 const aiProfiles = ref<AiProviderProfile[]>([]);
@@ -156,6 +159,24 @@ const aiKeyCanRemain = computed(() => Boolean(
   selectedAiProfile.value?.hasApiKey &&
   selectedAiProfile.value.baseUrl.replace(/\/+$/, "") === aiForm.baseUrl.trim().replace(/\/+$/, "")
 ));
+const selectedAiModel = computed(() =>
+  aiModels.value.find((model) => model.id === aiForm.model) || null
+);
+const filteredAiModels = computed(() => {
+  const query = aiModelSearch.value.trim().toLocaleLowerCase();
+  const matches = query
+    ? aiModels.value.filter((model) =>
+        [model.name, model.id, model.ownedBy].some((value) =>
+          String(value || "").toLocaleLowerCase().includes(query)
+        )
+      )
+    : aiModels.value;
+  return matches.slice(0, 250);
+});
+const aiProviderHostname = computed(() => {
+  try { return new URL(aiForm.baseUrl).hostname; }
+  catch { return aiForm.providerName || "模型服务商"; }
+});
 const activeAiStatusLabel = computed(() => {
   if (!aiState.value?.hasApiKey) return "未配置密钥";
   if (aiState.value.verificationStatus === "verified") return "连接已验证";
@@ -699,6 +720,31 @@ function closeAiEditor() {
   aiNotice.value = "";
 }
 
+function openAiModelPicker() {
+  if (!aiModels.value.length) return;
+  aiModelSearch.value = "";
+  aiModelPickerOpen.value = true;
+}
+
+function closeAiModelPicker() {
+  aiModelPickerOpen.value = false;
+  aiModelSearch.value = "";
+}
+
+function selectAiModel(model: AiModelOption) {
+  aiForm.model = model.id;
+  closeAiModelPicker();
+  aiNotice.value = `已选择 ${model.name || model.id}。`;
+}
+
+function modelContextLabel(value: number) {
+  const context = Number(value || 0);
+  if (!context) return "";
+  if (context >= 1_000_000) return `${(context / 1_000_000).toFixed(context % 1_000_000 ? 1 : 0)}M 上下文`;
+  if (context >= 1_000) return `${Math.round(context / 1_000)}K 上下文`;
+  return `${context} 上下文`;
+}
+
 async function fetchAiModels() {
   if (aiSaving.value || aiTesting.value || aiModelsLoading.value) return;
   const provider = aiProviders.find((item) => item.id === aiForm.providerId);
@@ -733,6 +779,7 @@ async function fetchAiModels() {
     aiModels.value = result.items || [];
     if (!aiForm.model.trim() && aiModels.value[0]) aiForm.model = aiModels.value[0].id;
     aiNotice.value = `已获取 ${aiModels.value.length} 个模型，请选择后保存。`;
+    if (aiModels.value.length) openAiModelPicker();
   } catch (reason) {
     aiModels.value = [];
     aiError.value = (reason as Error).message || "模型列表获取失败，请检查地址和密钥。";
@@ -1487,9 +1534,11 @@ async function toggleModule(id: string, enabled: boolean) {
                     <RefreshCw :size="15" :class="{ spin: aiModelsLoading }" />{{ aiModelsLoading ? '获取中' : '获取模型' }}
                   </button>
                 </div>
-                <select v-if="aiModels.length" v-model="aiForm.model" :disabled="aiSaving || aiModelsLoading">
-                  <option v-for="model in aiModels" :key="model.id" :value="model.id">{{ model.name === model.id ? model.id : `${model.name} · ${model.id}` }}</option>
-                </select>
+                <button v-if="aiModels.length" class="ai-model-picker-trigger" type="button" :disabled="aiSaving || aiModelsLoading" @click="openAiModelPicker">
+                  <i><Sparkles :size="16" /></i>
+                  <span><small>从 {{ aiModels.length }} 个模型中选择</small><strong>{{ selectedAiModel?.name || aiForm.model || '请选择模型' }}</strong></span>
+                  <ChevronRight :size="17" />
+                </button>
                 <small>{{ aiModels.length ? `已读取 ${aiModels.length} 个模型，可直接选择` : '填写地址与密钥后，可自动获取该接口的模型列表' }}</small>
               </label>
               <label>
@@ -1514,6 +1563,47 @@ async function toggleModule(id: string, enabled: boolean) {
               </button>
             </div>
           </form>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
+        <div v-if="aiModelPickerOpen" class="sheet-backdrop ai-model-picker-backdrop" @click.self="closeAiModelPicker">
+          <section class="ai-model-picker-sheet" role="dialog" aria-modal="true" aria-label="选择 AI 模型" @keydown.esc="closeAiModelPicker">
+            <div class="sheet-handle" />
+            <header>
+              <div><span>MODEL CATALOG</span><h2>选择模型</h2><p>{{ aiProviderHostname }} · 共 {{ aiModels.length }} 个</p></div>
+              <button type="button" aria-label="关闭模型选择" @click="closeAiModelPicker"><X :size="18" /></button>
+            </header>
+            <label class="ai-model-search">
+              <Search :size="17" />
+              <input v-model="aiModelSearch" type="search" autocomplete="off" placeholder="搜索模型名称或 ID" autofocus />
+              <button v-if="aiModelSearch" type="button" aria-label="清除搜索" @click="aiModelSearch = ''"><X :size="14" /></button>
+            </label>
+            <div class="ai-model-list">
+              <button
+                v-for="model in filteredAiModels"
+                :key="model.id"
+                type="button"
+                :class="{ selected: model.id === aiForm.model }"
+                @click="selectAiModel(model)"
+              >
+                <i><Sparkles :size="16" /></i>
+                <span class="ai-model-copy">
+                  <strong>{{ model.name || model.id }}</strong>
+                  <code>{{ model.id }}</code>
+                  <span v-if="model.ownedBy || model.contextLength">
+                    <b v-if="model.ownedBy">{{ model.ownedBy }}</b>
+                    <b v-if="model.contextLength">{{ modelContextLabel(model.contextLength) }}</b>
+                  </span>
+                </span>
+                <i class="ai-model-check"><Check v-if="model.id === aiForm.model" :size="16" /></i>
+              </button>
+              <div v-if="!filteredAiModels.length" class="ai-model-empty">
+                <Search :size="23" /><strong>没有匹配的模型</strong><span>换个名称或模型 ID 试试</span>
+              </div>
+            </div>
+            <p v-if="filteredAiModels.length < aiModels.length" class="ai-model-list-note">当前显示前 {{ filteredAiModels.length }} 项，输入关键词可继续筛选</p>
+          </section>
         </div>
       </Transition>
 
@@ -1676,6 +1766,10 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.ai-provider-grid button{position:relative;min-width:0;min-height:68px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-content:center;align-items:center;gap:3px 7px;padding:7px 9px;border:1px solid rgba(112,104,137,.09);border-radius:16px;color:#787181;background:rgba(255,255,255,.58);text-align:left}.ai-provider-grid button>i{grid-row:1 / span 2;width:32px;height:32px;display:grid;place-items:center;border:1px solid rgba(115,107,136,.08);border-radius:10px;color:#8d7595;background:rgba(255,255,255,.8);font-style:normal}.ai-provider-grid button>i img{width:22px;height:22px;object-fit:contain}.ai-provider-grid button>span{overflow:hidden;font-size:calc(8px * var(--font-scale,1));font-weight:700;text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small{overflow:hidden;color:#aaa3b0;font-size:calc(6px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-provider-grid button>small.active{color:#7e6a9a;font-weight:800}.ai-provider-grid button>small.verified{color:#5d9077}.ai-provider-grid button>small.failed{color:#ad6175}.ai-provider-grid button>svg{position:absolute;top:5px;right:5px;color:#fff}.ai-provider-grid button>i>svg{position:static;color:#8d7595}.ai-provider-grid button.active{border-color:rgba(var(--pink-rgb),.3);color:#66586b;background:linear-gradient(135deg,rgba(var(--pink-rgb),.15),rgba(var(--blue-rgb),.14));box-shadow:0 8px 20px rgba(103,83,119,.1)}.ai-provider-grid button.active>svg{padding:2px;border-radius:50%;background:#a785b3}.ai-provider-grid button:disabled{opacity:.55}
 .ai-editor-fields{display:grid;gap:11px;margin-top:15px}.ai-editor-fields label{display:grid;gap:6px}.ai-editor-fields label>span{color:#70697d;font-size:calc(9px * var(--font-scale,1));font-weight:700}.ai-editor-fields input{width:100%;height:45px;padding:0 12px;border:1px solid rgba(112,104,137,.13);border-radius:14px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(10px * var(--font-scale,1))}.ai-editor-fields input:focus{border-color:rgba(var(--blue-rgb),.4);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.07)}.ai-editor-fields input:disabled{opacity:.6}.ai-editor-fields small{color:#aaa3b0;font-size:calc(7px * var(--font-scale,1));line-height:1.5}
 .ai-model-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.ai-model-input-row>button{height:45px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 11px;border:1px solid rgba(var(--blue-rgb),.16);border-radius:13px;color:#7188a4;background:rgba(255,255,255,.7);font-size:calc(8px * var(--font-scale,1));font-weight:800;white-space:nowrap}.ai-model-input-row>button:disabled{opacity:.5}.ai-editor-fields select{width:100%;height:43px;padding:0 11px;border:1px solid rgba(112,104,137,.13);border-radius:13px;outline:0;color:var(--ink);background:rgba(255,255,255,.78);font-size:calc(9px * var(--font-scale,1))}
+.ai-model-picker-trigger{min-width:0;min-height:58px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 11px;border:1px solid rgba(var(--blue-rgb),.13);border-radius:16px;color:#6f7f96;background:linear-gradient(125deg,rgba(var(--pink-rgb),.06),rgba(var(--blue-rgb),.09));text-align:left}.ai-model-picker-trigger>i{width:34px;height:34px;display:grid;place-items:center;border-radius:12px;color:#8a83b0;background:rgba(255,255,255,.72)}.ai-model-picker-trigger>span{min-width:0;display:grid;gap:3px}.ai-model-picker-trigger>span small{overflow:hidden;color:#9a92a3;font-size:calc(7px * var(--font-scale,1));font-weight:600;text-overflow:ellipsis;white-space:nowrap}.ai-model-picker-trigger strong{overflow:hidden;color:#5b5664;font-size:calc(9px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-model-picker-trigger>svg{color:#9b91a5}.ai-model-picker-trigger:disabled{opacity:.52}
+.ai-model-picker-backdrop{z-index:80;background:rgba(39,36,54,.34);backdrop-filter:blur(10px)}.ai-model-picker-sheet{width:100%;height:min(78dvh,720px);display:flex;flex-direction:column;overflow:hidden;padding:12px 15px calc(15px + env(safe-area-inset-bottom));border:1px solid rgba(255,255,255,.82);border-bottom:0;border-radius:30px 30px 0 0;background:radial-gradient(circle at 94% 2%,rgba(var(--blue-rgb),.18),transparent 31%),radial-gradient(circle at 2% 94%,rgba(var(--pink-rgb),.12),transparent 36%),rgba(249,249,252,.99);box-shadow:0 -28px 78px rgba(53,48,72,.27)}.ai-model-picker-sheet header{display:flex;align-items:flex-start;justify-content:space-between;padding:2px 3px 0}.ai-model-picker-sheet header>div{min-width:0}.ai-model-picker-sheet header span{color:#8a82aa;font-size:calc(7px * var(--font-scale,1));font-weight:850;letter-spacing:.16em}.ai-model-picker-sheet h2{margin:3px 0 0;color:#4e4958;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.ai-model-picker-sheet header p{overflow:hidden;margin:5px 0 0;color:#9a93a1;font-size:calc(7px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.ai-model-picker-sheet header>button{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}
+.ai-model-search{height:47px;display:flex;align-items:center;gap:9px;margin:14px 2px 11px;padding:0 11px;border:1px solid rgba(112,104,137,.12);border-radius:15px;background:rgba(255,255,255,.82);box-shadow:0 9px 24px rgba(75,70,103,.055)}.ai-model-search>svg{flex:0 0 auto;color:#9189a4}.ai-model-search input{min-width:0;flex:1;height:100%;padding:0;border:0;outline:0;color:#55505f;background:transparent;font-size:calc(10px * var(--font-scale,1))}.ai-model-search input::-webkit-search-cancel-button{display:none}.ai-model-search button{width:28px;height:28px;display:grid;place-items:center;padding:0;border:0;border-radius:9px;color:#9a91a2;background:rgba(112,104,137,.07)}
+.ai-model-list{min-height:0;display:grid;align-content:start;gap:7px;overflow-y:auto;overscroll-behavior:contain;padding:1px 2px 4px;scrollbar-width:none}.ai-model-list::-webkit-scrollbar{display:none}.ai-model-list>button{width:100%;min-height:70px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 11px;border:1px solid rgba(111,104,136,.09);border-radius:18px;color:#665f70;background:rgba(255,255,255,.7);box-shadow:0 8px 22px rgba(75,70,103,.045);text-align:left}.ai-model-list>button.selected{border-color:rgba(117,143,184,.3);background:linear-gradient(125deg,rgba(var(--pink-rgb),.09),rgba(var(--blue-rgb),.13));box-shadow:0 10px 26px rgba(90,92,137,.095)}.ai-model-list>button>i:first-child{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#8982aa;background:linear-gradient(145deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.15))}.ai-model-copy{min-width:0;display:grid;gap:4px}.ai-model-copy strong{overflow-wrap:anywhere;color:#554f5e;font-size:calc(9px * var(--font-scale,1));line-height:1.35}.ai-model-copy code{overflow:hidden;color:#938b9b;font:600 calc(7px * var(--font-scale,1))/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-overflow:ellipsis;white-space:nowrap}.ai-model-copy>span{display:flex;flex-wrap:wrap;gap:5px}.ai-model-copy b{padding:3px 6px;border-radius:999px;color:#7d849b;background:rgba(116,137,174,.09);font-size:calc(6px * var(--font-scale,1));font-weight:750}.ai-model-check{width:31px;height:31px;display:grid;place-items:center;border:1px solid rgba(113,107,135,.12);border-radius:50%;color:#fff;background:rgba(255,255,255,.62)}.selected .ai-model-check{border-color:transparent;background:linear-gradient(135deg,#c982aa,#7c9bc2)}.ai-model-empty{display:grid;place-items:center;gap:7px;padding:48px 15px;color:#aaa2b0;text-align:center}.ai-model-empty strong{color:#6d6674;font-size:calc(10px * var(--font-scale,1))}.ai-model-empty span{font-size:calc(7px * var(--font-scale,1))}.ai-model-list-note{margin:8px 2px 0;color:#a39caa;font-size:calc(7px * var(--font-scale,1));text-align:center}
 .ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
 .billing-card{margin-top:14px;padding:15px;border:1px solid rgba(var(--blue-rgb),.15);border-radius:20px 20px 8px 20px;background:rgba(240,248,253,.72);box-shadow:0 12px 30px rgba(75,70,103,.07)}.billing-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.billing-card-head>div{display:grid;gap:4px}.billing-card-head small{color:#8d8797;font-size:calc(7px * var(--font-scale,1))}.billing-card-head strong{color:#527395;font-size:calc(22px * var(--font-scale,1))}.billing-card-head button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:0;border-radius:9px;color:#7187a5;background:rgba(255,255,255,.68);font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-card-head button:disabled{opacity:.5}.billing-detail{margin:8px 0 0;color:#96909f;font-size:calc(7px * var(--font-scale,1))}.billing-form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:9px;margin-top:12px}.billing-form label{display:grid;gap:6px}.billing-form label span{color:#81798d;font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-form input{width:100%;height:41px;padding:0 10px;border:1px solid rgba(112,104,137,.13);border-radius:11px;background:rgba(255,255,255,.8);font-size:calc(10px * var(--font-scale,1))}.billing-form>button{height:41px;display:flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:11px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-form>button:disabled{opacity:.5}
 </style>
