@@ -183,6 +183,10 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("只有输入新值时才会替换原密钥");
     expect(settingsSource).toContain('class="ai-model-picker-sheet"');
     expect(settingsSource).toContain('class="ai-model-search"');
+    expect(settingsSource).toContain('class="ai-model-kind-tabs"');
+    expect(settingsSource).toContain("modelKindLabel(model.kind)");
+    expect(settingsSource).toContain("model.selectableForChat === false");
+    expect(settingsSource).toContain("请选择文字或多模态模型");
     expect(settingsSource).toContain("filteredAiModels");
     expect(settingsSource).toContain("selectAiModel(model)");
     expect(settingsSource).not.toContain('<select v-if="aiModels.length"');

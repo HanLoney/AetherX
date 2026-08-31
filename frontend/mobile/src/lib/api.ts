@@ -260,12 +260,20 @@ export interface AiConfigInput {
   apiKey?: string;
 }
 
+export type AiModelKind = "text" | "multimodal" | "image" | "video" | "embedding" | "rerank" | "audio" | "unknown";
+
 export interface AiModelOption {
   id: string;
   name: string;
   ownedBy: string;
   created: number;
   contextLength: number;
+  kind: AiModelKind;
+  capabilities: string[];
+  supportedProtocols: string[];
+  inputModalities: string[];
+  outputModalities: string[];
+  selectableForChat: boolean;
 }
 
 export interface AiModelsResult {

@@ -603,7 +603,24 @@ function validateConfig(config) {
   }
   if (!config.apiKey.trim() && !config.hasApiKey) return "请填写 API Key";
   if (!config.model.trim()) return "请填写模型名称";
+  const knownModel = state.availableModels.find((model) => model.id === config.model.trim());
+  if (knownModel?.selectableForChat === false) {
+    return `${modelKindLabel(knownModel.kind)}不能作为对话模型使用，请选择文字或多模态模型`;
+  }
   return "";
+}
+
+function modelKindLabel(kind) {
+  return {
+    text: "文字模型",
+    multimodal: "多模态",
+    image: "图像生成",
+    video: "视频生成",
+    embedding: "向量模型",
+    rerank: "重排模型",
+    audio: "音频模型",
+    unknown: "类型未知"
+  }[kind] || "类型未知";
 }
 
 function validateImageConfig(config) {
@@ -843,7 +860,8 @@ function renderAvailableModels() {
   elements.modelOptions?.replaceChildren(...state.availableModels.map((model) => {
     const option = document.createElement("option");
     option.value = model.id;
-    option.label = model.name && model.name !== model.id ? model.name : model.ownedBy || "";
+    const detail = model.name && model.name !== model.id ? model.name : model.ownedBy || "";
+    option.label = `[${modelKindLabel(model.kind)}]${detail ? ` ${detail}` : ""}${model.selectableForChat === false ? " · 仅展示" : ""}`;
     return option;
   }));
   if (elements.modelHelp) {
@@ -873,8 +891,9 @@ async function fetchAvailableModels() {
     const result = await window.desktop.listAIProviderModels(draft);
     state.availableModels = Array.isArray(result.items) ? result.items : [];
     renderAvailableModels();
-    if (!elements.modelInput.value.trim() && state.availableModels[0]) {
-      elements.modelInput.value = state.availableModels[0].id;
+    const firstChatModel = state.availableModels.find((model) => model.selectableForChat !== false);
+    if (!elements.modelInput.value.trim() && firstChatModel) {
+      elements.modelInput.value = firstChatModel.id;
     }
     showTestResult("success", `已获取 ${state.availableModels.length} 个模型`);
   } catch (error) {
