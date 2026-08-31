@@ -6,10 +6,14 @@ import {
   Blocks,
   ChevronRight,
   Cloud,
+  Copy,
+  CreditCard,
   Archive,
   Download,
+  ExternalLink,
   Link2,
   LogOut,
+  MessageCircle,
   Pencil,
   RefreshCw,
   Search,
@@ -26,6 +30,9 @@ import {
   ZoomOut
 } from "@lucide/vue";
 import { Browser } from "@capacitor/browser";
+import { AppLauncher } from "@capacitor/app-launcher";
+import { Clipboard } from "@capacitor/clipboard";
+import { Share } from "@capacitor/share";
 import {
   CapacitorBarcodeScanner,
   CapacitorBarcodeScannerAndroidScanningLibrary,
@@ -50,6 +57,7 @@ import { useModuleStore } from "../stores/modules";
 import { useLocalHub } from "../lib/local-hub";
 import { pairAndroidLocalHub } from "../lib/hub-pairing";
 import { runCompletePairing } from "../lib/complete-pairing";
+import { alipayPaymentUrl, isTerminalBillingStatus, safeBillingPaymentUrl } from "../lib/billing-payment";
 
 const router = useRouter();
 const session = useSessionStore();
@@ -119,12 +127,16 @@ const billingBalance = ref<BillingBalance | null>(null);
 const billingAmount = ref(10);
 const billingSession = ref<BillingPaymentSession | null>(null);
 const billingBusy = ref(false);
+const billingChecking = ref(false);
+const billingPaymentOpen = ref(false);
+const billingLaunching = ref<"" | "alipay" | "wechat" | "browser" | "copy">("");
 const billingNotice = ref("");
 const billingError = ref("");
 const aiForm = reactive({ providerId: "custom", providerName: "自定义", baseUrl: "", model: "", apiKey: "" });
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
 let hubStatusTimer: number | null = null;
+let billingStatusTimer: number | null = null;
 
 const aiProviders = [
   { id: "openai", name: "OpenAI", icon: openAiIcon, baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini" },
@@ -372,10 +384,123 @@ async function createBillingPayment() {
   try {
     billingSession.value = await session.requireApi().createBillingPaymentSession("tokendance", amount);
     if (!billingSession.value.paymentUrl) throw new Error("TokenDance 没有返回有效的充值链接。");
-    await Browser.open({ url: billingSession.value.paymentUrl });
-    billingNotice.value = `已打开 ¥${amount} 充值页，支付完成后刷新余额。`;
+    safeBillingPaymentUrl(billingSession.value.paymentUrl);
+    billingPaymentOpen.value = true;
+    billingNotice.value = `¥${amount} 充值会话已创建，请选择付款方式。`;
+    startBillingStatusPolling();
   } catch (reason) { billingError.value = (reason as Error).message || "充值链接创建失败。"; }
   finally { billingBusy.value = false; }
+}
+
+function billingPaymentStatusLabel(status: BillingPaymentSession["status"] | undefined) {
+  return {
+    pending: "等待付款",
+    paid: "充值已到账",
+    failed: "支付失败",
+    closed: "会话已关闭",
+    refunded: "款项已退回"
+  }[status || "pending"];
+}
+
+function stopBillingStatusPolling() {
+  if (billingStatusTimer !== null) window.clearInterval(billingStatusTimer);
+  billingStatusTimer = null;
+}
+
+function startBillingStatusPolling() {
+  stopBillingStatusPolling();
+  if (!billingSession.value || isTerminalBillingStatus(billingSession.value.status)) return;
+  billingStatusTimer = window.setInterval(() => { void checkBillingPayment(false); }, 3_000);
+}
+
+function closeBillingPayment() {
+  billingPaymentOpen.value = false;
+  billingLaunching.value = "";
+  stopBillingStatusPolling();
+}
+
+async function launchBillingInAlipay() {
+  const paymentUrl = billingSession.value?.paymentUrl;
+  if (!paymentUrl || billingLaunching.value) return;
+  billingLaunching.value = "alipay"; billingError.value = "";
+  try {
+    const result = await AppLauncher.openUrl({ url: alipayPaymentUrl(paymentUrl) });
+    if (!result.completed) throw new Error("没有找到支付宝客户端。");
+    billingNotice.value = "已尝试拉起支付宝，完成付款后返回 AetherX 即可。";
+  } catch (reason) {
+    billingError.value = (reason as Error).message || "支付宝没有成功打开，请使用微信分享或浏览器方式。";
+  } finally { billingLaunching.value = ""; }
+}
+
+async function shareBillingToWechat() {
+  const paymentUrl = billingSession.value?.paymentUrl;
+  if (!paymentUrl || billingLaunching.value) return;
+  billingLaunching.value = "wechat"; billingError.value = "";
+  try {
+    const safeUrl = safeBillingPaymentUrl(paymentUrl);
+    await Clipboard.write({ string: safeUrl });
+    await Share.share({
+      title: "AetherX · TokenDance 充值",
+      text: "请在微信中打开这条 TokenDance 充值链接并完成付款。",
+      url: safeUrl,
+      dialogTitle: "选择微信并发送给文件传输助手"
+    });
+    billingNotice.value = "充值链接已复制；请选择微信，发送给文件传输助手后点开付款。";
+  } catch (reason) {
+    billingError.value = (reason as Error).message || "系统分享没有打开，充值链接已经复制。";
+  } finally { billingLaunching.value = ""; }
+}
+
+async function copyBillingLink() {
+  const paymentUrl = billingSession.value?.paymentUrl;
+  if (!paymentUrl || billingLaunching.value) return;
+  billingLaunching.value = "copy"; billingError.value = "";
+  try {
+    await Clipboard.write({ string: safeBillingPaymentUrl(paymentUrl) });
+    billingNotice.value = "充值链接已复制，可以粘贴到微信或支付宝中打开。";
+  } catch (reason) {
+    billingError.value = (reason as Error).message || "复制充值链接失败。";
+  } finally { billingLaunching.value = ""; }
+}
+
+async function openBillingInBrowser() {
+  const paymentUrl = billingSession.value?.paymentUrl;
+  if (!paymentUrl || billingLaunching.value) return;
+  billingLaunching.value = "browser"; billingError.value = "";
+  try {
+    await Browser.open({ url: safeBillingPaymentUrl(paymentUrl) });
+    billingNotice.value = "已用浏览器打开；如果收银台要求支付客户端，请改用支付宝或微信方式。";
+  } catch (reason) {
+    billingError.value = (reason as Error).message || "浏览器没有成功打开。";
+  } finally { billingLaunching.value = ""; }
+}
+
+async function checkBillingPayment(manual = true) {
+  const current = billingSession.value;
+  if (!current || billingChecking.value || isTerminalBillingStatus(current.status)) return;
+  if (current.expiresAt <= Date.now()) {
+    stopBillingStatusPolling();
+    billingError.value = "充值会话已经过期，请关闭后重新创建。";
+    return;
+  }
+  billingChecking.value = true;
+  try {
+    const updated = await session.requireApi().billingPaymentStatus("tokendance", current.id);
+    billingSession.value = { ...current, ...updated };
+    if (updated.status === "paid") {
+      stopBillingStatusPolling();
+      await refreshBilling();
+      billingNotice.value = `¥${updated.amount} 已到账，余额已经更新。`;
+      billingError.value = "";
+    } else if (isTerminalBillingStatus(updated.status)) {
+      stopBillingStatusPolling();
+      billingError.value = `本次充值状态：${billingPaymentStatusLabel(updated.status)}。`;
+    } else if (manual) {
+      billingNotice.value = "暂未检测到账，付款后通常几秒内更新。";
+    }
+  } catch (reason) {
+    if (manual) billingError.value = (reason as Error).message || "查询支付状态失败。";
+  } finally { billingChecking.value = false; }
 }
 
 function handleRemoteAiConfigUpdate() {
@@ -399,6 +524,7 @@ onUnmounted(() => {
   window.removeEventListener("aether:ai-config-updated", handleRemoteAiConfigUpdate);
   if (hubStatusTimer !== null) window.clearInterval(hubStatusTimer);
   hubStatusTimer = null;
+  stopBillingStatusPolling();
 });
 
 function previewFontScale(event: Event) {
@@ -1371,7 +1497,7 @@ async function toggleModule(id: string, enabled: boolean) {
     <section v-if="billingVisible" class="billing-card">
       <div class="billing-card-head"><div><small>TokenDance 可用余额</small><strong>{{ billingBalanceLabel }}</strong></div><button type="button" :disabled="billingBusy" @click="refreshBilling"><RefreshCw :size="15" />刷新</button></div>
       <p class="billing-detail" v-if="billingBalance">总额度 ¥{{ (billingBalance.creditsMicros / 1000000).toFixed(2) }} · 已使用 ¥{{ (billingBalance.usedMicros / 1000000).toFixed(2) }}</p>
-      <div class="billing-form"><label><span>充值金额（元）</span><input v-model.number="billingAmount" type="number" min="1" max="100000" step="1" /></label><button type="button" :disabled="billingBusy" @click="createBillingPayment"><Link2 :size="16" />{{ billingBusy ? '处理中…' : '打开充值链接' }}</button></div>
+      <div class="billing-form"><label><span>充值金额（元）</span><input v-model.number="billingAmount" type="number" min="1" max="100000" step="1" /></label><button type="button" :disabled="billingBusy" @click="createBillingPayment"><CreditCard :size="16" />{{ billingBusy ? '处理中…' : '立即充值' }}</button></div>
       <p v-if="billingNotice" class="connection-notice"><Check :size="13" />{{ billingNotice }}</p>
       <p v-if="billingError" class="connection-error">{{ billingError }}</p>
     </section>
@@ -1397,6 +1523,56 @@ async function toggleModule(id: string, enabled: boolean) {
     <p class="settings-note">退出只会清除这台手机上的登录凭证，不会删除电脑端保存的任何数据。</p>
 
     <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="billingPaymentOpen && billingSession" class="sheet-backdrop billing-payment-backdrop" @click.self="closeBillingPayment">
+          <section class="billing-payment-sheet" role="dialog" aria-modal="true" aria-label="TokenDance 充值付款">
+            <div class="sheet-handle" />
+            <header>
+              <div><span>TOKENDANCE PAYMENT</span><h2>选择付款方式</h2></div>
+              <button type="button" aria-label="关闭充值付款" @click="closeBillingPayment"><X :size="18" /></button>
+            </header>
+
+            <article :class="['billing-payment-summary', billingSession.status]">
+              <i><CreditCard :size="23" /></i>
+              <div><small>本次充值</small><strong>¥{{ billingSession.amount }}</strong><span>TokenDance 账户额度</span></div>
+              <b>{{ billingPaymentStatusLabel(billingSession.status) }}</b>
+            </article>
+
+            <div v-if="billingSession.status === 'pending'" class="billing-payment-actions">
+              <button class="alipay" type="button" :disabled="Boolean(billingLaunching)" @click="launchBillingInAlipay">
+                <i>支</i><span><strong>{{ billingLaunching === 'alipay' ? '正在打开支付宝…' : '支付宝付款' }}</strong><small>直接拉起支付宝内置浏览器</small></span><ChevronRight :size="17" />
+              </button>
+              <button class="wechat" type="button" :disabled="Boolean(billingLaunching)" @click="shareBillingToWechat">
+                <MessageCircle :size="20" /><span><strong>{{ billingLaunching === 'wechat' ? '正在打开分享…' : '微信付款' }}</strong><small>分享到微信后点开链接付款</small></span><ChevronRight :size="17" />
+              </button>
+              <button class="browser" type="button" :disabled="Boolean(billingLaunching)" @click="openBillingInBrowser">
+                <ExternalLink :size="19" /><span><strong>浏览器打开</strong><small>仅作为兼容方式</small></span>
+              </button>
+              <button class="copy" type="button" :disabled="Boolean(billingLaunching)" @click="copyBillingLink">
+                <Copy :size="18" /><span><strong>{{ billingLaunching === 'copy' ? '正在复制…' : '复制链接' }}</strong><small>手动粘贴到支付客户端</small></span>
+              </button>
+            </div>
+
+            <div v-else class="billing-payment-result">
+              <Check v-if="billingSession.status === 'paid'" :size="25" />
+              <AlertTriangle v-else :size="25" />
+              <strong>{{ billingPaymentStatusLabel(billingSession.status) }}</strong>
+              <span>{{ billingSession.status === 'paid' ? '余额已经自动刷新，可以继续使用模型。' : '如需继续充值，请关闭后重新创建会话。' }}</span>
+            </div>
+
+            <p class="billing-payment-guide">浦发收银台必须在微信或支付宝环境中完成付款。AetherX 会每 3 秒自动检查到账，不会读取你的支付账户信息。</p>
+            <p v-if="billingNotice" class="connection-notice"><Check :size="13" />{{ billingNotice }}</p>
+            <p v-if="billingError" class="connection-error">{{ billingError }}</p>
+            <footer>
+              <button type="button" @click="closeBillingPayment">稍后处理</button>
+              <button type="button" :disabled="billingChecking || billingSession.status !== 'pending'" @click="checkBillingPayment(true)">
+                <RefreshCw :size="16" :class="{ spin: billingChecking }" />{{ billingChecking ? '检查中…' : '我已支付，检查到账' }}
+              </button>
+            </footer>
+          </section>
+        </div>
+      </Transition>
+
       <Transition name="fade">
         <div v-if="hubManagementOpen" class="sheet-backdrop" @click.self="hubManagementOpen = false">
           <section class="hub-management-sheet" role="dialog" aria-modal="true" aria-label="连接管理">
@@ -1838,4 +2014,8 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-model-list{min-height:0;display:grid;align-content:start;gap:7px;overflow-y:auto;overscroll-behavior:contain;padding:1px 2px 4px;scrollbar-width:none}.ai-model-list::-webkit-scrollbar{display:none}.ai-model-list>button{width:100%;min-height:70px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 11px;border:1px solid rgba(111,104,136,.09);border-radius:18px;color:#665f70;background:rgba(255,255,255,.7);box-shadow:0 8px 22px rgba(75,70,103,.045);text-align:left}.ai-model-list>button.selected{border-color:rgba(117,143,184,.3);background:linear-gradient(125deg,rgba(var(--pink-rgb),.09),rgba(var(--blue-rgb),.13));box-shadow:0 10px 26px rgba(90,92,137,.095)}.ai-model-list>button.unavailable{border-style:dashed;background:rgba(250,249,251,.62)}.ai-model-list>button.unavailable>i:first-child{color:#a19aa8;background:rgba(115,107,136,.07)}.ai-model-list>button>i:first-child{width:37px;height:37px;display:grid;place-items:center;border-radius:13px;color:#8982aa;background:linear-gradient(145deg,rgba(var(--pink-rgb),.12),rgba(var(--blue-rgb),.15))}.ai-model-copy{min-width:0;display:grid;gap:4px}.ai-model-copy strong{overflow-wrap:anywhere;color:#554f5e;font-size:calc(9px * var(--font-scale,1));line-height:1.35}.ai-model-copy code{overflow:hidden;color:#938b9b;font:600 calc(7px * var(--font-scale,1))/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-overflow:ellipsis;white-space:nowrap}.ai-model-copy>span{display:flex;flex-wrap:wrap;gap:5px}.ai-model-copy b{padding:3px 6px;border-radius:999px;color:#7d849b;background:rgba(116,137,174,.09);font-size:calc(6px * var(--font-scale,1));font-weight:750}.ai-model-copy b.ai-model-kind-badge.text{color:#6982a0;background:rgba(108,145,190,.11)}.ai-model-copy b.ai-model-kind-badge.multimodal{color:#826c9d;background:rgba(151,111,181,.11)}.ai-model-copy b.ai-model-kind-badge.image{color:#9e6c89;background:rgba(196,111,158,.11)}.ai-model-copy b.ai-model-kind-badge.video{color:#9a6f65;background:rgba(202,126,105,.11)}.ai-model-copy b.ai-model-kind-badge.embedding,.ai-model-copy b.ai-model-kind-badge.rerank{color:#6b8c7e;background:rgba(92,159,128,.11)}.ai-model-copy b.ai-model-kind-badge.audio{color:#8e7b60;background:rgba(186,150,93,.12)}.ai-model-check{width:31px;height:31px;display:grid;place-items:center;border:1px solid rgba(113,107,135,.12);border-radius:50%;color:#fff;background:rgba(255,255,255,.62)}.ai-model-check span{color:#9a92a0;font-size:calc(6px * var(--font-scale,1));font-style:normal;white-space:nowrap}.unavailable .ai-model-check{width:auto;height:auto;padding:5px 7px;border-radius:999px}.selected .ai-model-check{border-color:transparent;background:linear-gradient(135deg,#c982aa,#7c9bc2)}.ai-model-empty{display:grid;place-items:center;gap:7px;padding:48px 15px;color:#aaa2b0;text-align:center}.ai-model-empty strong{color:#6d6674;font-size:calc(10px * var(--font-scale,1))}.ai-model-empty span{font-size:calc(7px * var(--font-scale,1))}.ai-model-list-note{margin:8px 2px 0;color:#a39caa;font-size:calc(7px * var(--font-scale,1));text-align:center}
 .ai-editor-notice{display:flex;align-items:flex-start;justify-content:center;gap:5px;margin:11px 2px 0;color:#5f9078;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-notice svg{flex:0 0 auto;margin-top:1px}.ai-editor-error{margin:11px 2px 0;color:#ad6175;font-size:calc(8px * var(--font-scale,1));line-height:1.5;text-align:center}.ai-editor-actions{display:grid;grid-template-columns:.85fr 1.3fr;gap:9px;margin-top:14px}.test-ai-config,.save-ai-config{height:47px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;font-size:calc(9px * var(--font-scale,1));font-weight:800}.test-ai-config{border:1px solid rgba(var(--blue-rgb),.18);color:#7188a4;background:rgba(255,255,255,.68)}.save-ai-config{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.test-ai-config:disabled,.save-ai-config:disabled,.ai-settings-sheet header button:disabled{opacity:.5}
 .billing-card{margin-top:14px;padding:15px;border:1px solid rgba(var(--blue-rgb),.15);border-radius:20px 20px 8px 20px;background:rgba(240,248,253,.72);box-shadow:0 12px 30px rgba(75,70,103,.07)}.billing-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.billing-card-head>div{display:grid;gap:4px}.billing-card-head small{color:#8d8797;font-size:calc(7px * var(--font-scale,1))}.billing-card-head strong{color:#527395;font-size:calc(22px * var(--font-scale,1))}.billing-card-head button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:0;border-radius:9px;color:#7187a5;background:rgba(255,255,255,.68);font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-card-head button:disabled{opacity:.5}.billing-detail{margin:8px 0 0;color:#96909f;font-size:calc(7px * var(--font-scale,1))}.billing-form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:9px;margin-top:12px}.billing-form label{display:grid;gap:6px}.billing-form label span{color:#81798d;font-size:calc(8px * var(--font-scale,1));font-weight:700}.billing-form input{width:100%;height:41px;padding:0 10px;border:1px solid rgba(112,104,137,.13);border-radius:11px;background:rgba(255,255,255,.8);font-size:calc(10px * var(--font-scale,1))}.billing-form>button{height:41px;display:flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:11px;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-form>button:disabled{opacity:.5}
+.billing-payment-backdrop{z-index:92;background:rgba(38,36,51,.38);backdrop-filter:blur(11px)}.billing-payment-sheet{width:100%;max-height:92dvh;overflow-y:auto;padding:12px 17px calc(18px + env(safe-area-inset-bottom));border:1px solid rgba(255,255,255,.84);border-bottom:0;border-radius:30px 30px 0 0;background:radial-gradient(circle at 95% 3%,rgba(98,159,213,.17),transparent 31%),radial-gradient(circle at 3% 92%,rgba(215,123,168,.12),transparent 36%),rgba(250,250,253,.99);box-shadow:0 -28px 78px rgba(53,48,72,.28);scrollbar-width:none}.billing-payment-sheet::-webkit-scrollbar{display:none}.billing-payment-sheet header{display:flex;align-items:center;justify-content:space-between}.billing-payment-sheet header span{color:#718aa8;font-size:calc(7px * var(--font-scale,1));font-weight:850;letter-spacing:.15em}.billing-payment-sheet h2{margin:3px 0 0;color:#4f4a59;font-size:calc(21px * var(--font-scale,1));letter-spacing:-.045em}.billing-payment-sheet header>button{width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:13px;color:#817a8b;background:rgba(111,103,136,.07)}
+.billing-payment-summary{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:15px;padding:14px;border:1px solid rgba(111,139,176,.12);border-radius:21px;background:linear-gradient(130deg,rgba(238,247,253,.92),rgba(250,242,248,.86));box-shadow:0 12px 28px rgba(78,75,103,.065)}.billing-payment-summary>i{width:44px;height:44px;display:grid;place-items:center;border-radius:15px;color:#738fab;background:rgba(255,255,255,.76)}.billing-payment-summary>div{display:grid;gap:2px}.billing-payment-summary small,.billing-payment-summary span{color:#9992a1;font-size:calc(7px * var(--font-scale,1))}.billing-payment-summary strong{color:#526f8d;font-size:calc(20px * var(--font-scale,1));letter-spacing:-.035em}.billing-payment-summary>b{padding:6px 8px;border-radius:999px;color:#837b90;background:rgba(112,104,137,.08);font-size:calc(7px * var(--font-scale,1));white-space:nowrap}.billing-payment-summary.paid>b{color:#5d8d77;background:rgba(89,173,133,.12)}.billing-payment-summary.failed>b,.billing-payment-summary.closed>b,.billing-payment-summary.refunded>b{color:#aa6175;background:rgba(202,103,132,.11)}
+.billing-payment-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.billing-payment-actions>button{min-width:0;min-height:67px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:10px 11px;border:1px solid rgba(111,104,136,.09);border-radius:17px;color:#686270;background:rgba(255,255,255,.72);text-align:left}.billing-payment-actions>button.alipay,.billing-payment-actions>button.wechat{grid-column:1 / -1;min-height:71px}.billing-payment-actions>button.alipay{border-color:rgba(62,144,218,.17);background:linear-gradient(125deg,rgba(230,245,255,.9),rgba(255,255,255,.76))}.billing-payment-actions>button.wechat{border-color:rgba(66,177,109,.16);background:linear-gradient(125deg,rgba(234,250,240,.9),rgba(255,255,255,.76))}.billing-payment-actions>button>i,.billing-payment-actions>button>svg:first-child{width:36px;height:36px;display:grid;place-items:center;flex:0 0 auto;border-radius:12px;color:#7c8799;background:rgba(112,104,137,.07);font-style:normal}.billing-payment-actions>button.alipay>i{color:#fff;background:#1677ff;font-size:calc(14px * var(--font-scale,1));font-weight:900}.billing-payment-actions>button.wechat>svg:first-child{padding:8px;color:#fff;background:#21bd62}.billing-payment-actions>button>span{min-width:0;display:grid;gap:3px}.billing-payment-actions strong{overflow:hidden;color:#5d5864;font-size:calc(9px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.billing-payment-actions small{overflow:hidden;color:#9b94a1;font-size:calc(7px * var(--font-scale,1));text-overflow:ellipsis;white-space:nowrap}.billing-payment-actions>button>svg:last-child{color:#9d95a5}.billing-payment-actions>button:disabled{opacity:.52}.billing-payment-result{display:grid;place-items:center;gap:6px;margin-top:13px;padding:23px;border-radius:19px;color:#65917c;background:rgba(227,246,236,.64);text-align:center}.billing-payment-result>strong{font-size:calc(12px * var(--font-scale,1))}.billing-payment-result>span{color:#84988e;font-size:calc(7px * var(--font-scale,1))}.billing-payment-summary:not(.paid)+.billing-payment-result{color:#aa687a;background:rgba(249,232,238,.66)}
+.billing-payment-guide{margin:11px 3px 0;color:#948d9b;font-size:calc(7px * var(--font-scale,1));line-height:1.55}.billing-payment-sheet>.connection-notice,.billing-payment-sheet>.connection-error{margin:9px 2px 0}.billing-payment-sheet footer{display:grid;grid-template-columns:.8fr 1.35fr;gap:8px;margin-top:13px}.billing-payment-sheet footer button{height:45px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(112,104,137,.1);border-radius:14px;color:#7c7584;background:rgba(255,255,255,.7);font-size:calc(8px * var(--font-scale,1));font-weight:800}.billing-payment-sheet footer button:last-child{border:0;color:#fff;background:linear-gradient(115deg,#ca87ad,#8d92bf 58%,#77a8d0)}.billing-payment-sheet footer button:disabled{opacity:.5}
 </style>

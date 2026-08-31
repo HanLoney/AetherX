@@ -187,6 +187,11 @@ describe("adaptive mobile shell", () => {
     expect(settingsSource).toContain("modelKindLabel(model.kind)");
     expect(settingsSource).toContain("model.selectableForChat === false");
     expect(settingsSource).toContain("请选择文字或多模态模型");
+    expect(settingsSource).toContain('class="billing-payment-sheet"');
+    expect(settingsSource).toContain("launchBillingInAlipay");
+    expect(settingsSource).toContain("shareBillingToWechat");
+    expect(settingsSource).toContain("checkBillingPayment(false)");
+    expect(settingsSource).toContain("每 3 秒自动检查到账");
     expect(settingsSource).toContain("filteredAiModels");
     expect(settingsSource).toContain("selectAiModel(model)");
     expect(settingsSource).not.toContain('<select v-if="aiModels.length"');
