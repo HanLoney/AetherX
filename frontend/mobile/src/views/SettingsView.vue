@@ -1786,7 +1786,7 @@ async function toggleModule(id: string, enabled: boolean) {
               <input v-model="aiModelSearch" type="search" autocomplete="off" placeholder="搜索模型名称或 ID" autofocus />
               <button v-if="aiModelSearch" type="button" aria-label="清除搜索" @click="aiModelSearch = ''"><X :size="14" /></button>
             </label>
-            <div class="ai-model-picker-content">
+            <div class="ai-model-filter-bar">
             <nav class="ai-model-kind-tabs" aria-label="模型类型筛选">
               <button
                 v-for="filter in aiModelKindFilters"
@@ -1798,6 +1798,7 @@ async function toggleModule(id: string, enabled: boolean) {
                 {{ filter.label }}<b>{{ filter.count }}</b>
               </button>
             </nav>
+            </div>
             <p v-if="aiModelPickerError" class="ai-model-picker-error"><AlertTriangle :size="14" />{{ aiModelPickerError }}</p>
             <div class="ai-model-list">
               <button
@@ -1827,7 +1828,6 @@ async function toggleModule(id: string, enabled: boolean) {
               </div>
             </div>
             <p v-if="filteredAiModels.length < aiModels.length" class="ai-model-list-note">当前显示 {{ filteredAiModels.length }} / {{ aiModels.length }} 个模型</p>
-            </div>
           </section>
         </div>
       </Transition>
@@ -2007,4 +2007,5 @@ async function toggleModule(id: string, enabled: boolean) {
 .ai-model-picker-sheet{display:grid!important;grid-template-rows:auto auto 47px 56px auto minmax(0,1fr) auto!important;align-content:stretch!important}.ai-model-picker-sheet .ai-model-search{margin-top:14px!important;margin-bottom:11px!important}.ai-model-picker-sheet .ai-model-kind-tabs{margin-top:0!important;margin-bottom:8px!important}.ai-model-picker-sheet .ai-model-list{display:grid!important;min-height:0!important;overflow-y:auto!important}
 .ai-model-picker-content{display:contents!important}
 .ai-model-picker-sheet>.sheet-handle{grid-row:1}.ai-model-picker-sheet>header{grid-row:2}.ai-model-picker-sheet>.ai-model-search{grid-row:3}.ai-model-picker-sheet>.ai-model-picker-content>.ai-model-kind-tabs{grid-row:4}.ai-model-picker-sheet>.ai-model-picker-content>.ai-model-picker-error{grid-row:5}.ai-model-picker-sheet>.ai-model-picker-content>.ai-model-list{grid-row:6}.ai-model-picker-sheet>.ai-model-picker-content>.ai-model-list-note{grid-row:7}
+.ai-model-picker-sheet{display:flex!important;flex-direction:column!important}.ai-model-picker-sheet .ai-model-filter-bar{display:block!important;flex:0 0 56px!important;height:56px!important;min-height:56px!important;max-height:56px!important;overflow:hidden!important;margin:0 0 8px!important;padding:0!important;border-radius:15px;background:rgba(249,249,252,.98)}.ai-model-picker-sheet .ai-model-filter-bar .ai-model-kind-tabs{width:100%!important;height:56px!important;min-height:56px!important;max-height:56px!important;flex:0 0 56px!important;margin:0!important;padding:9px 2px 11px!important;overflow-x:auto!important;overflow-y:hidden!important}.ai-model-picker-sheet .ai-model-picker-error{flex:0 0 auto!important}.ai-model-picker-sheet .ai-model-list{flex:1 1 auto!important;min-height:0!important}.ai-model-picker-sheet .ai-model-list-note{flex:0 0 auto!important}
 </style>
