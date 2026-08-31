@@ -136,7 +136,6 @@ const aiForm = reactive({ providerId: "custom", providerName: "自定义", baseU
 const form = reactive({ displayName: "", preferredName: "", occupation: "", bio: "" });
 let cropDrag: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
 let hubStatusTimer: number | null = null;
-let billingStatusTimer: number | null = null;
 
 const aiProviders = [
   { id: "openai", name: "OpenAI", icon: openAiIcon, baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini" },
@@ -387,7 +386,6 @@ async function createBillingPayment() {
     safeBillingPaymentUrl(billingSession.value.paymentUrl);
     billingPaymentOpen.value = true;
     billingNotice.value = `¥${amount} 充值会话已创建，请选择付款方式。`;
-    startBillingStatusPolling();
   } catch (reason) { billingError.value = (reason as Error).message || "充值链接创建失败。"; }
   finally { billingBusy.value = false; }
 }
@@ -402,21 +400,9 @@ function billingPaymentStatusLabel(status: BillingPaymentSession["status"] | und
   }[status || "pending"];
 }
 
-function stopBillingStatusPolling() {
-  if (billingStatusTimer !== null) window.clearInterval(billingStatusTimer);
-  billingStatusTimer = null;
-}
-
-function startBillingStatusPolling() {
-  stopBillingStatusPolling();
-  if (!billingSession.value || isTerminalBillingStatus(billingSession.value.status)) return;
-  billingStatusTimer = window.setInterval(() => { void checkBillingPayment(false); }, 3_000);
-}
-
 function closeBillingPayment() {
   billingPaymentOpen.value = false;
   billingLaunching.value = "";
-  stopBillingStatusPolling();
 }
 
 async function launchBillingInAlipay() {
@@ -479,7 +465,6 @@ async function checkBillingPayment(manual = true) {
   const current = billingSession.value;
   if (!current || billingChecking.value || isTerminalBillingStatus(current.status)) return;
   if (current.expiresAt <= Date.now()) {
-    stopBillingStatusPolling();
     billingError.value = "充值会话已经过期，请关闭后重新创建。";
     return;
   }
@@ -488,12 +473,10 @@ async function checkBillingPayment(manual = true) {
     const updated = await session.requireApi().billingPaymentStatus("tokendance", current.id);
     billingSession.value = { ...current, ...updated };
     if (updated.status === "paid") {
-      stopBillingStatusPolling();
       await refreshBilling();
       billingNotice.value = `¥${updated.amount} 已到账，余额已经更新。`;
       billingError.value = "";
     } else if (isTerminalBillingStatus(updated.status)) {
-      stopBillingStatusPolling();
       billingError.value = `本次充值状态：${billingPaymentStatusLabel(updated.status)}。`;
     } else if (manual) {
       billingNotice.value = "暂未检测到账，付款后通常几秒内更新。";
@@ -524,7 +507,6 @@ onUnmounted(() => {
   window.removeEventListener("aether:ai-config-updated", handleRemoteAiConfigUpdate);
   if (hubStatusTimer !== null) window.clearInterval(hubStatusTimer);
   hubStatusTimer = null;
-  stopBillingStatusPolling();
 });
 
 function previewFontScale(event: Event) {
@@ -1560,7 +1542,7 @@ async function toggleModule(id: string, enabled: boolean) {
               <span>{{ billingSession.status === 'paid' ? '余额已经自动刷新，可以继续使用模型。' : '如需继续充值，请关闭后重新创建会话。' }}</span>
             </div>
 
-            <p class="billing-payment-guide">浦发收银台必须在微信或支付宝环境中完成付款。AetherX 会每 3 秒自动检查到账，不会读取你的支付账户信息。</p>
+            <p class="billing-payment-guide">浦发收银台必须在微信或支付宝环境中完成付款。付款后请返回这里，点击“我已支付，检查到账”；AetherX 不会读取你的支付账户信息。</p>
             <p v-if="billingNotice" class="connection-notice"><Check :size="13" />{{ billingNotice }}</p>
             <p v-if="billingError" class="connection-error">{{ billingError }}</p>
             <footer>
