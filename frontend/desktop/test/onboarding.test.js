@@ -23,6 +23,8 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.doesNotMatch(html, /id="assistantDefinition"/);
   assert.doesNotMatch(html, /角色定位/);
   assert.match(html, /id="traitOptions"/);
+  assert.match(html, /推荐选择 3～5 个/);
+  assert.match(html, /id="traitHint"/);
   assert.match(html, /data-trait="温柔"/);
   assert.match(html, /data-trait="理性"/);
   assert.match(html, /data-trait="真诚"/);
@@ -31,7 +33,10 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(script, /updateAssistantProfile/);
   assert.match(script, /getGenderValue/);
   assert.match(script, /toggleTrait/);
-  assert.match(script, /selected\.size >= 5/);
+  assert.match(script, /MAX_PRESET_TRAITS = 5/);
+  assert.match(script, /MAX_TOTAL_TRAITS = 8/);
+  assert.match(script, /getTraitValues/);
+  assert.match(script, /normalizeCustomTraits/);
   assert.match(script, /completeOnboarding/);
 });
 

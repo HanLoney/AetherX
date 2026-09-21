@@ -76,7 +76,7 @@
             </label>
             <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
             <div class="wide persona-field">
-              <span class="field-label">性格关键词（最多 5 个）</span>
+              <span class="field-label">性格关键词（推荐选择 3～5 个）</span>
               <div id="traitOptions" class="trait-options" aria-label="常用性格关键词">
                 <button type="button" data-trait="活泼" aria-pressed="false">活泼</button>
                 <button type="button" data-trait="可爱" aria-pressed="false">可爱</button>
@@ -93,8 +93,8 @@
                 <button type="button" data-trait="有条理" aria-pressed="false">有条理</button>
                 <button type="button" data-trait="主动关心" aria-pressed="false">主动关心</button>
               </div>
-              <input id="assistantTraits" placeholder="也可以自己填写，用逗号分隔" />
-              <small>直接点选常用性格，也可以补充自己的关键词。</small>
+              <input id="assistantTraits" placeholder="补充自己的关键词，用逗号分隔" />
+              <small id="traitHint">已选择 0 个常用性格，整体最多设置 8 个。</small>
             </div>
             <label class="wide"><span>说话风格</span><input id="assistantVoice" placeholder="例如：轻松、简短，偶尔使用颜文字" /></label>
           </div>
