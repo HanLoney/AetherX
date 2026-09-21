@@ -165,7 +165,7 @@ function populatePersona() {
   $("#assistantName").value = profile.name;
   setGenderValue(profile.gender);
   $("#assistantRelationship").value = profile.relationshipSummary;
-  $("#assistantTraits").value = profile.traits.join("、");
+  setTraitValues(profile.traits);
   $("#assistantVoice").value = profile.voice;
   $("#personaTitle").textContent = state.choice === "custom" ? "给她一个相处的起点" : "确认她最初的样子";
   updatePersonaPreview();
@@ -186,6 +186,30 @@ async function enterPersona() {
 
 function splitTraits(value) {
   return String(value || "").split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean).slice(0, 5);
+}
+
+function setTraitValues(value) {
+  const traits = Array.isArray(value) ? value.slice(0, 5) : splitTraits(value);
+  $("#assistantTraits").value = traits.join("、");
+  syncTraitOptions();
+}
+
+function syncTraitOptions() {
+  const selected = new Set(splitTraits($("#assistantTraits").value));
+  $$("#traitOptions [data-trait]").forEach((button) => {
+    const active = selected.has(button.dataset.trait);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.disabled = !active && selected.size >= 5;
+  });
+}
+
+function toggleTrait(button) {
+  const traits = splitTraits($("#assistantTraits").value);
+  const index = traits.indexOf(button.dataset.trait);
+  if (index >= 0) traits.splice(index, 1);
+  else if (traits.length < 5) traits.push(button.dataset.trait);
+  setTraitValues(traits);
 }
 
 function setGenderValue(value) {
@@ -287,6 +311,11 @@ function bind() {
     $("#assistantGenderCustom").classList.toggle("hidden", !custom);
     if (custom) $("#assistantGenderCustom").focus();
   });
+  $$("#traitOptions [data-trait]").forEach((button) => {
+    button.addEventListener("click", () => toggleTrait(button));
+  });
+  $("#assistantTraits").addEventListener("input", syncTraitOptions);
+  $("#assistantTraits").addEventListener("change", () => setTraitValues($("#assistantTraits").value));
   ["#assistantName", "#assistantRelationship"].forEach((selector) => $(selector).addEventListener("input", updatePersonaPreview));
   $("#savePersonaBtn").addEventListener("click", savePersona);
   $("#saveUserBtn").addEventListener("click", () => saveUser(false));

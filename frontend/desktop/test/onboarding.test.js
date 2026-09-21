@@ -22,9 +22,16 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(html, /<option value="custom">自定义<\/option>/);
   assert.doesNotMatch(html, /id="assistantDefinition"/);
   assert.doesNotMatch(html, /角色定位/);
+  assert.match(html, /id="traitOptions"/);
+  assert.match(html, /data-trait="温柔"/);
+  assert.match(html, /data-trait="理性"/);
+  assert.match(html, /data-trait="真诚"/);
+  assert.match(html, /data-trait="主动关心"/);
   assert.match(script, /testAIProvider/);
   assert.match(script, /updateAssistantProfile/);
   assert.match(script, /getGenderValue/);
+  assert.match(script, /toggleTrait/);
+  assert.match(script, /selected\.size >= 5/);
   assert.match(script, /completeOnboarding/);
 });
 

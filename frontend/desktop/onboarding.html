@@ -75,7 +75,27 @@
               <input id="assistantGenderCustom" class="hidden" maxlength="50" placeholder="请输入自定义性别" />
             </label>
             <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
-            <label class="wide"><span>性格关键词</span><input id="assistantTraits" placeholder="用逗号分隔，最多 5 个" /></label>
+            <div class="wide persona-field">
+              <span class="field-label">性格关键词（最多 5 个）</span>
+              <div id="traitOptions" class="trait-options" aria-label="常用性格关键词">
+                <button type="button" data-trait="活泼" aria-pressed="false">活泼</button>
+                <button type="button" data-trait="可爱" aria-pressed="false">可爱</button>
+                <button type="button" data-trait="温柔" aria-pressed="false">温柔</button>
+                <button type="button" data-trait="细腻" aria-pressed="false">细腻</button>
+                <button type="button" data-trait="耐心" aria-pressed="false">耐心</button>
+                <button type="button" data-trait="理性" aria-pressed="false">理性</button>
+                <button type="button" data-trait="可靠" aria-pressed="false">可靠</button>
+                <button type="button" data-trait="真诚" aria-pressed="false">真诚</button>
+                <button type="button" data-trait="坦诚" aria-pressed="false">坦诚</button>
+                <button type="button" data-trait="幽默" aria-pressed="false">幽默</button>
+                <button type="button" data-trait="主动" aria-pressed="false">主动</button>
+                <button type="button" data-trait="好奇" aria-pressed="false">好奇</button>
+                <button type="button" data-trait="有条理" aria-pressed="false">有条理</button>
+                <button type="button" data-trait="主动关心" aria-pressed="false">主动关心</button>
+              </div>
+              <input id="assistantTraits" placeholder="也可以自己填写，用逗号分隔" />
+              <small>直接点选常用性格，也可以补充自己的关键词。</small>
+            </div>
             <label class="wide"><span>说话风格</span><input id="assistantVoice" placeholder="例如：轻松、简短，偶尔使用颜文字" /></label>
           </div>
           <div id="personaResult" class="result hidden"></div>
