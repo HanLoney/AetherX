@@ -20,6 +20,8 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(html, /<option value="男">男<\/option>/);
   assert.match(html, /<option value="中性">中性<\/option>/);
   assert.match(html, /<option value="custom">自定义<\/option>/);
+  assert.doesNotMatch(html, /id="assistantDefinition"/);
+  assert.doesNotMatch(html, /角色定位/);
   assert.match(script, /testAIProvider/);
   assert.match(script, /updateAssistantProfile/);
   assert.match(script, /getGenderValue/);
@@ -29,5 +31,6 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
 test("custom companions start from an empty role image baseline", () => {
   const script = fs.readFileSync(path.join(__dirname, "..", "onboarding.js"), "utf8");
   assert.match(script, /state\.choice === "custom"/);
+  assert.match(script, /会在相处中逐渐形成个性的数字伙伴/);
   assert.match(script, /avatarDataUrl: "", personaImageDataUrl: ""/);
 });

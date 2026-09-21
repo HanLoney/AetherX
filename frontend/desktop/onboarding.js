@@ -141,7 +141,14 @@ function selectCompanion(button) {
 function personaForChoice() {
   if (state.choice === "template") return templates[state.template];
   if (state.choice === "custom") {
-    return { name: "", gender: "", selfDefinition: "", relationshipSummary: "", traits: [], voice: "" };
+    return {
+      name: "",
+      gender: "",
+      selfDefinition: "会在相处中逐渐形成个性的数字伙伴",
+      relationshipSummary: "",
+      traits: [],
+      voice: ""
+    };
   }
   return {
     name: "小玄",
@@ -157,11 +164,10 @@ function populatePersona() {
   const profile = personaForChoice();
   $("#assistantName").value = profile.name;
   setGenderValue(profile.gender);
-  $("#assistantDefinition").value = profile.selfDefinition;
   $("#assistantRelationship").value = profile.relationshipSummary;
   $("#assistantTraits").value = profile.traits.join("、");
   $("#assistantVoice").value = profile.voice;
-  $("#personaTitle").textContent = state.choice === "custom" ? "从空白开始定义她" : "确认她最初的样子";
+  $("#personaTitle").textContent = state.choice === "custom" ? "给她一个相处的起点" : "确认她最初的样子";
   updatePersonaPreview();
 }
 
@@ -199,16 +205,15 @@ function getGenderValue() {
 async function savePersona() {
   const name = $("#assistantName").value.trim();
   const relationshipSummary = $("#assistantRelationship").value.trim();
-  const selfDefinition = $("#assistantDefinition").value.trim();
-  if (!name || !relationshipSummary || !selfDefinition) {
-    showResult($("#personaResult"), "error", "请至少填写角色名字、角色定位和与你的关系。");
+  if (!name || !relationshipSummary) {
+    showResult($("#personaResult"), "error", "请填写角色名字和与你的关系。");
     return;
   }
   try {
     state.assistant = await window.desktop.updateAssistantProfile({
       name,
       gender: getGenderValue(),
-      selfDefinition,
+      selfDefinition: personaForChoice().selfDefinition,
       relationshipSummary,
       traits: splitTraits($("#assistantTraits").value),
       values: $("#assistantVoice").value.trim() ? [`说话风格：${$("#assistantVoice").value.trim()}`] : [],
