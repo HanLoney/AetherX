@@ -407,6 +407,14 @@ class XuanApiClient {
     return this.request("GET", "/api/v1/ai/config");
   }
 
+  getOnboarding() {
+    return this.request("GET", "/api/v1/onboarding");
+  }
+
+  updateOnboarding(changes) {
+    return this.request("PATCH", "/api/v1/onboarding", changes);
+  }
+
   saveAiConfig(config) {
     return this.request("PUT", "/api/v1/ai/config", config);
   }

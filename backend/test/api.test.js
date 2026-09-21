@@ -120,6 +120,35 @@ test("health endpoint reports readiness", async () => {
   });
 });
 
+test("first-run onboarding persists independently and requires core setup before completion", async () => {
+  await withServer(async (baseUrl) => {
+    const initial = await request(baseUrl, "GET", "/api/v1/onboarding");
+    assert.equal(initial.response.status, 200);
+    assert.equal(initial.payload.data.currentStep, "ai");
+    assert.equal(initial.payload.data.completedAt, null);
+
+    const progress = await request(baseUrl, "PATCH", "/api/v1/onboarding", {
+      currentStep: "persona",
+      assistantChoice: "custom",
+      chatProviderConfigured: true
+    });
+    assert.equal(progress.response.status, 200);
+    assert.equal(progress.payload.data.currentStep, "persona");
+    assert.equal(progress.payload.data.assistantChoice, "custom");
+
+    const rejectedCompletion = await request(baseUrl, "PATCH", "/api/v1/onboarding", {
+      completedAt: 123
+    });
+    assert.equal(rejectedCompletion.payload.data.completedAt, null);
+
+    const completed = await request(baseUrl, "PATCH", "/api/v1/onboarding", {
+      assistantConfigured: true,
+      completedAt: 456
+    });
+    assert.equal(completed.payload.data.completedAt, null);
+  });
+});
+
 test("cluster status lazily creates a stable local active Hub", async () => {
   await withServer(async (baseUrl, _dataDir, app) => {
     const first = await request(baseUrl, "GET", "/api/v1/cluster/status");
@@ -6111,4 +6140,3 @@ test("explicit memory with a stable key replaces stale plan state", async () => 
     assert.equal(second.payload.data.mergeCount, 2);
   });
 });
-

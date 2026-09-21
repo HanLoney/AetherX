@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("auth:hub-progress", listener);
   },
   getCurrentAuth: () => ipcRenderer.invoke("auth:current"),
+  getOnboarding: () => ipcRenderer.invoke("onboarding:get"),
+  updateOnboarding: (changes) => ipcRenderer.invoke("onboarding:update", changes),
+  completeOnboarding: () => ipcRenderer.invoke("onboarding:complete"),
   getHubStatus: () => ipcRenderer.invoke("hub:status"),
   getConnectionStatus: () => ipcRenderer.invoke("connections:status"),
   getHubDivergence: () => ipcRenderer.invoke("hub:divergence"),

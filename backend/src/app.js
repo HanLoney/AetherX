@@ -37,6 +37,8 @@ const {
 const {
   registerPreferenceRoutes
 } = require("./modules/preferences/preference-routes");
+const { OnboardingService } = require("./modules/onboarding/onboarding-service");
+const { registerOnboardingRoutes } = require("./modules/onboarding/onboarding-routes");
 const { MemoryRepository } = require("./modules/memories/memory-repository");
 const { MemoryService } = require("./modules/memories/memory-service");
 const {
@@ -484,6 +486,10 @@ function createApp(config) {
     new PreferenceService(new PreferenceRepository(database)),
     replicationUnitOfWork
   );
+  const onboardingService = new OnboardingService(
+    preferenceService,
+    aiConfigRepository
+  );
   const memoryEvidenceRepository = new MemoryEvidenceRepository(database);
   const memoryService = new ReplicatedMemoryService(
     new MemoryService(new MemoryRepository(database)),
@@ -719,6 +725,7 @@ function createApp(config) {
   );
   registerAgentRoutes(router, agentService, agentPermissionRepository);
   registerProfileRoutes(router, profileService);
+  registerOnboardingRoutes(router, onboardingService);
   registerPreferenceRoutes(router, preferenceService);
   registerMemorySettingsRoutes(router, memorySettingsService);
   registerMemoryRoutes(

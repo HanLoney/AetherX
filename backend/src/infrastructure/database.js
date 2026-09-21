@@ -1286,6 +1286,34 @@ const MIGRATIONS = [
       PRIMARY KEY(space_id, takeover_id, operation_id),
       FOREIGN KEY(takeover_id) REFERENCES hub_forced_takeovers(id) ON DELETE CASCADE
     );
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS ai_provider_configs (
+      id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      provider_name TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      model TEXT NOT NULL,
+      encrypted_api_key TEXT NOT NULL DEFAULT '',
+      verification_status TEXT NOT NULL DEFAULT 'untested',
+      verified_at INTEGER,
+      verification_message TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id, id),
+      UNIQUE(user_id, provider_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_provider_configs_user_updated
+      ON ai_provider_configs(user_id, updated_at DESC);
+
+    INSERT OR IGNORE INTO ai_provider_configs(
+      id, user_id, provider_id, provider_name, base_url, model,
+      encrypted_api_key, verification_status, verified_at,
+      verification_message, updated_at
+    )
+    SELECT provider_id, user_id, provider_id, provider_name, base_url, model,
+           encrypted_api_key, 'untested', NULL, '', updated_at
+      FROM ai_configs;
   `
 ];
 

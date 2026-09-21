@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>认识你的 AI 伙伴</title>
+    <link rel="stylesheet" href="app-shell.css" />
+    <link rel="stylesheet" href="onboarding.css" />
+    <script src="interface-settings.js"></script>
+  </head>
+  <body>
+    <header class="titlebar">
+      <strong>AetherX Online</strong>
+      <div class="window-actions">
+        <button id="minimizeBtn" aria-label="最小化">—</button>
+        <button id="maximizeBtn" aria-label="最大化">□</button>
+        <button id="closeBtn" class="close" aria-label="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="onboarding-shell">
+      <aside class="journey">
+        <div class="brand-scene">
+          <img src="463029ca-445d-4f33-8ce3-9ff0ad89a5f8.png" alt="小玄" />
+          <div><span>FIRST MEETING</span><h1>让她先能回应你，再慢慢成为你喜欢的样子。</h1></div>
+        </div>
+        <ol id="stepList">
+          <li data-step="ai"><b>1</b><span>连接对话 AI<small>确认模型真的可以回复</small></span></li>
+          <li data-step="assistant"><b>2</b><span>选择伙伴<small>小玄、模板或自定义</small></span></li>
+          <li data-step="persona"><b>3</b><span>建立人设<small>名字、关系与说话方式</small></span></li>
+          <li data-step="user"><b>4</b><span>认识你<small>告诉她该怎么称呼你</small></span></li>
+          <li data-step="image"><b>5</b><span>图像能力<small>现在连接或稍后再说</small></span></li>
+        </ol>
+      </aside>
+
+      <section class="workspace">
+        <div id="loading" class="loading">正在准备你们的初次见面…</div>
+
+        <section class="step hidden" data-panel="ai">
+          <header><p>STEP 01</p><h2>先连接她的对话能力</h2><span>连接测试成功后，才会进入人设设置。</span></header>
+          <div id="providerGrid" class="provider-grid"></div>
+          <div class="form-grid">
+            <label><span>API 端点</span><input id="baseUrlInput" placeholder="https://api.example.com/v1" /></label>
+            <label><span>模型名称</span><input id="modelInput" placeholder="模型名称" /></label>
+            <label class="wide"><span>API Key</span><input id="apiKeyInput" type="password" placeholder="sk-..." /></label>
+          </div>
+          <div id="aiResult" class="result hidden"></div>
+          <footer><span></span><button id="testProviderBtn" class="primary" type="button">测试并启用</button></footer>
+        </section>
+
+        <section class="step hidden" data-panel="assistant">
+          <header><p>STEP 02</p><h2>你想和谁一起生活？</h2><span>选择只是起点，之后仍可以继续调整。</span></header>
+          <div class="choice-grid">
+            <button class="companion-choice" data-choice="default" type="button"><strong>小玄</strong><span>活泼、亲近，会在相处中持续成长</span><small>系统默认画像</small></button>
+            <button class="companion-choice" data-choice="template" data-template="gentle" type="button"><strong>温柔陪伴</strong><span>细腻、耐心，擅长倾听和照顾感受</span><small>完整模板</small></button>
+            <button class="companion-choice" data-choice="template" data-template="rational" type="button"><strong>理性搭档</strong><span>清晰、可靠，陪你分析和推进事情</span><small>完整模板</small></button>
+            <button class="companion-choice" data-choice="custom" type="button"><strong>自定义角色</strong><span>从中性空白画像开始，由你定义她是谁</span><small>不会继承小玄人设</small></button>
+          </div>
+          <footer><button class="secondary" data-back="ai" type="button">返回</button><button id="assistantNextBtn" class="primary" type="button" disabled>继续设置</button></footer>
+        </section>
+
+        <section class="step hidden" data-panel="persona">
+          <header><p>STEP 03</p><h2 id="personaTitle">让她成为清晰的人</h2><span id="personaHint">这些信息会进入她的当前人格画像。</span></header>
+          <div class="persona-preview"><i id="personaInitial">玄</i><div><strong id="personaPreviewName">小玄</strong><span id="personaPreviewRole">亲密可靠的数字伙伴</span></div></div>
+          <div class="form-grid">
+            <label><span>角色名字</span><input id="assistantName" maxlength="100" /></label>
+            <label><span>身份 / 性别认同</span><input id="assistantGender" maxlength="50" /></label>
+            <label class="wide"><span>角色定位</span><textarea id="assistantDefinition" maxlength="1000"></textarea></label>
+            <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+            <label class="wide"><span>性格关键词</span><input id="assistantTraits" placeholder="用逗号分隔，最多 5 个" /></label>
+            <label class="wide"><span>说话风格</span><input id="assistantVoice" placeholder="例如：轻松、简短，偶尔使用颜文字" /></label>
+          </div>
+          <div id="personaResult" class="result hidden"></div>
+          <footer><button class="secondary" data-back="assistant" type="button">返回</button><button id="savePersonaBtn" class="primary" type="button">保存人设</button></footer>
+        </section>
+
+        <section class="step hidden" data-panel="user">
+          <header><p>STEP 04</p><h2>她该怎么称呼你？</h2><span>只需要最少的信息，其余资料可以之后再补。</span></header>
+          <div class="form-grid single">
+            <label><span>你的名字</span><input id="userDisplayName" maxlength="100" /></label>
+            <label><span>希望她怎么称呼你</span><input id="userPreferredName" maxlength="100" /></label>
+          </div>
+          <div id="userResult" class="result hidden"></div>
+          <footer><button class="secondary" data-back="persona" type="button">返回</button><div><button id="skipUserBtn" class="secondary" type="button">使用账号昵称</button><button id="saveUserBtn" class="primary" type="button">保存并继续</button></div></footer>
+        </section>
+
+        <section class="step hidden" data-panel="image">
+          <header><p>STEP 05</p><h2>要让她现在就能画画吗？</h2><span>图像生成是可选能力，不影响普通聊天。</span></header>
+          <div class="image-choice">
+            <button id="configureImageBtn" type="button"><strong>现在配置</strong><span>填写图像模型的端点、模型和 API Key</span></button>
+            <button id="skipImageBtn" type="button"><strong>之后再说</strong><span>先进入聊天，需要时再从设置中连接</span></button>
+          </div>
+          <div id="imageForm" class="form-grid hidden">
+            <label><span>图像 API 端点</span><input id="imageBaseUrl" /></label>
+            <label><span>模型名称</span><input id="imageModel" /></label>
+            <label class="wide"><span>API Key</span><input id="imageApiKey" type="password" /></label>
+          </div>
+          <div id="imageResult" class="result hidden"></div>
+          <footer><button class="secondary" data-back="user" type="button">返回</button><button id="saveImageBtn" class="primary hidden" type="button">保存并进入聊天</button></footer>
+        </section>
+      </section>
+    </main>
+
+    <script src="onboarding-providers.js"></script>
+    <script src="onboarding.js"></script>
+  </body>
+</html>

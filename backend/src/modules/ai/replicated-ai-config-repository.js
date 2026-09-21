@@ -22,6 +22,85 @@ class ReplicatedAiConfigRepository {
     return this.repository.getCredentials(userId);
   }
 
+  listProvidersPublic(userId) {
+    return this.repository.listProvidersPublic(userId);
+  }
+
+  getProviderStored(userId, providerId) {
+    return this.repository.getProviderStored(userId, providerId);
+  }
+
+  getProviderCredentials(userId, providerId) {
+    return this.repository.getProviderCredentials(userId, providerId);
+  }
+
+  saveProvider(userId, input, options = {}) {
+    return this.writeProviderState(
+      userId,
+      options,
+      (now) => this.repository.saveProvider(userId, input, { ...options, now })
+    );
+  }
+
+  activateProvider(userId, providerId, options = {}) {
+    return this.writeProviderState(
+      userId,
+      options,
+      (now) => this.repository.activateProvider(userId, providerId, { ...options, now })
+    );
+  }
+
+  markProviderVerification(userId, providerId, status, message, options = {}) {
+    return this.writeProviderState(
+      userId,
+      options,
+      (now) => this.repository.markProviderVerification(
+        userId,
+        providerId,
+        status,
+        message,
+        { ...options, now }
+      )
+    );
+  }
+
+  writeProviderState(userId, options, mutate) {
+    const outcome = this.replicationUnitOfWork.execute(
+      userId,
+      options.requestId || internalRequestId(),
+      (context) => {
+        const now = Number(options.now ?? Date.now());
+        const result = mutate(now);
+        const credentials = this.repository.getCredentials(userId);
+        const entityType = "ai_configs";
+        const entityId = "config";
+        const aad = providerCredentialAad(context.spaceId, entityType, entityId);
+        return {
+          result,
+          changes: [{
+            entityType,
+            entityId,
+            operation: "upsert",
+            payload: {
+              provider_id: credentials.providerId,
+              provider_name: credentials.providerName,
+              base_url: credentials.baseUrl,
+              model: credentials.model,
+              credential: encryptSpaceSecret(
+                credentials.apiKey,
+                context.syncKey,
+                aad,
+                context.keyVersion
+              ),
+              updated_at: now
+            }
+          }]
+        };
+      }
+    );
+    return outcome.result;
+  }
+
   getImageStored(userId) {
     return this.repository.getImageStored(userId);
   }

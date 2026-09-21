@@ -603,7 +603,7 @@ async function completeDesktopQrLogin(sender, input = {}) {
   await ensureActiveHubWithDiscovery((progress) => sendAuthHubProgress(sender, progress));
   saveAuthenticatedState();
   await startAuthenticatedSync();
-  openPage(sender, "home.html");
+  await routeAfterAuthentication(sender);
   return { status: "completed", user: currentUser };
 }
 
@@ -693,7 +693,7 @@ function registerIpcHandlers() {
     }
     saveAuthenticatedState();
     await startAuthenticatedSync();
-    openPage(event.sender, "home.html");
+    await routeAfterAuthentication(event.sender);
     return { authenticated: true, user: currentUser };
   });
   ipcMain.handle("auth:config", async (_event, serverUrl) => {
@@ -746,7 +746,7 @@ function registerIpcHandlers() {
     }
     saveAuthenticatedState();
     await startAuthenticatedSync();
-    openPage(event.sender, "home.html");
+    await routeAfterAuthentication(event.sender);
     return { user: result.user };
   });
   ipcMain.handle("auth:register", async (event, input) => {
@@ -771,7 +771,7 @@ function registerIpcHandlers() {
     );
     saveAuthenticatedState();
     await startAuthenticatedSync();
-    openPage(event.sender, "home.html");
+    await routeAfterAuthentication(event.sender);
     return {
       user: result.user,
       migratedExistingData: result.migratedExistingData
@@ -788,7 +788,7 @@ function registerIpcHandlers() {
     hubRouting = null;
     saveAuthenticatedState();
     await startAuthenticatedSync();
-    openPage(event.sender, "home.html");
+    await routeAfterAuthentication(event.sender);
     return { user: result.user };
   });
   ipcMain.handle("auth:email:resend", async (_event, input) =>
@@ -806,6 +806,21 @@ function registerIpcHandlers() {
     cloudEdition: isCloudEdition || authenticationIdentityMode === "email",
     loginIdentifier: authenticationIdentityMode
   }));
+  ipcMain.handle("onboarding:get", () => api.getOnboarding());
+  ipcMain.handle("onboarding:update", (_event, changes) =>
+    api.updateOnboarding(changes)
+  );
+  ipcMain.handle("onboarding:complete", async (event) => {
+    const state = await api.updateOnboarding({
+      currentStep: "complete",
+      completedAt: Date.now()
+    });
+    if (!state.chatProviderConfigured || !state.assistantConfigured) {
+      throw new Error("请先完成对话 AI 接入和伙伴设置。");
+    }
+    openPage(event.sender, "home.html");
+    return state;
+  });
   ipcMain.handle("hub:status", async () => {
     if (!currentUser || !api.token) return null;
     if (isCloudEdition || authenticationIdentityMode === "email") {
@@ -995,7 +1010,7 @@ function registerIpcHandlers() {
     saveAuthenticatedState();
     desktopSync.stop();
     await startAuthenticatedSync();
-    openPage(event.sender, "home.html");
+    await routeAfterAuthentication(event.sender);
     return { canceled: false, ...result };
   });
 
@@ -1364,6 +1379,16 @@ function openPage(sender, file) {
   setImmediate(() => {
     if (!win.isDestroyed()) win.loadFile(file);
   });
+}
+
+async function routeAfterAuthentication(sender) {
+  try {
+    const onboarding = await api.getOnboarding();
+    openPage(sender, onboarding?.completedAt ? "home.html" : "onboarding.html");
+  } catch (error) {
+    console.warn("Unable to load onboarding state:", error.message);
+    openPage(sender, isCloudEdition ? "onboarding.html" : "home.html");
+  }
 }
 
 function authenticatedLocalHubApi() {

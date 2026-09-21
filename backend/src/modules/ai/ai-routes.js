@@ -1,4 +1,5 @@
 const TIME_CONTEXT_MARKER = "[权威运行时事实：时间感知]";
+const { HttpError } = require("../../lib/http-error");
 
 function registerAiRoutes(
   router,
@@ -13,6 +14,60 @@ function registerAiRoutes(
   router.add("PUT", "/api/v1/ai/config", ({ userId, body, requestId }) => {
     const result = configRepository.saveWithRequestId(userId, body, requestId);
     return { status: result.status, data: result.result };
+  });
+  router.add("GET", "/api/v1/ai/providers", ({ userId }) => ({
+    data: configRepository.listProvidersPublic(userId)
+  }));
+  router.add("PUT", "/api/v1/ai/providers/:providerId", ({ userId, params, body }) => {
+    const providerId = String(params.providerId || "");
+    if (String(body?.providerId || providerId) !== providerId) {
+      throw new HttpError(400, "AI_PROVIDER_ID_MISMATCH", "服务商标识与保存地址不一致。");
+    }
+    return { data: configRepository.saveProvider(userId, { ...body, providerId }) };
+  });
+  router.add("POST", "/api/v1/ai/providers/:providerId/activate", ({ userId, params }) => ({
+    data: configRepository.activateProvider(userId, params.providerId)
+  }));
+  router.add("POST", "/api/v1/ai/providers/:providerId/test", async ({ userId, params, body }) => {
+    const providerId = String(params.providerId || "");
+    if (String(body?.providerId || providerId) !== providerId) {
+      throw new HttpError(400, "AI_PROVIDER_ID_MISMATCH", "服务商标识与测试地址不一致。");
+    }
+    configRepository.saveProvider(userId, { ...body, providerId });
+    try {
+      const result = await providerClient.chat(
+        configRepository.getProviderCredentials(userId, providerId),
+        {
+          messages: [
+            { role: "system", content: "你是连接测试助手。" },
+            { role: "user", content: "请只回复：连接成功" }
+          ]
+        }
+      );
+      if (!result.ok) {
+        throw new HttpError(
+          502,
+          "AI_PROVIDER_TEST_FAILED",
+          providerErrorMessage(result) || `服务商返回 HTTP ${result.status}。`
+        );
+      }
+      return {
+        data: configRepository.markProviderVerification(
+          userId,
+          providerId,
+          "verified",
+          "连接测试成功"
+        )
+      };
+    } catch (error) {
+      configRepository.markProviderVerification(
+        userId,
+        providerId,
+        "failed",
+        error.message || "连接测试失败"
+      );
+      throw error;
+    }
   });
   router.add(
     "GET",
@@ -83,6 +138,14 @@ function registerAiRoutes(
     },
     { module: "image-generation" }
   );
+}
+
+function providerErrorMessage(result) {
+  return String(
+    result?.data?.error?.message ||
+    result?.data?.message ||
+    ""
+  ).slice(0, 500);
 }
 
 function runtimeTimeContext(userId, input, service, messages, moduleManager) {
