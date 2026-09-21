@@ -156,7 +156,7 @@ function personaForChoice() {
 function populatePersona() {
   const profile = personaForChoice();
   $("#assistantName").value = profile.name;
-  $("#assistantGender").value = profile.gender;
+  setGenderValue(profile.gender);
   $("#assistantDefinition").value = profile.selfDefinition;
   $("#assistantRelationship").value = profile.relationshipSummary;
   $("#assistantTraits").value = profile.traits.join("、");
@@ -182,6 +182,20 @@ function splitTraits(value) {
   return String(value || "").split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean).slice(0, 5);
 }
 
+function setGenderValue(value) {
+  const gender = String(value || "").trim();
+  const standard = ["女", "男", "中性"].includes(gender);
+  $("#assistantGender").value = standard ? gender : "custom";
+  $("#assistantGenderCustom").value = standard ? "" : gender;
+  $("#assistantGenderCustom").classList.toggle("hidden", standard);
+}
+
+function getGenderValue() {
+  return $("#assistantGender").value === "custom"
+    ? $("#assistantGenderCustom").value.trim()
+    : $("#assistantGender").value;
+}
+
 async function savePersona() {
   const name = $("#assistantName").value.trim();
   const relationshipSummary = $("#assistantRelationship").value.trim();
@@ -193,7 +207,7 @@ async function savePersona() {
   try {
     state.assistant = await window.desktop.updateAssistantProfile({
       name,
-      gender: $("#assistantGender").value.trim(),
+      gender: getGenderValue(),
       selfDefinition,
       relationshipSummary,
       traits: splitTraits($("#assistantTraits").value),
@@ -263,6 +277,11 @@ function bind() {
   $("#testProviderBtn").addEventListener("click", testProvider);
   $$(".companion-choice").forEach((button) => button.addEventListener("click", () => selectCompanion(button)));
   $("#assistantNextBtn").addEventListener("click", enterPersona);
+  $("#assistantGender").addEventListener("change", () => {
+    const custom = $("#assistantGender").value === "custom";
+    $("#assistantGenderCustom").classList.toggle("hidden", !custom);
+    if (custom) $("#assistantGenderCustom").focus();
+  });
   ["#assistantName", "#assistantRelationship"].forEach((selector) => $(selector).addEventListener("input", updatePersonaPreview));
   $("#savePersonaBtn").addEventListener("click", savePersona);
   $("#saveUserBtn").addEventListener("click", () => saveUser(false));

@@ -15,8 +15,14 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(preload, /completeOnboarding/);
   assert.match(html, /连接对话 AI/);
   assert.match(html, /自定义角色/);
+  assert.match(html, /<span>性别<\/span>/);
+  assert.match(html, /<option value="女">女<\/option>/);
+  assert.match(html, /<option value="男">男<\/option>/);
+  assert.match(html, /<option value="中性">中性<\/option>/);
+  assert.match(html, /<option value="custom">自定义<\/option>/);
   assert.match(script, /testAIProvider/);
   assert.match(script, /updateAssistantProfile/);
+  assert.match(script, /getGenderValue/);
   assert.match(script, /completeOnboarding/);
 });
 

@@ -64,7 +64,16 @@
           <div class="persona-preview"><i id="personaInitial">玄</i><div><strong id="personaPreviewName">小玄</strong><span id="personaPreviewRole">亲密可靠的数字伙伴</span></div></div>
           <div class="form-grid">
             <label><span>角色名字</span><input id="assistantName" maxlength="100" /></label>
-            <label><span>身份 / 性别认同</span><input id="assistantGender" maxlength="50" /></label>
+            <label>
+              <span>性别</span>
+              <select id="assistantGender">
+                <option value="女">女</option>
+                <option value="男">男</option>
+                <option value="中性">中性</option>
+                <option value="custom">自定义</option>
+              </select>
+              <input id="assistantGenderCustom" class="hidden" maxlength="50" placeholder="请输入自定义性别" />
+            </label>
             <label class="wide"><span>角色定位</span><textarea id="assistantDefinition" maxlength="1000"></textarea></label>
             <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
             <label class="wide"><span>性格关键词</span><input id="assistantTraits" placeholder="用逗号分隔，最多 5 个" /></label>
