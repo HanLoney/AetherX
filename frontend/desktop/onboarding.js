@@ -1,6 +1,5 @@
 const steps = ["ai", "assistant", "persona", "user", "image"];
 const MAX_PRESET_TRAITS = 5;
-const MAX_TOTAL_TRAITS = 8;
 const state = {
   onboarding: null,
   auth: null,
@@ -23,7 +22,7 @@ const templates = {
     gender: "女",
     selfDefinition: "温柔细腻、擅长倾听的生活陪伴者",
     relationshipSummary: "与你相互关心、愿意认真听你说话的亲密朋友",
-    traits: ["温柔", "细腻", "耐心", "主动关心"],
+    traits: ["温柔", "治愈", "细腻", "认真"],
     voice: "自然、柔和、简短，先回应感受再一起想办法"
   },
   rational: {
@@ -31,7 +30,7 @@ const templates = {
     gender: "中性",
     selfDefinition: "冷静清晰、能把复杂事情理顺的长期搭档",
     relationshipSummary: "与你并肩做决定、推进目标的可靠伙伴",
-    traits: ["理性", "可靠", "坦诚", "有条理"],
+    traits: ["理性", "可靠", "认真", "清冷"],
     voice: "清楚、直接、克制，需要时给出可执行步骤"
   }
 };
@@ -157,7 +156,7 @@ function personaForChoice() {
     gender: "女",
     selfDefinition: "会持续成长的全能助手",
     relationshipSummary: `${state.user?.preferredName || state.user?.displayName || "你"}亲密可靠的数字伙伴`,
-    traits: ["活泼", "可爱", "真诚", "主动"],
+    traits: ["元气", "软萌", "坦率", "好奇"],
     voice: "自然、口语化、亲近，句尾偶尔使用“喵~”和颜文字"
   };
 }
@@ -186,7 +185,7 @@ async function enterPersona() {
   showStep("persona");
 }
 
-function splitTraits(value, limit = MAX_TOTAL_TRAITS) {
+function splitTraits(value, limit = MAX_PRESET_TRAITS) {
   return [...new Set(
     String(value || "").split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean)
   )].slice(0, limit);
@@ -194,13 +193,11 @@ function splitTraits(value, limit = MAX_TOTAL_TRAITS) {
 
 function setTraitValues(value) {
   const traits = splitTraits(Array.isArray(value) ? value.join("、") : value);
-  const options = new Set($$("#traitOptions [data-trait]").map((button) => button.dataset.trait));
-  const presets = traits.filter((trait) => options.has(trait)).slice(0, MAX_PRESET_TRAITS);
-  const custom = traits.filter((trait) => !options.has(trait)).slice(0, MAX_TOTAL_TRAITS - presets.length);
+  const aliases = { 活泼: "元气", 可爱: "软萌", 真诚: "坦率", 主动: "好奇", 耐心: "认真", 主动关心: "治愈", 坦诚: "坦率", 有条理: "认真" };
+  const selected = traits.map((trait) => aliases[trait] || trait);
   $$("#traitOptions [data-trait]").forEach((button) => {
-    button.classList.toggle("active", presets.includes(button.dataset.trait));
+    button.classList.toggle("active", selected.includes(button.dataset.trait));
   });
-  $("#assistantTraits").value = custom.join("、");
   syncTraitOptions();
 }
 
@@ -208,55 +205,29 @@ function selectedPresetTraits() {
   return $$("#traitOptions [data-trait].active").map((button) => button.dataset.trait);
 }
 
-function customTraitValues() {
-  const options = new Set($$("#traitOptions [data-trait]").map((button) => button.dataset.trait));
-  return splitTraits($("#assistantTraits").value).filter((trait) => !options.has(trait));
-}
-
 function getTraitValues() {
-  const presets = selectedPresetTraits();
-  return [...presets, ...customTraitValues()]
-    .filter((trait, index, items) => items.indexOf(trait) === index)
-    .slice(0, MAX_TOTAL_TRAITS);
+  return selectedPresetTraits().slice(0, MAX_PRESET_TRAITS);
 }
 
 function syncTraitOptions() {
   const presets = selectedPresetTraits();
-  const total = getTraitValues().length;
   $$("#traitOptions [data-trait]").forEach((button) => {
     const active = button.classList.contains("active");
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
-    button.disabled = !active && (presets.length >= MAX_PRESET_TRAITS || total >= MAX_TOTAL_TRAITS);
+    button.disabled = !active && presets.length >= MAX_PRESET_TRAITS;
   });
-  const remaining = Math.max(0, MAX_TOTAL_TRAITS - total);
-  $("#traitHint").textContent = remaining
-    ? presets.length >= MAX_PRESET_TRAITS
-      ? `已选择 5 个常用性格，可再补充 ${remaining} 个自定义关键词。`
-      : `已选择 ${presets.length} 个常用性格，还可设置 ${remaining} 个关键词。`
-    : "已设置 8 个性格关键词，已达到上限。";
+  $("#traitHint").textContent = presets.length < 3
+    ? `已选择 ${presets.length} / 5，至少选择 3 个。`
+    : `已选择 ${presets.length} / 5。`;
 }
 
 function toggleTrait(button) {
   const active = button.classList.contains("active");
   if (active) button.classList.remove("active");
-  else if (selectedPresetTraits().length < MAX_PRESET_TRAITS && getTraitValues().length < MAX_TOTAL_TRAITS) {
+  else if (selectedPresetTraits().length < MAX_PRESET_TRAITS) {
     button.classList.add("active");
   }
-  syncTraitOptions();
-}
-
-function normalizeCustomTraits() {
-  const optionButtons = $$("#traitOptions [data-trait]");
-  const optionByTrait = new Map(optionButtons.map((button) => [button.dataset.trait, button]));
-  const custom = [];
-  for (const trait of splitTraits($("#assistantTraits").value)) {
-    const option = optionByTrait.get(trait);
-    if (option && selectedPresetTraits().length < MAX_PRESET_TRAITS) option.classList.add("active");
-    else if (!option) custom.push(trait);
-  }
-  const available = Math.max(0, MAX_TOTAL_TRAITS - selectedPresetTraits().length);
-  $("#assistantTraits").value = custom.slice(0, available).join("、");
   syncTraitOptions();
 }
 
@@ -277,18 +248,18 @@ function getGenderValue() {
 async function savePersona() {
   const name = $("#assistantName").value.trim();
   const relationshipSummary = $("#assistantRelationship").value.trim();
-  if (!name || !relationshipSummary) {
-    showResult($("#personaResult"), "error", "请填写角色名字和与你的关系。");
+  const traits = getTraitValues();
+  if (!name || !relationshipSummary || traits.length < 3) {
+    showResult($("#personaResult"), "error", "请填写角色名字和与你的关系，并选择至少 3 个性格。");
     return;
   }
   try {
-    normalizeCustomTraits();
     state.assistant = await window.desktop.updateAssistantProfile({
       name,
       gender: getGenderValue(),
       selfDefinition: personaForChoice().selfDefinition,
       relationshipSummary,
-      traits: getTraitValues(),
+      traits,
       values: $("#assistantVoice").value.trim() ? [`说话风格：${$("#assistantVoice").value.trim()}`] : [],
       ...(state.choice === "custom" ? { avatarDataUrl: "", personaImageDataUrl: "" } : {})
     });
@@ -363,8 +334,6 @@ function bind() {
   $$("#traitOptions [data-trait]").forEach((button) => {
     button.addEventListener("click", () => toggleTrait(button));
   });
-  $("#assistantTraits").addEventListener("input", syncTraitOptions);
-  $("#assistantTraits").addEventListener("change", normalizeCustomTraits);
   ["#assistantName", "#assistantRelationship"].forEach((selector) => $(selector).addEventListener("input", updatePersonaPreview));
   $("#savePersonaBtn").addEventListener("click", savePersona);
   $("#saveUserBtn").addEventListener("click", () => saveUser(false));

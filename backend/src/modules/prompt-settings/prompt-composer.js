@@ -30,13 +30,9 @@ class PromptComposer {
           assistantProfile.relationshipSummary &&
             `关系定位：${assistantProfile.relationshipSummary}`,
           assistantProfile.traits?.length &&
-            `性格特征：${assistantProfile.traits
-              .map((item) => `${item.key}=${item.value}`)
-              .join("；")}`,
+            `性格特征：${formatProfileItems(assistantProfile.traits)}`,
           assistantProfile.values?.length &&
-            `价值倾向：${assistantProfile.values
-              .map((item) => `${item.key}=${item.value}`)
-              .join("；")}`
+            `价值倾向：${formatProfileItems(assistantProfile.values)}`
         ].filter(Boolean).join("\n"),
         true
       ),
@@ -93,6 +89,13 @@ class PromptComposer {
         .join("\n\n")
     };
   }
+}
+
+function formatProfileItems(items) {
+  return items
+    .map((item) => item.value ? `${item.key}=${item.value}` : item.key)
+    .filter(Boolean)
+    .join("；");
 }
 
 function section(id, title, content, editable) {

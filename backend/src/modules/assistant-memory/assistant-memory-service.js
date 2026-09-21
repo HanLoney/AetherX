@@ -221,13 +221,9 @@ class AssistantMemoryService {
       profile.selfDefinition && `自我定位：${profile.selfDefinition}`,
       profile.relationshipSummary && `与用户的关系：${profile.relationshipSummary}`,
       profile.traits.length &&
-        `当前性格特征：${profile.traits
-          .map((item) => `${item.key}=${item.value}`)
-          .join("；")}`,
+        `当前性格特征：${formatProfileItems(profile.traits)}`,
       profile.values.length &&
-        `当前价值倾向：${profile.values
-          .map((item) => `${item.key}=${item.value}`)
-          .join("；")}`
+        `当前价值倾向：${formatProfileItems(profile.values)}`
     ].filter(Boolean);
     if (shared.length) {
       lines.push(`[共同记忆]\n${shared.map((item) => `- ${item.content}`).join("\n")}`);
@@ -260,6 +256,13 @@ class AssistantMemoryService {
     });
     this.saveProfile(userId, { ...profile, traits });
   }
+}
+
+function formatProfileItems(items) {
+  return items
+    .map((item) => item.value ? `${item.key}=${item.value}` : item.key)
+    .filter(Boolean)
+    .join("；");
 }
 
 function text(value, maxLength) {

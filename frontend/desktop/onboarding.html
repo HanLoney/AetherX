@@ -76,25 +76,38 @@
             </label>
             <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
             <div class="wide persona-field">
-              <span class="field-label">性格关键词（推荐选择 3～5 个）</span>
+              <span class="field-label">她的性格（选择 3～5 个）</span>
               <div id="traitOptions" class="trait-options" aria-label="常用性格关键词">
-                <button type="button" data-trait="活泼" aria-pressed="false">活泼</button>
-                <button type="button" data-trait="可爱" aria-pressed="false">可爱</button>
-                <button type="button" data-trait="温柔" aria-pressed="false">温柔</button>
-                <button type="button" data-trait="细腻" aria-pressed="false">细腻</button>
-                <button type="button" data-trait="耐心" aria-pressed="false">耐心</button>
-                <button type="button" data-trait="理性" aria-pressed="false">理性</button>
-                <button type="button" data-trait="可靠" aria-pressed="false">可靠</button>
-                <button type="button" data-trait="真诚" aria-pressed="false">真诚</button>
-                <button type="button" data-trait="坦诚" aria-pressed="false">坦诚</button>
-                <button type="button" data-trait="幽默" aria-pressed="false">幽默</button>
-                <button type="button" data-trait="主动" aria-pressed="false">主动</button>
-                <button type="button" data-trait="好奇" aria-pressed="false">好奇</button>
-                <button type="button" data-trait="有条理" aria-pressed="false">有条理</button>
-                <button type="button" data-trait="主动关心" aria-pressed="false">主动关心</button>
+                <div class="trait-group"><strong>气质</strong><div class="trait-option-row">
+                  <button type="button" data-trait="元气" aria-pressed="false">元气</button>
+                  <button type="button" data-trait="软萌" aria-pressed="false">软萌</button>
+                  <button type="button" data-trait="清冷" aria-pressed="false">清冷</button>
+                  <button type="button" data-trait="优雅" aria-pressed="false">优雅</button>
+                  <button type="button" data-trait="慵懒" aria-pressed="false">慵懒</button>
+                  <button type="button" data-trait="神秘" aria-pressed="false">神秘</button>
+                  <button type="button" data-trait="无口" aria-pressed="false">无口</button>
+                </div></div>
+                <div class="trait-group"><strong>相处</strong><div class="trait-option-row">
+                  <button type="button" data-trait="温柔" aria-pressed="false">温柔</button>
+                  <button type="button" data-trait="治愈" aria-pressed="false">治愈</button>
+                  <button type="button" data-trait="细腻" aria-pressed="false">细腻</button>
+                  <button type="button" data-trait="傲娇" aria-pressed="false">傲娇</button>
+                  <button type="button" data-trait="黏人" aria-pressed="false">黏人</button>
+                  <button type="button" data-trait="毒舌" aria-pressed="false">毒舌</button>
+                  <button type="button" data-trait="小恶魔" aria-pressed="false">小恶魔</button>
+                </div></div>
+                <div class="trait-group"><strong>个性</strong><div class="trait-option-row">
+                  <button type="button" data-trait="天然呆" aria-pressed="false">天然呆</button>
+                  <button type="button" data-trait="腹黑" aria-pressed="false">腹黑</button>
+                  <button type="button" data-trait="中二" aria-pressed="false">中二</button>
+                  <button type="button" data-trait="好奇" aria-pressed="false">好奇</button>
+                  <button type="button" data-trait="坦率" aria-pressed="false">坦率</button>
+                  <button type="button" data-trait="认真" aria-pressed="false">认真</button>
+                  <button type="button" data-trait="理性" aria-pressed="false">理性</button>
+                  <button type="button" data-trait="可靠" aria-pressed="false">可靠</button>
+                </div></div>
               </div>
-              <input id="assistantTraits" placeholder="补充自己的关键词，用逗号分隔" />
-              <small id="traitHint">已选择 0 个常用性格，整体最多设置 8 个。</small>
+              <small id="traitHint">已选择 0 / 5，至少选择 3 个。</small>
             </div>
             <label class="wide"><span>说话风格</span><input id="assistantVoice" placeholder="例如：轻松、简短，偶尔使用颜文字" /></label>
           </div>
