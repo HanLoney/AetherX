@@ -49,10 +49,10 @@ button { cursor:pointer; }
 .trait-group { display:grid; grid-template-columns:42px minmax(0,1fr); gap:10px; align-items:start; }
 .trait-group > strong { padding-top:8px; color:#8a859b; font-size:12px; }
 .trait-option-row { display:flex; flex-wrap:wrap; gap:8px; }
-.trait-options button { min-height:34px; padding:0 13px; border:1px solid #dcd9e7; border-radius:999px; color:#625e72; background:#fff; transition:.14s ease; }
-.trait-options button:hover:not(:disabled) { border-color:#aaa4e8; color:var(--accent); }
-.trait-options button.active { border-color:var(--accent); color:var(--accent); background:#f1efff; box-shadow:0 0 0 2px rgba(103,94,232,.08); }
-.trait-options button:disabled { opacity:.42; cursor:not-allowed; }
+.trait-options button,.relationship-options button { min-height:34px; padding:0 13px; border:1px solid #dcd9e7; border-radius:999px; color:#625e72; background:#fff; transition:.14s ease; }
+.trait-options button:hover:not(:disabled),.relationship-options button:hover:not(:disabled) { border-color:#aaa4e8; color:var(--accent); }
+.trait-options button.active,.relationship-options button.active { border-color:var(--accent); color:var(--accent); background:#f1efff; box-shadow:0 0 0 2px rgba(103,94,232,.08); }
+.trait-options button:disabled,.relationship-options button:disabled { opacity:.42; cursor:not-allowed; }
 input,select,textarea { width:100%; border:1px solid #dcd9e7; border-radius:7px; padding:11px 12px; color:var(--ink); background:#fff; outline:none; }
 textarea { min-height:78px; resize:vertical; }
 input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(103,94,232,.1); }

@@ -1,5 +1,6 @@
 const steps = ["ai", "assistant", "persona", "user", "image"];
 const MAX_PRESET_TRAITS = 5;
+const MAX_VOICE_STYLES = 4;
 const state = {
   onboarding: null,
   auth: null,
@@ -21,17 +22,17 @@ const templates = {
     name: "知夏",
     gender: "女",
     selfDefinition: "温柔细腻、擅长倾听的生活陪伴者",
-    relationshipSummary: "与你相互关心、愿意认真听你说话的亲密朋友",
+    relationship: "挚友",
     traits: ["温柔", "治愈", "细腻", "认真"],
-    voice: "自然、柔和、简短，先回应感受再一起想办法"
+    voices: ["自然口语", "温柔治愈", "简短克制"]
   },
   rational: {
     name: "澄一",
     gender: "中性",
     selfDefinition: "冷静清晰、能把复杂事情理顺的长期搭档",
-    relationshipSummary: "与你并肩做决定、推进目标的可靠伙伴",
+    relationship: "搭档",
     traits: ["理性", "可靠", "认真", "清冷"],
-    voice: "清楚、直接、克制，需要时给出可执行步骤"
+    voices: ["理性冷静", "简洁直接", "条理清晰"]
   }
 };
 
@@ -146,18 +147,18 @@ function personaForChoice() {
       name: "",
       gender: "",
       selfDefinition: "会在相处中逐渐形成个性的数字伙伴",
-      relationshipSummary: "",
+      relationship: "",
       traits: [],
-      voice: ""
+      voices: []
     };
   }
   return {
     name: "小玄",
     gender: "女",
     selfDefinition: "会持续成长的全能助手",
-    relationshipSummary: `${state.user?.preferredName || state.user?.displayName || "你"}亲密可靠的数字伙伴`,
+    relationship: "亲密搭档",
     traits: ["元气", "软萌", "坦率", "好奇"],
-    voice: "自然、口语化、亲近，句尾偶尔使用“喵~”和颜文字"
+    voices: ["自然口语", "活泼俏皮", "偶尔颜文字", "偶尔“喵~”"]
   };
 }
 
@@ -165,9 +166,9 @@ function populatePersona() {
   const profile = personaForChoice();
   $("#assistantName").value = profile.name;
   setGenderValue(profile.gender);
-  $("#assistantRelationship").value = profile.relationshipSummary;
+  setRelationshipValue(profile.relationship);
   setTraitValues(profile.traits);
-  $("#assistantVoice").value = profile.voice;
+  setVoiceValues(profile.voices);
   $("#personaTitle").textContent = state.choice === "custom" ? "给她一个相处的起点" : "确认她最初的样子";
   updatePersonaPreview();
 }
@@ -176,7 +177,7 @@ function updatePersonaPreview() {
   const name = $("#assistantName").value.trim() || "未命名";
   $("#personaInitial").textContent = Array.from(name)[0] || "·";
   $("#personaPreviewName").textContent = name;
-  $("#personaPreviewRole").textContent = $("#assistantRelationship").value.trim() || "关系待设置";
+  $("#personaPreviewRole").textContent = selectedRelationshipButton()?.dataset.relationship || "关系待设置";
 }
 
 async function enterPersona() {
@@ -231,6 +232,54 @@ function toggleTrait(button) {
   syncTraitOptions();
 }
 
+function selectedRelationshipButton() {
+  return $("#relationshipOptions [data-relationship].active");
+}
+
+function setRelationshipValue(value) {
+  $$("#relationshipOptions [data-relationship]").forEach((button) => {
+    const active = button.dataset.relationship === value;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  updatePersonaPreview();
+}
+
+function selectedRelationship() {
+  return selectedRelationshipButton()?.dataset.summary || "";
+}
+
+function selectedVoiceStyles() {
+  return $$("#voiceOptions [data-voice].active").map((button) => button.dataset.voice);
+}
+
+function setVoiceValues(values) {
+  const selected = Array.isArray(values) ? values.slice(0, MAX_VOICE_STYLES) : [];
+  $$("#voiceOptions [data-voice]").forEach((button) => {
+    button.classList.toggle("active", selected.includes(button.dataset.voice));
+  });
+  syncVoiceOptions();
+}
+
+function syncVoiceOptions() {
+  const voices = selectedVoiceStyles();
+  $$("#voiceOptions [data-voice]").forEach((button) => {
+    const active = button.classList.contains("active");
+    button.setAttribute("aria-pressed", String(active));
+    button.disabled = !active && voices.length >= MAX_VOICE_STYLES;
+  });
+  $("#voiceHint").textContent = voices.length < 2
+    ? `已选择 ${voices.length} / 4，至少选择 2 个。`
+    : `已选择 ${voices.length} / 4。`;
+}
+
+function toggleVoice(button) {
+  const active = button.classList.contains("active");
+  if (active) button.classList.remove("active");
+  else if (selectedVoiceStyles().length < MAX_VOICE_STYLES) button.classList.add("active");
+  syncVoiceOptions();
+}
+
 function setGenderValue(value) {
   const gender = String(value || "").trim();
   const standard = ["女", "男", "中性"].includes(gender);
@@ -247,10 +296,11 @@ function getGenderValue() {
 
 async function savePersona() {
   const name = $("#assistantName").value.trim();
-  const relationshipSummary = $("#assistantRelationship").value.trim();
+  const relationshipSummary = selectedRelationship();
   const traits = getTraitValues();
-  if (!name || !relationshipSummary || traits.length < 3) {
-    showResult($("#personaResult"), "error", "请填写角色名字和与你的关系，并选择至少 3 个性格。");
+  const voices = selectedVoiceStyles();
+  if (!name || !relationshipSummary || traits.length < 3 || voices.length < 2) {
+    showResult($("#personaResult"), "error", "请填写角色名字，选择关系、至少 3 个性格和至少 2 个说话风格。");
     return;
   }
   try {
@@ -260,7 +310,7 @@ async function savePersona() {
       selfDefinition: personaForChoice().selfDefinition,
       relationshipSummary,
       traits,
-      values: $("#assistantVoice").value.trim() ? [`说话风格：${$("#assistantVoice").value.trim()}`] : [],
+      values: [{ key: "说话风格", value: voices.join("、") }],
       ...(state.choice === "custom" ? { avatarDataUrl: "", personaImageDataUrl: "" } : {})
     });
     await saveProgress({ assistantConfigured: true, currentStep: "user" });
@@ -334,7 +384,13 @@ function bind() {
   $$("#traitOptions [data-trait]").forEach((button) => {
     button.addEventListener("click", () => toggleTrait(button));
   });
-  ["#assistantName", "#assistantRelationship"].forEach((selector) => $(selector).addEventListener("input", updatePersonaPreview));
+  $$("#relationshipOptions [data-relationship]").forEach((button) => {
+    button.addEventListener("click", () => setRelationshipValue(button.dataset.relationship));
+  });
+  $$("#voiceOptions [data-voice]").forEach((button) => {
+    button.addEventListener("click", () => toggleVoice(button));
+  });
+  $("#assistantName").addEventListener("input", updatePersonaPreview);
   $("#savePersonaBtn").addEventListener("click", savePersona);
   $("#saveUserBtn").addEventListener("click", () => saveUser(false));
   $("#skipUserBtn").addEventListener("click", () => saveUser(true));

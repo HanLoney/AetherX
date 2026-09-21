@@ -32,12 +32,23 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(html, /data-trait="天然呆"/);
   assert.match(html, /data-trait="小恶魔"/);
   assert.doesNotMatch(html, /id="assistantTraits"/);
+  assert.match(html, /id="relationshipOptions"/);
+  assert.match(html, /data-relationship="恋人"/);
+  assert.match(html, /data-relationship="青梅竹马"/);
+  assert.doesNotMatch(html, /id="assistantRelationship"/);
+  assert.match(html, /id="voiceOptions"/);
+  assert.match(html, /data-voice="活泼俏皮"/);
+  assert.match(html, /data-voice="偶尔“喵~”"/);
+  assert.doesNotMatch(html, /id="assistantVoice"/);
   assert.match(script, /testAIProvider/);
   assert.match(script, /updateAssistantProfile/);
   assert.match(script, /getGenderValue/);
   assert.match(script, /toggleTrait/);
   assert.match(script, /MAX_PRESET_TRAITS = 5/);
+  assert.match(script, /MAX_VOICE_STYLES = 4/);
   assert.match(script, /getTraitValues/);
+  assert.match(script, /selectedRelationship/);
+  assert.match(script, /selectedVoiceStyles/);
   assert.match(script, /completeOnboarding/);
 });
 

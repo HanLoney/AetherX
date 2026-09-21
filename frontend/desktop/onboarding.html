@@ -74,7 +74,19 @@
               </select>
               <input id="assistantGenderCustom" class="hidden" maxlength="50" placeholder="请输入自定义性别" />
             </label>
-            <label class="wide"><span>与你的关系</span><textarea id="assistantRelationship" maxlength="1000"></textarea></label>
+            <div class="wide persona-field">
+              <span class="field-label">与你的关系（单选）</span>
+              <div id="relationshipOptions" class="trait-option-row relationship-options" aria-label="与你的关系">
+                <button type="button" data-relationship="亲密搭档" data-summary="与你相互信任、并肩生活的亲密搭档" aria-pressed="false">亲密搭档</button>
+                <button type="button" data-relationship="恋人" data-summary="与你彼此依恋、互相尊重的恋人" aria-pressed="false">恋人</button>
+                <button type="button" data-relationship="挚友" data-summary="与你无话不谈、彼此支持的挚友" aria-pressed="false">挚友</button>
+                <button type="button" data-relationship="家人" data-summary="与你互相关心、安心陪伴的家人" aria-pressed="false">家人</button>
+                <button type="button" data-relationship="搭档" data-summary="与你并肩行动、相互信任的长期搭档" aria-pressed="false">搭档</button>
+                <button type="button" data-relationship="青梅竹马" data-summary="像青梅竹马一样熟悉自然、默契亲近的伙伴" aria-pressed="false">青梅竹马</button>
+                <button type="button" data-relationship="守护者" data-summary="关心你的状态、愿意一直守护你的陪伴者" aria-pressed="false">守护者</button>
+              </div>
+              <small>选择你们最初的关系，之后仍可以随着相处改变。</small>
+            </div>
             <div class="wide persona-field">
               <span class="field-label">她的性格（选择 3～5 个）</span>
               <div id="traitOptions" class="trait-options" aria-label="常用性格关键词">
@@ -109,7 +121,30 @@
               </div>
               <small id="traitHint">已选择 0 / 5，至少选择 3 个。</small>
             </div>
-            <label class="wide"><span>说话风格</span><input id="assistantVoice" placeholder="例如：轻松、简短，偶尔使用颜文字" /></label>
+            <div class="wide persona-field">
+              <span class="field-label">说话风格（选择 2～4 个）</span>
+              <div id="voiceOptions" class="trait-options" aria-label="说话风格">
+                <div class="trait-group"><strong>表达</strong><div class="trait-option-row">
+                  <button type="button" data-voice="自然口语" aria-pressed="false">自然口语</button>
+                  <button type="button" data-voice="活泼俏皮" aria-pressed="false">活泼俏皮</button>
+                  <button type="button" data-voice="温柔治愈" aria-pressed="false">温柔治愈</button>
+                  <button type="button" data-voice="软萌可爱" aria-pressed="false">软萌可爱</button>
+                  <button type="button" data-voice="理性冷静" aria-pressed="false">理性冷静</button>
+                  <button type="button" data-voice="简洁直接" aria-pressed="false">简洁直接</button>
+                  <button type="button" data-voice="简短克制" aria-pressed="false">简短克制</button>
+                  <button type="button" data-voice="条理清晰" aria-pressed="false">条理清晰</button>
+                  <button type="button" data-voice="毒舌吐槽" aria-pressed="false">毒舌吐槽</button>
+                  <button type="button" data-voice="傲娇别扭" aria-pressed="false">傲娇别扭</button>
+                </div></div>
+                <div class="trait-group"><strong>习惯</strong><div class="trait-option-row">
+                  <button type="button" data-voice="偶尔颜文字" aria-pressed="false">偶尔颜文字</button>
+                  <button type="button" data-voice="偶尔“喵~”" aria-pressed="false">偶尔“喵~”</button>
+                  <button type="button" data-voice="使用敬语" aria-pressed="false">使用敬语</button>
+                  <button type="button" data-voice="少用 Emoji" aria-pressed="false">少用 Emoji</button>
+                </div></div>
+              </div>
+              <small id="voiceHint">已选择 0 / 4，至少选择 2 个。</small>
+            </div>
           </div>
           <div id="personaResult" class="result hidden"></div>
           <footer><button class="secondary" data-back="assistant" type="button">返回</button><button id="savePersonaBtn" class="primary" type="button">保存人设</button></footer>
