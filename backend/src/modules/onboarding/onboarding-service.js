@@ -1,3 +1,4 @@
+const { randomUUID } = require("node:crypto");
 const ONBOARDING_CATEGORY = "onboarding";
 const ONBOARDING_KEY = "first-run-v1";
 
@@ -19,18 +20,30 @@ class OnboardingService {
     this.aiConfigRepository = aiConfigRepository;
   }
 
-  get(userId) {
-    const item = this.preferenceService
+  storedItem(userId) {
+    return this.preferenceService
       .list(userId, { category: ONBOARDING_CATEGORY })
       .find((preference) => preference.key === ONBOARDING_KEY);
-    if (item) return normalizeState(item.value);
+  }
+
+  get(userId) {
+    const item = this.storedItem(userId);
+    if (item) {
+      const state = normalizeState(item.value);
+      // Persist repairs so an interrupted v1 flow cannot regain its false completion.
+      if (JSON.stringify(state) !== JSON.stringify(item.value)) {
+        return this.persist(userId, state, randomUUID()).result;
+      }
+      return state;
+    }
     const config = this.aiConfigRepository?.getPublic(userId);
+    let initial = { ...DEFAULT_STATE };
     if (
       config?.hasApiKey &&
       config.updatedAt &&
       config.verificationStatus !== "failed"
     ) {
-      return {
+      initial = {
         ...DEFAULT_STATE,
         currentStep: "complete",
         assistantChoice: "default",
@@ -40,21 +53,25 @@ class OnboardingService {
         completedAt: config.updatedAt
       };
     }
-    return { ...DEFAULT_STATE };
+    // Record the initial decision before provider setup can change the legacy check.
+    return this.persist(userId, initial, randomUUID()).result;
   }
 
   saveWithRequestId(userId, input, requestId) {
-    const current = this.get(userId);
-    const next = normalizeState({ ...current, ...input });
+    // Progress writes must never infer completion from an existing provider.
+    const item = this.storedItem(userId);
+    const current = item ? normalizeState(item.value) : { ...DEFAULT_STATE };
+    const changes = { ...current, ...input };
     if (input.completedAt !== undefined && input.completedAt !== null) {
       const provider = this.aiConfigRepository?.getPublic(userId);
-      next.chatProviderConfigured = Boolean(
+      changes.chatProviderConfigured = Boolean(
         provider?.hasApiKey && provider?.verificationStatus === "verified"
       );
     }
-    if (next.completedAt && !(next.chatProviderConfigured && next.assistantConfigured)) {
-      next.completedAt = null;
-    }
+    return this.persist(userId, normalizeState(changes), requestId);
+  }
+
+  persist(userId, next, requestId) {
     const result = this.preferenceService.saveWithRequestId(
       userId,
       {
@@ -75,7 +92,7 @@ function normalizeState(value = {}) {
   const choice = ["default", "template", "custom"].includes(value.assistantChoice)
     ? value.assistantChoice
     : "";
-  return {
+  const state = {
     version: 1,
     currentStep: ["ai", "assistant", "persona", "user", "image", "complete"].includes(value.currentStep)
       ? value.currentStep
@@ -90,6 +107,20 @@ function normalizeState(value = {}) {
       ? Number(value.completedAt)
       : null
   };
+  if (state.completedAt && state.currentStep !== "complete") {
+    state.completedAt = null;
+    // These flags were also inherited from the old provider-only completion heuristic.
+    if (["ai", "assistant", "persona"].includes(state.currentStep)) state.assistantConfigured = false;
+    if (["ai", "assistant", "persona", "user"].includes(state.currentStep)) state.userGreetingConfigured = false;
+  }
+  if (state.currentStep === "complete" && (!state.completedAt
+    || !state.chatProviderConfigured || !state.assistantConfigured || !state.userGreetingConfigured)) {
+    state.completedAt = null;
+    state.currentStep = !state.chatProviderConfigured ? "ai"
+      : !state.assistantConfigured ? (state.assistantChoice ? "persona" : "assistant")
+        : !state.userGreetingConfigured ? "user" : "image";
+  }
+  return state;
 }
 
 module.exports = { DEFAULT_STATE, OnboardingService, normalizeState };

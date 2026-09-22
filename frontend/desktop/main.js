@@ -815,8 +815,9 @@ function registerIpcHandlers() {
       currentStep: "complete",
       completedAt: Date.now()
     });
-    if (!state.chatProviderConfigured || !state.assistantConfigured) {
-      throw new Error("请先完成对话 AI 接入和伙伴设置。");
+    if (!state.completedAt || state.currentStep !== "complete"
+      || !state.chatProviderConfigured || !state.assistantConfigured || !state.userGreetingConfigured) {
+      throw new Error("请先完成对话 AI 接入、伙伴设置和称呼设置。");
     }
     openPage(event.sender, "home.html");
     return state;
@@ -1384,7 +1385,9 @@ function openPage(sender, file) {
 async function routeAfterAuthentication(sender) {
   try {
     const onboarding = await api.getOnboarding();
-    openPage(sender, onboarding?.completedAt ? "home.html" : "onboarding.html");
+    const complete = onboarding?.completedAt && onboarding.currentStep === "complete"
+      && onboarding.chatProviderConfigured && onboarding.assistantConfigured && onboarding.userGreetingConfigured;
+    openPage(sender, complete ? "home.html" : "onboarding.html");
   } catch (error) {
     console.warn("Unable to load onboarding state:", error.message);
     openPage(sender, isCloudEdition ? "onboarding.html" : "home.html");

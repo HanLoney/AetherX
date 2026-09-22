@@ -155,3 +155,37 @@ test("custom habit requires text, saves the text, and is omitted when deselected
   await h.run("savePersona()");
   assert.equal(h.saved.length, 3, "habits cannot replace the required expression");
 });
+
+test("restored voice settings retain custom habits", () => {
+  const h = voiceHarness();
+  h.run('setVoiceValues(["自然口语", "使用敬语", "句尾加呀"])');
+  assert.equal(h.elements["#customHabitInput"].value, "句尾加呀");
+  assert.equal(h.elements["#customHabitField"].classList.contains("hidden"), false);
+  assert.equal(h.run('selectedVoiceButtons("habit").length'), 2);
+});
+
+test("startup routing rejects false or partial completion and fails closed for Online", async () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const fn = main.slice(main.indexOf("async function routeAfterAuthentication("), main.indexOf("function authenticatedLocalHubApi("));
+  const pages = [];
+  let state;
+  const context = vm.createContext({
+    api: { getOnboarding: async () => { if (state instanceof Error) throw state; return state; } },
+    openPage: (_sender, page) => pages.push(page),
+    isCloudEdition: true, console: { warn() {} }
+  });
+  vm.runInContext(fn, context);
+  for (const input of [
+    { completedAt: null, currentStep: "persona" },
+    { completedAt: 123, currentStep: "persona", chatProviderConfigured: true, assistantConfigured: true, userGreetingConfigured: true },
+    { completedAt: 123, currentStep: "complete", chatProviderConfigured: true, assistantConfigured: true },
+    new Error("offline")
+  ]) {
+    state = input;
+    await context.routeAfterAuthentication({});
+    assert.equal(pages.at(-1), "onboarding.html");
+  }
+  state = { completedAt: 123, currentStep: "complete", chatProviderConfigured: true, assistantConfigured: true, userGreetingConfigured: true };
+  await context.routeAfterAuthentication({});
+  assert.equal(pages.at(-1), "home.html");
+});

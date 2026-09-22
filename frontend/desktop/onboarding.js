@@ -163,8 +163,7 @@ function personaForChoice() {
   };
 }
 
-function populatePersona() {
-  const profile = personaForChoice();
+function populatePersona(profile = personaForChoice()) {
   $("#assistantName").value = profile.name;
   setGenderValue(profile.gender);
   setRelationshipValue(profile.relationship);
@@ -244,7 +243,8 @@ function selectedRelationshipButton() {
 function setRelationshipValue(value) {
   const relationship = String(value || "").trim();
   const preset = $$("#relationshipOptions [data-relationship]")
-    .find((button) => button.dataset.relationship === relationship && button.dataset.relationship !== "custom");
+    .find((button) => (button.dataset.relationship === relationship || button.dataset.summary === relationship)
+      && button.dataset.relationship !== "custom");
   const custom = $("#customRelationshipInput");
   $$("#relationshipOptions [data-relationship]").forEach((button) => {
     const active = preset ? button === preset : button.dataset.relationship === "custom" && Boolean(relationship);
@@ -287,6 +287,12 @@ function setVoiceValues(values) {
     const presets = buttons.filter((button) => button.dataset.voice !== "custom" && selected.includes(button.dataset.voice)).slice(0, limit);
     buttons.forEach((button) => button.classList.toggle("active", presets.includes(button)));
   });
+  const known = Object.keys(VOICE_LIMITS).flatMap((group) => voiceButtons(group).map((button) => button.dataset.voice));
+  const custom = selected.find((value) => !known.includes(value));
+  if (custom && selectedVoiceButtons("habit").length < VOICE_LIMITS.habit) {
+    $("#customHabitInput").value = Array.from(custom).slice(0, MAX_CUSTOM_HABIT_LENGTH).join("");
+    voiceButtons("habit").find((button) => button.dataset.voice === "custom").classList.add("active");
+  }
   syncVoiceOptions();
 }
 
@@ -483,10 +489,18 @@ async function initialize() {
   syncProviderInputs();
   $("#userDisplayName").value = state.user.displayName || state.auth?.user?.displayName || "";
   $("#userPreferredName").value = state.user.preferredName || "";
-  if (state.onboarding.completedAt) {
+  if (state.onboarding.completedAt && state.onboarding.currentStep === "complete"
+    && state.onboarding.chatProviderConfigured && state.onboarding.assistantConfigured && state.onboarding.userGreetingConfigured) {
     await window.desktop.completeOnboarding();
     return;
   }
+  const profile = state.onboarding.assistantConfigured ? state.assistant : null;
+  populatePersona(profile ? {
+    ...profile,
+    relationship: profile.relationshipSummary,
+    traits: (profile.traits || []).map((trait) => typeof trait === "string" ? trait : trait.key),
+    voices: (profile.values?.find((item) => item.key === "说话风格")?.value || "").split("、")
+  } : personaForChoice());
   showStep(steps.includes(state.onboarding.currentStep) ? state.onboarding.currentStep : "ai");
 }
 
