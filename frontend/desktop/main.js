@@ -816,7 +816,8 @@ function registerIpcHandlers() {
       completedAt: Date.now()
     });
     if (!state.completedAt || state.currentStep !== "complete"
-      || !state.chatProviderConfigured || !state.assistantConfigured || !state.userGreetingConfigured) {
+      || !state.chatProviderConfigured || !state.assistantConfigured || !state.userGreetingConfigured
+      || (state.version === 2 && !state.appearanceConfigured)) {
       throw new Error("请先完成对话 AI 接入、伙伴设置和称呼设置。");
     }
     openPage(event.sender, "home.html");
@@ -1056,6 +1057,9 @@ function registerIpcHandlers() {
   ipcMain.handle("ai:image-config:get", () => api.getAiImageConfig());
   ipcMain.handle("ai:image-config:save", (_event, input) =>
     api.saveAiImageConfig(input)
+  );
+  ipcMain.handle("ai:image-config:test", (_event, input) =>
+    api.testAiImageConfig(input)
   );
   ipcMain.handle("ai:image-generate", (_event, payload) =>
     api.generateImage(payload)
@@ -1386,7 +1390,8 @@ async function routeAfterAuthentication(sender) {
   try {
     const onboarding = await api.getOnboarding();
     const complete = onboarding?.completedAt && onboarding.currentStep === "complete"
-      && onboarding.chatProviderConfigured && onboarding.assistantConfigured && onboarding.userGreetingConfigured;
+      && onboarding.chatProviderConfigured && onboarding.assistantConfigured && onboarding.userGreetingConfigured
+      && (onboarding.version !== 2 || onboarding.appearanceConfigured);
     openPage(sender, complete ? "home.html" : "onboarding.html");
   } catch (error) {
     console.warn("Unable to load onboarding state:", error.message);

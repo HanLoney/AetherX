@@ -526,6 +526,10 @@ class XuanApiClient {
     return this.request("PUT", "/api/v1/ai/image-config", config);
   }
 
+  testAiImageConfig(config) {
+    return this.request("POST", "/api/v1/ai/image-config/test", config);
+  }
+
   generateImage(payload) {
     return this.request("POST", "/api/v1/ai/image-generations", payload);
   }

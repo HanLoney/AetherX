@@ -25,6 +25,28 @@ button { cursor:pointer; }
 .workspace { overflow:auto; padding:clamp(28px,5vw,64px); background:#fbfbfd; }
 .loading { display:grid; place-items:center; height:100%; color:var(--muted); }
 .hidden { display:none !important; }
+.inline-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+.image-setup { margin-top:24px; padding:18px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+.image-setup summary { cursor:pointer; font-weight:650; }
+.image-setup summary span,.image-setup p,.appearance-controls small { color:var(--muted); font-size:12px; }
+.checkbox-label { display:flex; align-items:center; gap:8px; font-size:13px; }
+.checkbox-label input { width:auto; }
+.appearance-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,1fr); gap:24px; }
+.portrait-card { min-height:300px; display:grid; place-items:center; border:1px dashed #dcd9e7; border-radius:12px; background:#f1f0f8; overflow:hidden; }
+.portrait-card img { max-width:100%; max-height:420px; object-fit:contain; }
+.appearance-controls { display:grid; align-content:start; gap:10px; }
+.appearance-controls p { margin:0 0 6px; }
+.avatar-preview { width:88px; height:88px; display:grid; place-items:center; border-radius:50%; overflow:hidden; background:#eeeaff; color:var(--accent); font-size:30px; }
+.avatar-preview img { width:100%; height:100%; object-fit:cover; }
+.appearance-prompt { display:grid; gap:8px; font-size:13px; }
+#generatedCandidate { display:grid; justify-items:start; gap:12px; margin-top:16px; }
+#generatedPreview { max-width:100%; max-height:320px; object-fit:contain; border-radius:8px; }
+.crop-modal { position:fixed; inset:42px 0 0; z-index:50; display:grid; place-items:center; background:#25233a99; }
+.crop-dialog { max-height:100%; overflow:auto; width:min(480px,90vw); padding:20px; border-radius:14px; background:#fff; }
+.crop-dialog h2 { margin:0; }
+.crop-dialog p { font-size:13px; color:var(--muted); }
+.crop-dialog canvas { width:100%; max-height:50vh; aspect-ratio:1; object-fit:contain; touch-action:none; cursor:grab; }
+.crop-dialog footer { display:flex; justify-content:flex-end; gap:10px; margin-top:12px; }
 .step { width:min(820px,100%); margin:auto; }
 .step header { margin-bottom:28px; }
 .step header p { margin:0 0 8px; color:var(--accent); }

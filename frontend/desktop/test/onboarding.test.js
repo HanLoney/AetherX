@@ -15,6 +15,12 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(preload, /getOnboarding/);
   assert.match(preload, /completeOnboarding/);
   assert.match(html, /连接对话 AI/);
+  assert.match(html, /接入图像 AI/);
+  assert.match(html, /设定外观/);
+  assert.match(html, /id="reuseChatProvider"/);
+  assert.match(html, /id="testImageBtn"/);
+  assert.match(html, /id="uploadPortraitBtn"/);
+  assert.match(html, /id="uploadAvatarBtn"/);
   assert.match(html, /自定义角色/);
   assert.match(html, /<span>性别<\/span>/);
   assert.match(html, /<option value="女">女<\/option>/);
@@ -68,7 +74,7 @@ test("custom companions start from an empty role image baseline", () => {
   const script = fs.readFileSync(path.join(__dirname, "..", "onboarding.js"), "utf8");
   assert.match(script, /state\.choice === "custom"/);
   assert.match(script, /会在相处中逐渐形成个性的数字伙伴/);
-  assert.match(script, /avatarDataUrl: "", personaImageDataUrl: ""/);
+  assert.match(script, /defaults\(state\.choice\)/);
 });
 
 function voiceHarness() {

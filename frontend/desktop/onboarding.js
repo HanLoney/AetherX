@@ -1,4 +1,4 @@
-const steps = ["ai", "assistant", "persona", "user", "image"];
+const steps = ["ai", "assistant", "persona", "appearance", "user"];
 const MAX_PRESET_TRAITS = 5;
 const VOICE_LIMITS = { expression: 3, habit: 3 };
 const MAX_CUSTOM_HABIT_LENGTH = 20;
@@ -12,7 +12,9 @@ const state = {
   user: null,
   choice: "",
   template: "",
-  imageConfig: null
+  imageConfig: null,
+  personaChoice: "",
+  imageDirty: false
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -54,6 +56,7 @@ function showStep(step) {
     item.classList.toggle("done", itemIndex < index);
   });
   $("#loading").classList.add("hidden");
+  if (step === "appearance") window.OnboardingAppearance.render();
 }
 
 async function saveProgress(changes) {
@@ -124,13 +127,16 @@ async function testProvider() {
     await window.desktop.activateAIProvider(profile.providerId);
     state.providers = [profile, ...state.providers.filter((item) => item.providerId !== profile.providerId)];
     state.draft = { ...profile, apiKey: "" };
-    await saveProgress({ chatProviderConfigured: true, currentStep: "assistant" });
-    showStep("assistant");
+    state.aiConfig = profile;
+    $("#apiKeyInput").value = "";
+    await saveProgress({ chatProviderConfigured: true, currentStep: "ai" });
+    $("#aiNextBtn").disabled = false;
+    showResult($("#aiResult"), "success", "对话模型已测试并启用。可以配置图像模型，或继续选择伙伴。");
   } catch (error) {
     showResult($("#aiResult"), "error", error.message || "连接失败，请检查配置。");
   } finally {
     button.disabled = false;
-    button.textContent = "测试并启用";
+    button.textContent = "测试并启用对话模型";
   }
 }
 
@@ -185,8 +191,18 @@ function updatePersonaPreview() {
 }
 
 async function enterPersona() {
+  const choiceKey = `${state.choice}:${state.template}`;
+  const changed = state.personaChoice !== choiceKey;
+  if (changed) {
+    const images = await window.OnboardingAppearance.defaults(state.choice);
+    state.assistant = await window.desktop.updateAssistantProfile(images);
+  }
   await saveProgress({ assistantChoice: state.choice, assistantTemplate: state.template, currentStep: "persona" });
-  populatePersona();
+  if (changed) {
+    populatePersona();
+    state.personaChoice = choiceKey;
+    await saveProgress({ assistantConfigured: false, appearanceConfigured: false });
+  }
   showStep("persona");
 }
 
@@ -362,10 +378,9 @@ async function savePersona() {
       relationshipSummary,
       traits,
       values: [{ key: "说话风格", value: voices.join("、") }],
-      ...(state.choice === "custom" ? { avatarDataUrl: "", personaImageDataUrl: "" } : {})
     });
-    await saveProgress({ assistantConfigured: true, currentStep: "user" });
-    showStep("user");
+    await saveProgress({ assistantConfigured: true, currentStep: "appearance" });
+    showStep("appearance");
   } catch (error) {
     showResult($("#personaResult"), "error", error.message || "人设保存失败。");
   }
@@ -376,48 +391,80 @@ async function saveUser(skip = false) {
   const preferredName = skip ? displayName : ($("#userPreferredName").value.trim() || displayName);
   try {
     state.user = await window.desktop.updateProfile({ displayName, preferredName });
-    await saveProgress({ userGreetingConfigured: true, currentStep: "image" });
-    showStep("image");
+    await saveProgress({ userGreetingConfigured: true, currentStep: "complete", completedAt: Date.now() });
+    await window.desktop.completeOnboarding();
   } catch (error) {
     showResult($("#userResult"), "error", error.message || "称呼保存失败。");
   }
 }
 
-function revealImageForm() {
-  $("#imageForm").classList.remove("hidden");
-  $("#saveImageBtn").classList.remove("hidden");
+function populateImageForm() {
   $("#imageBaseUrl").value = state.imageConfig?.baseUrl || "https://ark.cn-beijing.volces.com/api/v3";
   $("#imageModel").value = state.imageConfig?.model || "doubao-seedream-5-0-260128";
   $("#imageApiKey").placeholder = state.imageConfig?.hasApiKey ? "已安全保存，留空保持不变" : "API Key";
+  $("#imageConnectionStatus").textContent = state.imageConfig?.hasApiKey ? "已保存 · 可用于生成外观" : "可选 · 可稍后配置";
 }
 
-async function complete(imageConfigured) {
-  await saveProgress({ imageProviderConfigured: imageConfigured, currentStep: "complete" });
-  try {
-    await window.desktop.completeOnboarding();
-  } catch (error) {
-    showResult($("#imageResult"), "error", error.message || "首次设置还没有完成。");
-  }
+async function continueAI() {
+  const config = await window.desktop.getAIConfig();
+  if (!config.hasApiKey || config.verificationStatus !== "verified") throw new Error("请先测试并启用对话模型。");
+  if (state.imageDirty && !await saveImage()) return;
+  await saveProgress({ chatProviderConfigured: true, currentStep: "assistant" });
+  showStep("assistant");
 }
 
 async function saveImage() {
   const input = {
-    providerId: state.imageConfig?.providerId || "volcengine",
-    providerName: state.imageConfig?.providerName || "火山方舟",
+    providerId: $("#reuseChatProvider").checked ? state.aiConfig.providerId : (state.imageConfig?.providerId || "custom"),
+    providerName: $("#reuseChatProvider").checked ? state.aiConfig.providerName : (state.imageConfig?.providerName || "图像服务"),
     baseUrl: $("#imageBaseUrl").value.trim(),
     model: $("#imageModel").value.trim(),
-    apiKey: $("#imageApiKey").value.trim()
+    apiKey: $("#imageApiKey").value.trim(),
+    reuseChatProvider: $("#reuseChatProvider").checked
   };
-  if (!input.baseUrl || !input.model || (!input.apiKey && !state.imageConfig?.hasApiKey)) {
+  const keepKey = state.imageConfig?.hasApiKey && state.imageConfig.baseUrl === input.baseUrl;
+  if (!input.baseUrl || !input.model || (!input.apiKey && !keepKey && !input.reuseChatProvider)) {
     showResult($("#imageResult"), "error", "请把图像 API 端点、模型和 API Key 填完整。");
-    return;
+    return false;
   }
   try {
-    await window.desktop.saveAIImageConfig(input);
-    await complete(true);
+    state.imageConfig = await window.desktop.saveAIImageConfig(input);
+    state.imageDirty = false;
+    $("#imageApiKey").value = "";
+    await saveProgress({ imageProviderConfigured: true });
+    populateImageForm();
+    showResult($("#imageResult"), "success", "图像接入已保存，可在设定外观时生成图片。");
+    return true;
   } catch (error) {
     showResult($("#imageResult"), "error", error.message || "图像配置保存失败。");
+    return false;
   }
+}
+
+async function testImage() {
+  const input = {
+    providerId: $("#reuseChatProvider").checked ? state.aiConfig.providerId : (state.imageConfig?.providerId || "custom"),
+    providerName: $("#reuseChatProvider").checked ? state.aiConfig.providerName : (state.imageConfig?.providerName || "图像服务"),
+    baseUrl: $("#imageBaseUrl").value.trim(),
+    model: $("#imageModel").value.trim(),
+    apiKey: $("#imageApiKey").value.trim(),
+    reuseChatProvider: $("#reuseChatProvider").checked
+  };
+  if (!input.baseUrl || !input.model || (!input.apiKey && !state.imageConfig?.hasApiKey && !input.reuseChatProvider)) {
+    throw new Error("请把图像 API 端点、模型和 API Key 填完整。");
+  }
+  const result = await window.desktop.testAIImageConfig(input);
+  if (!result?.ok) throw new Error(result?.data?.error?.message || "图像模型连接测试失败。");
+  await saveImage();
+}
+
+function action(button, handler, result) {
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try { await handler(); }
+    catch (error) { showResult($(result), "error", error.message || "操作失败，请重试。"); }
+    finally { button.disabled = false; }
+  });
 }
 
 function bind() {
@@ -426,7 +473,8 @@ function bind() {
   $("#closeBtn").addEventListener("click", () => window.desktop.close());
   $("#testProviderBtn").addEventListener("click", testProvider);
   $$(".companion-choice").forEach((button) => button.addEventListener("click", () => selectCompanion(button)));
-  $("#assistantNextBtn").addEventListener("click", enterPersona);
+  action($("#assistantNextBtn"), enterPersona, "#personaResult");
+  action($("#aiNextBtn"), continueAI, "#aiResult");
   $("#assistantGender").addEventListener("change", () => {
     const custom = $("#assistantGender").value === "custom";
     $("#assistantGenderCustom").classList.toggle("hidden", !custom);
@@ -445,13 +493,36 @@ function bind() {
     button.addEventListener("click", () => toggleVoice(button));
   });
   $("#assistantName").addEventListener("input", updatePersonaPreview);
-  $("#savePersonaBtn").addEventListener("click", savePersona);
-  $("#saveUserBtn").addEventListener("click", () => saveUser(false));
-  $("#skipUserBtn").addEventListener("click", () => saveUser(true));
-  $("#configureImageBtn").addEventListener("click", revealImageForm);
-  $("#skipImageBtn").addEventListener("click", () => complete(false));
-  $("#saveImageBtn").addEventListener("click", saveImage);
-  $$('[data-back]').forEach((button) => button.addEventListener("click", () => showStep(button.dataset.back)));
+  action($("#savePersonaBtn"), savePersona, "#personaResult");
+  action($("#saveUserBtn"), () => saveUser(false), "#userResult");
+  action($("#skipUserBtn"), () => saveUser(true), "#userResult");
+  action($("#testImageBtn"), testImage, "#imageResult");
+  $("#reuseChatProvider").addEventListener("change", () => {
+    const reuse = $("#reuseChatProvider").checked;
+    $("#imageBaseUrl").disabled = reuse;
+    $("#imageApiKey").disabled = reuse;
+    $("#imageApiKey").value = "";
+    if (reuse) {
+      $("#imageBaseUrl").value = state.aiConfig.baseUrl || "";
+      $("#imageModel").value = "";
+    }
+    else populateImageForm();
+    state.imageDirty = true;
+  });
+  for (const id of ["imageBaseUrl", "imageModel", "imageApiKey"]) $(`#${id}`).addEventListener("input", () => { state.imageDirty = true; });
+  $$('[data-back]').forEach((button) => action(button, async () => {
+    await saveProgress({ currentStep: button.dataset.back });
+    showStep(button.dataset.back);
+  }, "#loading"));
+  window.OnboardingAppearance.initialize({
+    profile: () => state.assistant,
+    imageReady: () => Boolean(state.imageConfig?.hasApiKey),
+    save: async (changes) => { state.assistant = await window.desktop.updateAssistantProfile(changes); },
+    next: async () => {
+      await saveProgress({ appearanceConfigured: true, currentStep: "user" });
+      showStep("user");
+    }
+  });
 }
 
 async function initialize() {
@@ -474,8 +545,11 @@ async function initialize() {
   state.assistant = results[4].value;
   state.user = results[5].value;
   state.imageConfig = results[6].status === "fulfilled" ? results[6].value : null;
+  populateImageForm();
+  $("#aiNextBtn").disabled = !(state.aiConfig.hasApiKey && state.aiConfig.verificationStatus === "verified");
   state.choice = state.onboarding.assistantChoice || "default";
   state.template = state.onboarding.assistantTemplate || (state.choice === "template" ? "gentle" : "");
+  state.personaChoice = state.onboarding.assistantChoice ? `${state.choice}:${state.template}` : "";
   const savedChoice = document.querySelector(
     `[data-choice="${state.choice}"]${state.choice === "template" ? `[data-template="${state.template}"]` : ""}`
   );
@@ -490,7 +564,8 @@ async function initialize() {
   $("#userDisplayName").value = state.user.displayName || state.auth?.user?.displayName || "";
   $("#userPreferredName").value = state.user.preferredName || "";
   if (state.onboarding.completedAt && state.onboarding.currentStep === "complete"
-    && state.onboarding.chatProviderConfigured && state.onboarding.assistantConfigured && state.onboarding.userGreetingConfigured) {
+    && state.onboarding.chatProviderConfigured && state.onboarding.assistantConfigured && state.onboarding.userGreetingConfigured
+    && (state.onboarding.version !== 2 || state.onboarding.appearanceConfigured)) {
     await window.desktop.completeOnboarding();
     return;
   }
@@ -501,6 +576,10 @@ async function initialize() {
     traits: (profile.traits || []).map((trait) => typeof trait === "string" ? trait : trait.key),
     voices: (profile.values?.find((item) => item.key === "说话风格")?.value || "").split("、")
   } : personaForChoice());
+  if (state.choice === "default" && !state.assistant?.avatarDataUrl && !state.assistant?.personaImageDataUrl
+    && !state.onboarding.appearanceConfigured) {
+    state.assistant = await window.desktop.updateAssistantProfile(await window.OnboardingAppearance.defaults("default"));
+  }
   showStep(steps.includes(state.onboarding.currentStep) ? state.onboarding.currentStep : "ai");
 }
 

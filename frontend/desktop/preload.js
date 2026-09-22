@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld("desktop", {
   getAIImageConfig: () => ipcRenderer.invoke("ai:image-config:get"),
   saveAIImageConfig: (config) =>
     ipcRenderer.invoke("ai:image-config:save", config),
+  testAIImageConfig: (config) =>
+    ipcRenderer.invoke("ai:image-config:test", config),
   generateImage: (payload) => ipcRenderer.invoke("ai:image-generate", payload),
   listTodos: (filters) => ipcRenderer.invoke("todos:list", filters),
   getTodo: (id) => ipcRenderer.invoke("todos:get", id),

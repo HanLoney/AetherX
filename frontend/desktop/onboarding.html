@@ -25,11 +25,11 @@
           <div><span>FIRST MEETING</span><h1>让她先能回应你，再慢慢成为你喜欢的样子。</h1></div>
         </div>
         <ol id="stepList">
-          <li data-step="ai"><b>1</b><span>连接对话 AI<small>确认模型真的可以回复</small></span></li>
+          <li data-step="ai"><b>1</b><span>接入 AI<small>对话必填，图像可选</small></span></li>
           <li data-step="assistant"><b>2</b><span>选择伙伴<small>小玄、模板或自定义</small></span></li>
           <li data-step="persona"><b>3</b><span>建立人设<small>名字、关系与说话方式</small></span></li>
-          <li data-step="user"><b>4</b><span>认识你<small>告诉她该怎么称呼你</small></span></li>
-          <li data-step="image"><b>5</b><span>图像能力<small>现在连接或稍后再说</small></span></li>
+          <li data-step="appearance"><b>4</b><span>设定外观<small>人设图与头像，也可稍后设置</small></span></li>
+          <li data-step="user"><b>5</b><span>认识你<small>告诉她该怎么称呼你</small></span></li>
         </ol>
       </aside>
 
@@ -37,7 +37,8 @@
         <div id="loading" class="loading">正在准备你们的初次见面…</div>
 
         <section class="step hidden" data-panel="ai">
-          <header><p>STEP 01</p><h2>先连接她的对话能力</h2><span>连接测试成功后，才会进入人设设置。</span></header>
+          <header><p>STEP 01</p><h2>先连接她的 AI 能力</h2><span>对话模型测试通过后即可继续，图像模型可以稍后配置。</span></header>
+          <h3>连接对话 AI <small>必填</small></h3>
           <div id="providerGrid" class="provider-grid"></div>
           <div class="form-grid">
             <label><span>API 端点</span><input id="baseUrlInput" placeholder="https://api.example.com/v1" /></label>
@@ -45,7 +46,20 @@
             <label class="wide"><span>API Key</span><input id="apiKeyInput" type="password" placeholder="sk-..." /></label>
           </div>
           <div id="aiResult" class="result hidden"></div>
-          <footer><span></span><button id="testProviderBtn" class="primary" type="button">测试并启用</button></footer>
+          <div class="inline-actions"><button id="testProviderBtn" class="secondary" type="button">测试并启用对话模型</button></div>
+          <details id="imageSetup" class="image-setup">
+            <summary>接入图像 AI <span id="imageConnectionStatus">可选 · 可稍后配置</span></summary>
+            <p>用于生成伙伴外观和后续画图。服务商需支持图像生成。</p>
+            <label class="checkbox-label"><input id="reuseChatProvider" type="checkbox" />复用已启用的对话服务商地址和密钥</label>
+            <div id="imageForm" class="form-grid">
+              <label><span>图像 API 端点</span><input id="imageBaseUrl" placeholder="https://api.example.com/v1" /></label>
+              <label><span>图像模型名称</span><input id="imageModel" placeholder="填写服务商支持的图像模型" /></label>
+              <label class="wide"><span>API Key</span><input id="imageApiKey" type="password" placeholder="API Key" /></label>
+            </div>
+            <div id="imageResult" class="result hidden"></div>
+            <div class="inline-actions"><button id="testImageBtn" class="secondary" type="button">测试并保存图像模型</button></div>
+          </details>
+          <footer><span>不配置图像模型也能上传外观图片。</span><button id="aiNextBtn" class="primary" type="button" disabled>继续选择伙伴</button></footer>
         </section>
 
         <section class="step hidden" data-panel="assistant">
@@ -160,33 +174,55 @@
           <footer><button class="secondary" data-back="assistant" type="button">返回</button><button id="savePersonaBtn" class="primary" type="button">保存人设</button></footer>
         </section>
 
+        <section class="step hidden" data-panel="appearance">
+          <header><p>STEP 04</p><h2>让你的伙伴有自己的样子</h2><span>上传或生成一张人设图，再从中裁剪头像；也可以稍后设置。</span></header>
+          <div class="appearance-grid">
+            <div class="portrait-card"><img id="appearancePortrait" class="hidden" alt="伙伴人设图" /><span id="portraitPlaceholder">还没有人设图</span></div>
+            <div class="appearance-controls">
+              <div class="avatar-preview"><img id="appearanceAvatar" class="hidden" alt="伙伴头像" /><span id="avatarPlaceholder">玄</span></div>
+              <p id="appearanceName"></p>
+              <button id="uploadPortraitBtn" class="secondary" type="button">上传人设图并裁剪头像</button>
+              <button id="cropPortraitBtn" class="secondary" type="button">从人设图裁剪头像</button>
+              <button id="uploadAvatarBtn" class="secondary" type="button">单独上传头像</button>
+              <button id="clearAppearanceBtn" class="secondary" type="button">清除图片，使用名字头像</button>
+              <small>支持 PNG、JPEG、WebP，原图最多 15MB。</small>
+              <input id="portraitFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <input id="avatarFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            </div>
+          </div>
+          <details class="image-setup" id="generateAppearanceSection">
+            <summary>用 AI 生成外观</summary>
+            <p id="appearanceImageHint">描述喜欢的发型、服装、配色等，生成结果满意后再采用。</p>
+            <label class="appearance-prompt"><span>外观描述</span><textarea id="appearancePrompt" maxlength="1000" placeholder="例如：银色短发、紫色眼睛、休闲卫衣，明亮温柔的二次元画风"></textarea></label>
+            <div class="inline-actions"><button id="generateAppearanceBtn" class="secondary" type="button">生成一张（使用图像模型额度）</button><button id="configureAppearanceAI" class="secondary" data-back="ai" type="button">配置图像 AI</button></div>
+            <div id="generatedCandidate" class="hidden"><img id="generatedPreview" alt="生成的外观预览" /><button id="useGeneratedBtn" class="primary" type="button">采用并裁剪头像</button></div>
+          </details>
+          <div id="appearanceResult" class="result hidden"></div>
+          <footer><button class="secondary" data-back="persona" type="button">返回</button><div><button id="skipAppearanceBtn" class="secondary" type="button">稍后设置</button><button id="saveAppearanceBtn" class="primary" type="button">保存外观并继续</button></div></footer>
+        </section>
+
         <section class="step hidden" data-panel="user">
-          <header><p>STEP 04</p><h2>她该怎么称呼你？</h2><span>只需要最少的信息，其余资料可以之后再补。</span></header>
+          <header><p>STEP 05</p><h2>她该怎么称呼你？</h2><span>只需要最少的信息，其余资料可以之后再补。</span></header>
           <div class="form-grid single">
             <label><span>你的名字</span><input id="userDisplayName" maxlength="100" /></label>
             <label><span>希望她怎么称呼你</span><input id="userPreferredName" maxlength="100" /></label>
           </div>
           <div id="userResult" class="result hidden"></div>
-          <footer><button class="secondary" data-back="persona" type="button">返回</button><div><button id="skipUserBtn" class="secondary" type="button">使用账号昵称</button><button id="saveUserBtn" class="primary" type="button">保存并继续</button></div></footer>
-        </section>
-
-        <section class="step hidden" data-panel="image">
-          <header><p>STEP 05</p><h2>要让她现在就能画画吗？</h2><span>图像生成是可选能力，不影响普通聊天。</span></header>
-          <div class="image-choice">
-            <button id="configureImageBtn" type="button"><strong>现在配置</strong><span>填写图像模型的端点、模型和 API Key</span></button>
-            <button id="skipImageBtn" type="button"><strong>之后再说</strong><span>先进入聊天，需要时再从设置中连接</span></button>
-          </div>
-          <div id="imageForm" class="form-grid hidden">
-            <label><span>图像 API 端点</span><input id="imageBaseUrl" /></label>
-            <label><span>模型名称</span><input id="imageModel" /></label>
-            <label class="wide"><span>API Key</span><input id="imageApiKey" type="password" /></label>
-          </div>
-          <div id="imageResult" class="result hidden"></div>
-          <footer><button class="secondary" data-back="user" type="button">返回</button><button id="saveImageBtn" class="primary hidden" type="button">保存并进入聊天</button></footer>
+          <footer><button class="secondary" data-back="appearance" type="button">返回</button><div><button id="skipUserBtn" class="secondary" type="button">使用账号昵称并进入</button><button id="saveUserBtn" class="primary" type="button">保存并进入聊天</button></div></footer>
         </section>
       </section>
     </main>
 
+    <div id="avatarCropModal" class="crop-modal hidden" role="dialog" aria-modal="true" aria-label="裁剪伙伴头像">
+      <section class="crop-dialog">
+        <h2>调整头像</h2><p>拖动图片定位，使用滑块缩放。</p>
+        <canvas data-crop-canvas width="420" height="420"></canvas>
+        <label>缩放<input data-crop-zoom type="range" min="100" max="300" value="100" /></label>
+        <footer><button data-crop-cancel class="secondary" type="button">取消</button><button data-crop-confirm class="primary" type="button">使用这个头像</button></footer>
+      </section>
+    </div>
+    <script src="avatar-cropper.js"></script>
+    <script src="onboarding-appearance.js"></script>
     <script src="onboarding-providers.js"></script>
     <script src="onboarding.js"></script>
   </body>
