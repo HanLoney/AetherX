@@ -35,6 +35,15 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(html, /id="relationshipOptions"/);
   assert.match(html, /data-relationship="恋人"/);
   assert.match(html, /data-relationship="青梅竹马"/);
+  assert.match(html, /data-relationship="学姐"/);
+  assert.match(html, /data-relationship="邻桌姐姐"/);
+  assert.match(html, /data-relationship="女仆"/);
+  assert.match(html, /data-relationship="管家"/);
+  assert.match(html, /data-relationship="custom"/);
+  assert.match(html, /id="customRelationshipInput" class="hidden" maxlength="10"/);
+  assert.doesNotMatch(html, /data-relationship="守护者"/);
+  assert.doesNotMatch(html, /data-relationship="家人"/);
+  assert.doesNotMatch(html, /data-relationship="搭档"/);
   assert.doesNotMatch(html, /id="assistantRelationship"/);
   assert.match(html, /id="voiceOptions"/);
   assert.match(html, /data-voice="活泼俏皮"/);
@@ -48,6 +57,7 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(script, /MAX_VOICE_STYLES = 4/);
   assert.match(script, /getTraitValues/);
   assert.match(script, /selectedRelationship/);
+  assert.match(script, /customRelationshipInput/);
   assert.match(script, /selectedVoiceStyles/);
   assert.match(script, /completeOnboarding/);
 });

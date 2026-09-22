@@ -177,7 +177,11 @@ function updatePersonaPreview() {
   const name = $("#assistantName").value.trim() || "未命名";
   $("#personaInitial").textContent = Array.from(name)[0] || "·";
   $("#personaPreviewName").textContent = name;
-  $("#personaPreviewRole").textContent = selectedRelationshipButton()?.dataset.relationship || "关系待设置";
+  const relationship = selectedRelationshipButton();
+  const role = relationship?.dataset.relationship === "custom"
+    ? $("#customRelationshipInput").value.trim()
+    : relationship?.dataset.relationship;
+  $("#personaPreviewRole").textContent = role || "关系待设置";
 }
 
 async function enterPersona() {
@@ -237,16 +241,26 @@ function selectedRelationshipButton() {
 }
 
 function setRelationshipValue(value) {
+  const relationship = String(value || "").trim();
+  const preset = $$("#relationshipOptions [data-relationship]")
+    .find((button) => button.dataset.relationship === relationship && button.dataset.relationship !== "custom");
+  const custom = $("#customRelationshipInput");
   $$("#relationshipOptions [data-relationship]").forEach((button) => {
-    const active = button.dataset.relationship === value;
+    const active = preset ? button === preset : button.dataset.relationship === "custom" && Boolean(relationship);
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  if (custom) {
+    if (!preset && relationship !== "custom") custom.value = relationship.slice(0, 10);
+    custom.classList.toggle("hidden", Boolean(preset) || !relationship);
+  }
   updatePersonaPreview();
 }
 
 function selectedRelationship() {
-  return selectedRelationshipButton()?.dataset.summary || "";
+  const button = selectedRelationshipButton();
+  if (button?.dataset.relationship === "custom") return $("#customRelationshipInput").value.trim();
+  return button?.dataset.summary || "";
 }
 
 function selectedVoiceStyles() {
@@ -386,6 +400,9 @@ function bind() {
   });
   $$("#relationshipOptions [data-relationship]").forEach((button) => {
     button.addEventListener("click", () => setRelationshipValue(button.dataset.relationship));
+  });
+  $("#customRelationshipInput").addEventListener("input", () => {
+    updatePersonaPreview();
   });
   $$("#voiceOptions [data-voice]").forEach((button) => {
     button.addEventListener("click", () => toggleVoice(button));
