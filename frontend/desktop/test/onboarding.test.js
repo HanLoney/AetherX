@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 test("desktop login routes through a recoverable first-run onboarding page", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -54,7 +55,8 @@ test("desktop login routes through a recoverable first-run onboarding page", () 
   assert.match(script, /getGenderValue/);
   assert.match(script, /toggleTrait/);
   assert.match(script, /MAX_PRESET_TRAITS = 5/);
-  assert.match(script, /MAX_VOICE_STYLES = 4/);
+  assert.match(html, /id="expressionHint"/);
+  assert.match(html, /id="habitHint"/);
   assert.match(script, /getTraitValues/);
   assert.match(script, /selectedRelationship/);
   assert.match(script, /customRelationshipInput/);
@@ -67,4 +69,89 @@ test("custom companions start from an empty role image baseline", () => {
   assert.match(script, /state\.choice === "custom"/);
   assert.match(script, /会在相处中逐渐形成个性的数字伙伴/);
   assert.match(script, /avatarDataUrl: "", personaImageDataUrl: ""/);
+});
+
+function voiceHarness() {
+  const html = fs.readFileSync(path.join(__dirname, "..", "onboarding.html"), "utf8");
+  const script = fs.readFileSync(path.join(__dirname, "..", "onboarding.js"), "utf8");
+  function element(dataset = {}) {
+    const classes = new Set();
+    return {
+      dataset, value: "", disabled: false, textContent: "", attributes: {},
+      classList: {
+        contains: (name) => classes.has(name),
+        add: (name) => classes.add(name),
+        remove: (name) => classes.delete(name),
+        toggle(name, active) { if (active) classes.add(name); else classes.delete(name); }
+      },
+      setAttribute(name, value) { this.attributes[name] = value; },
+      focus() { this.focused = true; }
+    };
+  }
+  const groups = {};
+  for (const group of ["expression", "habit"]) {
+    const section = html.split(`data-voice-group="${group}"`)[1].split('<small id=')[0];
+    groups[group] = [...section.matchAll(/data-voice="([^"]+)"/g)].map((match) => {
+      const button = element({ voice: match[1] });
+      button.closest = () => ({ dataset: { voiceGroup: group } });
+      return button;
+    });
+  }
+  const elements = Object.fromEntries(["expressionHint", "habitHint", "customHabitField", "customHabitInput", "assistantName", "personaResult"]
+    .map((id) => [`#${id}`, element()]));
+  const saved = [];
+  const context = vm.createContext({
+    document: {
+      querySelector: (selector) => elements[selector],
+      querySelectorAll: (selector) => groups[selector.match(/data-voice-group="([^"]+)"/)[1]]
+    },
+    window: { desktop: { updateAssistantProfile: async (profile) => { saved.push(profile); return profile; }, updateOnboarding: async (changes) => changes } }
+  });
+  vm.runInContext(script.slice(0, script.lastIndexOf("initialize().catch")), context);
+  vm.runInContext('selectedRelationship = () => "挚友"; getTraitValues = () => ["元气", "软萌", "好奇"]; getGenderValue = () => "女"; showStep = () => {};', context);
+  elements["#assistantName"].value = "测试伙伴";
+  return { context, groups, elements, saved, run: (code) => vm.runInContext(code, context) };
+}
+
+test("expression and habit limits are independent and deselection frees only its own group", () => {
+  const h = voiceHarness();
+  h.run('setVoiceValues(["自然口语", "活泼俏皮", "温柔治愈"])');
+  assert.equal(h.groups.expression[3].disabled, true);
+  assert.ok(h.groups.habit.every((button) => !button.disabled));
+  for (const button of h.groups.habit.slice(0, 3)) h.context.toggleVoice(button);
+  assert.equal(h.groups.habit[4].disabled, true);
+  h.context.toggleVoice(h.groups.habit[4]);
+  assert.equal(h.groups.habit[4].classList.contains("active"), false);
+  h.context.toggleVoice(h.groups.habit[0]);
+  assert.equal(h.groups.habit[4].disabled, false);
+  assert.equal(h.groups.expression[3].disabled, true);
+  h.context.toggleVoice(h.groups.expression[0]);
+  assert.equal(h.groups.expression[3].disabled, false);
+  assert.equal(h.groups.expression[0].attributes["aria-pressed"], "false");
+});
+
+test("custom habit requires text, saves the text, and is omitted when deselected", async () => {
+  const h = voiceHarness();
+  h.run('setVoiceValues(["自然口语"])');
+  await h.run("savePersona()");
+  assert.equal(h.saved.length, 1, "one expression and no habits are valid");
+  const custom = h.groups.habit.find((button) => button.dataset.voice === "custom");
+  h.context.toggleVoice(custom);
+  assert.equal(h.elements["#customHabitField"].classList.contains("hidden"), false);
+  h.elements["#customHabitInput"].value = "   ";
+  await h.run("savePersona()");
+  assert.equal(h.saved.length, 1);
+  h.elements["#customHabitInput"].value = "呀".repeat(21);
+  await h.run("savePersona()");
+  assert.equal(h.saved.length, 1);
+  h.elements["#customHabitInput"].value = "呀".repeat(20);
+  await h.run("savePersona()");
+  assert.equal(h.saved[1].values[0].value, `自然口语、${"呀".repeat(20)}`);
+  h.context.toggleVoice(custom);
+  await h.run("savePersona()");
+  assert.equal(h.saved[2].values[0].value, "自然口语");
+  assert.equal(h.elements["#customHabitField"].classList.contains("hidden"), true);
+  h.run('setVoiceValues(["偶尔颜文字", "使用敬语"])');
+  await h.run("savePersona()");
+  assert.equal(h.saved.length, 3, "habits cannot replace the required expression");
 });

@@ -1,6 +1,7 @@
 const steps = ["ai", "assistant", "persona", "user", "image"];
 const MAX_PRESET_TRAITS = 5;
-const MAX_VOICE_STYLES = 4;
+const VOICE_LIMITS = { expression: 3, habit: 3 };
+const MAX_CUSTOM_HABIT_LENGTH = 20;
 const state = {
   onboarding: null,
   auth: null,
@@ -263,35 +264,55 @@ function selectedRelationship() {
   return button?.dataset.summary || "";
 }
 
+function voiceButtons(group) {
+  return $$(`#voiceOptions [data-voice-group="${group}"] [data-voice]`);
+}
+
+function selectedVoiceButtons(group) {
+  return voiceButtons(group).filter((button) => button.classList.contains("active"));
+}
+
 function selectedVoiceStyles() {
-  return $$("#voiceOptions [data-voice].active").map((button) => button.dataset.voice);
+  return Object.keys(VOICE_LIMITS).flatMap((group) => selectedVoiceButtons(group)
+    .map((button) => button.dataset.voice === "custom"
+      ? $("#customHabitInput").value.trim()
+      : button.dataset.voice)).filter(Boolean);
 }
 
 function setVoiceValues(values) {
-  const selected = Array.isArray(values) ? values.slice(0, MAX_VOICE_STYLES) : [];
-  $$("#voiceOptions [data-voice]").forEach((button) => {
-    button.classList.toggle("active", selected.includes(button.dataset.voice));
+  const selected = Array.isArray(values) ? values : [];
+  $("#customHabitInput").value = "";
+  Object.entries(VOICE_LIMITS).forEach(([group, limit]) => {
+    const buttons = voiceButtons(group);
+    const presets = buttons.filter((button) => button.dataset.voice !== "custom" && selected.includes(button.dataset.voice)).slice(0, limit);
+    buttons.forEach((button) => button.classList.toggle("active", presets.includes(button)));
   });
   syncVoiceOptions();
 }
 
 function syncVoiceOptions() {
-  const voices = selectedVoiceStyles();
-  $$("#voiceOptions [data-voice]").forEach((button) => {
-    const active = button.classList.contains("active");
-    button.setAttribute("aria-pressed", String(active));
-    button.disabled = !active && voices.length >= MAX_VOICE_STYLES;
+  Object.entries(VOICE_LIMITS).forEach(([group, limit]) => {
+    const count = selectedVoiceButtons(group).length;
+    voiceButtons(group).forEach((button) => {
+      const active = button.classList.contains("active");
+      button.setAttribute("aria-pressed", String(active));
+      button.disabled = !active && count >= limit;
+    });
+    $(`#${group}Hint`).textContent = group === "expression"
+      ? `已选择 ${count} / ${limit}，选择 1～${limit} 个。`
+      : `已选择 ${count} / ${limit}，可不选；自定义占 1 个名额。`;
   });
-  $("#voiceHint").textContent = voices.length < 2
-    ? `已选择 ${voices.length} / 4，至少选择 2 个。`
-    : `已选择 ${voices.length} / 4。`;
+  const custom = selectedVoiceButtons("habit").some((button) => button.dataset.voice === "custom");
+  $("#customHabitField").classList.toggle("hidden", !custom);
 }
 
 function toggleVoice(button) {
+  const group = button.closest("[data-voice-group]").dataset.voiceGroup;
   const active = button.classList.contains("active");
   if (active) button.classList.remove("active");
-  else if (selectedVoiceStyles().length < MAX_VOICE_STYLES) button.classList.add("active");
+  else if (selectedVoiceButtons(group).length < VOICE_LIMITS[group]) button.classList.add("active");
   syncVoiceOptions();
+  if (button.dataset.voice === "custom" && button.classList.contains("active")) $("#customHabitInput").focus();
 }
 
 function setGenderValue(value) {
@@ -313,8 +334,18 @@ async function savePersona() {
   const relationshipSummary = selectedRelationship();
   const traits = getTraitValues();
   const voices = selectedVoiceStyles();
-  if (!name || !relationshipSummary || traits.length < 3 || voices.length < 2) {
-    showResult($("#personaResult"), "error", "请填写角色名字，选择关系、至少 3 个性格和至少 2 个说话风格。");
+  if (!name || !relationshipSummary || traits.length < 3 || selectedVoiceButtons("expression").length < 1) {
+    showResult($("#personaResult"), "error", "请填写角色名字，选择关系、至少 3 个性格和至少 1 个表达风格。");
+    return;
+  }
+  if (Object.entries(VOICE_LIMITS).some(([group, limit]) => selectedVoiceButtons(group).length > limit)) {
+    showResult($("#personaResult"), "error", "表达风格和说话习惯各最多选择 3 个。");
+    return;
+  }
+  const customHabit = $("#customHabitInput").value.trim();
+  if (selectedVoiceButtons("habit").some((button) => button.dataset.voice === "custom")
+    && (!customHabit || Array.from(customHabit).length > MAX_CUSTOM_HABIT_LENGTH)) {
+    showResult($("#personaResult"), "error", "请填写自定义说话习惯，最多 20 个字，或取消选择自定义。");
     return;
   }
   try {

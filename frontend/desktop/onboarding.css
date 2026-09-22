@@ -48,6 +48,7 @@ button { cursor:pointer; }
 .trait-options { display:grid; gap:10px; }
 .trait-group { display:grid; grid-template-columns:42px minmax(0,1fr); gap:10px; align-items:start; }
 .trait-group > strong { padding-top:8px; color:#8a859b; font-size:12px; }
+.voice-group-content { display:grid; gap:9px; min-width:0; }
 .trait-option-row { display:flex; flex-wrap:wrap; gap:8px; }
 .trait-options button,.relationship-options button { min-height:34px; padding:0 13px; border:1px solid #dcd9e7; border-radius:999px; color:#625e72; background:#fff; transition:.14s ease; }
 .trait-options button:hover:not(:disabled),.relationship-options button:hover:not(:disabled) { border-color:#aaa4e8; color:var(--accent); }

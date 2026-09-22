@@ -130,9 +130,9 @@
               <small id="traitHint">已选择 0 / 5，至少选择 3 个。</small>
             </div>
             <div class="wide persona-field">
-              <span class="field-label">说话风格（选择 2～4 个）</span>
+              <span class="field-label">说话风格</span>
               <div id="voiceOptions" class="trait-options" aria-label="说话风格">
-                <div class="trait-group"><strong>表达</strong><div class="trait-option-row">
+                <div class="trait-group" data-voice-group="expression"><strong>表达</strong><div class="voice-group-content"><div class="trait-option-row">
                   <button type="button" data-voice="自然口语" aria-pressed="false">自然口语</button>
                   <button type="button" data-voice="活泼俏皮" aria-pressed="false">活泼俏皮</button>
                   <button type="button" data-voice="温柔治愈" aria-pressed="false">温柔治愈</button>
@@ -143,15 +143,17 @@
                   <button type="button" data-voice="条理清晰" aria-pressed="false">条理清晰</button>
                   <button type="button" data-voice="毒舌吐槽" aria-pressed="false">毒舌吐槽</button>
                   <button type="button" data-voice="傲娇别扭" aria-pressed="false">傲娇别扭</button>
-                </div></div>
-                <div class="trait-group"><strong>习惯</strong><div class="trait-option-row">
+                </div><small id="expressionHint" aria-live="polite">已选择 0 / 3，选择 1～3 个。</small></div></div>
+                <div class="trait-group" data-voice-group="habit"><strong>习惯</strong><div class="voice-group-content"><div class="trait-option-row">
                   <button type="button" data-voice="偶尔颜文字" aria-pressed="false">偶尔颜文字</button>
                   <button type="button" data-voice="偶尔“喵~”" aria-pressed="false">偶尔“喵~”</button>
                   <button type="button" data-voice="使用敬语" aria-pressed="false">使用敬语</button>
                   <button type="button" data-voice="少用 Emoji" aria-pressed="false">少用 Emoji</button>
-                </div></div>
+                  <button type="button" data-voice="custom" aria-pressed="false" aria-controls="customHabitField">自定义</button>
+                </div>
+                <label id="customHabitField" class="hidden"><span>自定义说话习惯</span><input id="customHabitInput" maxlength="20" placeholder="例如：句尾偶尔加「呀」（最多 20 个字）" /></label>
+                <small id="habitHint" aria-live="polite">已选择 0 / 3，可不选；自定义占 1 个名额。</small></div></div>
               </div>
-              <small id="voiceHint">已选择 0 / 4，至少选择 2 个。</small>
             </div>
           </div>
           <div id="personaResult" class="result hidden"></div>
